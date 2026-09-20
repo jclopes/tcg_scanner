@@ -8,3 +8,4 @@ export * from "./edgeLine";
 export * from "./geometry";
 export * from "./perspective";
 export * from "./orientation";
+export * from "./pixelExtraction";

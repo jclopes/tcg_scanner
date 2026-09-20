@@ -4,9 +4,159 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TCG Scanner</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: system-ui, sans-serif;
+      }
+
+      body {
+        margin: 0;
+        padding: 1rem;
+        background: #111;
+        color: #eee;
+      }
+
+      #app {
+        max-width: 480px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+
+      h1 {
+        font-size: 1.1rem;
+        margin: 0;
+      }
+
+      #status {
+        min-height: 1.2em;
+        margin: 0;
+        font-size: 0.9rem;
+      }
+
+      #status[data-kind="error"] {
+        color: #ff7b7b;
+      }
+
+      #camera-stage {
+        position: relative;
+        width: 100%;
+        /* Kept in sync with the live video's intrinsic size in JS
+           (src/shell/app.ts) so the guide-overlay canvas — sized to the
+           same intrinsic pixel dimensions — maps 1:1 onto the video with
+           no letterboxing/cropping mismatch between the two. */
+        aspect-ratio: 4 / 3;
+        background: #000;
+        overflow: hidden;
+        border-radius: 8px;
+      }
+
+      #camera-video,
+      #guide-overlay {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      #camera-video {
+        object-fit: cover;
+      }
+
+      #controls {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+      }
+
+      #format-toggle {
+        display: flex;
+        gap: 0.25rem;
+      }
+
+      .format-button {
+        padding: 0.4rem 0.75rem;
+        border: 1px solid #555;
+        background: #222;
+        color: #eee;
+        border-radius: 6px;
+      }
+
+      .format-button[aria-pressed="true"] {
+        background: #38e082;
+        color: #111;
+        border-color: #38e082;
+        font-weight: 600;
+      }
+
+      #scan-button {
+        padding: 0.6rem 1.25rem;
+        font-size: 1rem;
+        border-radius: 8px;
+        border: none;
+        background: #38e082;
+        color: #111;
+        font-weight: 600;
+      }
+
+      #scan-button:disabled {
+        background: #555;
+        color: #999;
+      }
+
+      #result {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      #result[hidden] {
+        display: none;
+      }
+
+      #result img {
+        max-width: 100%;
+        border-radius: 8px;
+        background: #000;
+      }
+    </style>
   </head>
   <body>
-    <div id="status">Loading OpenCV...</div>
+    <main id="app">
+      <h1>TCG Scanner</h1>
+      <p id="status">Loading OpenCV...</p>
+
+      <div id="camera-stage">
+        <video id="camera-video" autoplay playsinline muted></video>
+        <canvas id="guide-overlay"></canvas>
+      </div>
+
+      <div id="controls">
+        <div id="format-toggle" role="group" aria-label="Card print format">
+          <button type="button" id="format-portrait" class="format-button" data-format="portrait" aria-pressed="true">
+            Portrait
+          </button>
+          <button
+            type="button"
+            id="format-landscape"
+            class="format-button"
+            data-format="landscape"
+            aria-pressed="false"
+          >
+            Landscape
+          </button>
+        </div>
+        <button type="button" id="scan-button" disabled>Scan</button>
+      </div>
+
+      <section id="result" hidden>
+        <h2>Captured card</h2>
+        <img id="result-image" alt="Flattened, cropped card capture" />
+      </section>
+    </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

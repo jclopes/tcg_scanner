@@ -1,8 +1,10 @@
 import cvModule from "@techstark/opencv-js";
+import { initApp } from "./shell/app";
 
-// Minimal scaffolding entry point. This only proves the page loads and
-// OpenCV.js initializes. Camera access, the Scan button, and the guide
-// overlay belong to a later stage (see docs/plan/01-capture-and-detection.md).
+// Entry point: waits for OpenCV.js to initialize, then hands off to
+// src/shell/app.ts, which owns everything else (camera, guide overlay,
+// Scan button, detection loop, capture) — see
+// docs/plan/05-imperative-shell.md.
 
 const statusEl = document.getElementById("status");
 
@@ -28,11 +30,8 @@ async function waitForOpenCv(): Promise<typeof cvModule> {
 
 async function main(): Promise<void> {
   const cv = await waitForOpenCv();
-  const buildInfo: string = cv.getBuildInformation();
-  const versionLine = buildInfo
-    .split("\n")
-    .find((line: string) => line.includes("Version control"));
-  setStatus(`OpenCV ready${versionLine ? ` (${versionLine.trim()})` : ""}`);
+  setStatus("Starting camera…");
+  initApp(cv);
 }
 
 main().catch((error: unknown) => {
