@@ -1,0 +1,21 @@
+{
+  "name": "tcg-scanner",
+  "version": "0.0.1",
+  "description": "Browser-only trading card scanner: camera capture, card-shaped quad detection, and flattened crop output.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run"
+  },
+  "keywords": [],
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
+  },
+  "dependencies": {
+    "@techstark/opencv-js": "^5.0.0-release.1"
+  }
+}
