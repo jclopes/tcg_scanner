@@ -63,16 +63,28 @@ stalling the live preview.
   (height > width); landscape camera → landscape-shaped guide
   (width > height). A landscape-print card scanned on a portrait camera
   still has to fit inside a portrait-shaped guide, and vice versa.
-- The user-selected print format only affects the **rotation applied to
-  the final image**:
+- **Raw-capture placement convention (input to this rule, not its
+  output).** During scanning, the guide teaches the user to physically
+  place a mismatched-format card (landscape card on a portrait camera, or
+  portrait card on a landscape camera) so its own top edge faces the
+  **left** side of the camera's view — always this one direction, never
+  "whichever is closer," so the raw flattened crop's orientation is a
+  deterministic, known quantity rather than something the user could get
+  two different (180°-apart) ways. This is a UX contract enforced by
+  on-screen guidance (exact presentation is the imperative shell's job),
+  not something the detector can verify from pixels alone — the
+  functional core is entitled to assume it holds.
+- **Output rotation (this rule's actual job).** Given that raw-capture
+  convention, `computeOutputRotationDegrees` corrects the flattened crop
+  to be presented **upright** (matching UX flow step 6's "so the artwork
+  is presented upright"):
   - Print format matches the device-orientation category (portrait card
     + portrait camera, or landscape card + landscape camera) → no extra
     rotation beyond the perspective flatten.
-  - Mismatched (landscape card on portrait camera, or portrait card on
-    landscape camera) → rotate the flattened output so the card's top
-    edge ends up on the **left** side of the frame. Always this
-    direction for both mismatch cases — one consistent rule, not
-    "whichever is closer."
+  - Mismatched → the raw crop has the card's top edge sitting on the
+    left (per the convention above); rotate it so that top edge moves to
+    the top of the frame instead — i.e. undo the left-ward placement,
+    not repeat it.
 - This is a pure function of two enums and should be one of the smallest,
   most independently testable units in the whole phase:
 
