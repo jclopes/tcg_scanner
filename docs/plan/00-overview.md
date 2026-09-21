@@ -24,7 +24,7 @@ as a new phase:
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Live capture & detection: camera feed → guide overlay → detect a card-shaped quad → output a flattened, cropped, correctly-oriented image of the card. No identification. | Planned — see [01-capture-and-detection.md](./01-capture-and-detection.md) |
-| 2 | Card identification: match the flattened image (from Phase 1) to a specific card (game, set, collector number). | Not planned yet — deliberately deferred until Phase 1 is agreed |
+| 2 | Card identification: match the flattened image (from Phase 1) to a specific card (game, set, collector number). | Planned — see [06-card-identification.md](./06-card-identification.md) |
 | 3 | Catalog storage & export: persist identified cards to a DB/file, handle duplicates/quantities, export formats. | Not planned yet |
 | 4+ | Anything else (search, filtering, collection value, multi-device sync, etc.) | Not planned — out of scope until explicitly requested |
 

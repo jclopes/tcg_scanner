@@ -12,10 +12,6 @@ stalling the live preview.
 
 - Identifying *which* card it is (Phase 2).
 - Persisting/cataloging results (Phase 3).
-- Quality/focus/readability filtering of the captured image. The idea was
-  raised (filter detected frames by quality at a "later stage") but it's
-  not decided whether that's the tail end of this phase or part of
-  Phase 2 — see Open Questions.
 - Multiple cards in frame at once.
 
 ## Physical card model
@@ -43,14 +39,24 @@ stalling the live preview.
    changes it, since a user is typically batch-scanning several cards of
    the same format in a row.
 4. The live detection loop evaluates incoming frames against the guide's
-   expected edge locations. The **first frame that yields a valid
-   quadrilateral** (four fitted edges whose intersections form a quad
-   matching the target aspect ratio within tolerance) is accepted
-   immediately — no multi-frame stability voting.
-5. On acceptance, the loop stops. A high-resolution still is captured
-   (see Device & Resolution Handling), the accepted quad's geometry is
-   mapped onto that image, and a perspective transform flattens/crops it
-   to just the card.
+   expected edge locations, coloring each of the guide's 4 edges live —
+   red once that edge has been found in the most recently evaluated
+   frame, green while it hasn't — with a brief white flash the moment all
+   4 are found at once, so the user gets continuous per-edge feedback
+   rather than a silent wait. A "TOP" indicator, rotated to match the
+   expected card orientation (see Orientation Handling), stays overlaid
+   throughout so the user knows which way to hold the card. The **first
+   frame that yields a valid quadrilateral** (four fitted edges whose
+   intersections form a quad matching the target aspect ratio within
+   tolerance) is accepted immediately — no multi-frame stability voting
+   for *acceptance* (see step 5 for the separate multi-frame step that
+   follows acceptance).
+5. On acceptance, the loop stops, but the guide overlay stays visible
+   while a short burst of further frames is captured and the sharpest,
+   best-aligned one is selected (see Multi-Frame Capture & Selection) —
+   rather than committing to the exact frame that happened to trigger
+   acceptance. The selected frame's accepted quad geometry is used to
+   run a perspective transform that flattens/crops it to just the card.
 6. The flattened image is rotated per the print-format rule (Orientation
    Handling) so the artwork is presented upright.
 7. Output: the flattened, correctly oriented card image — handed to
@@ -85,6 +91,13 @@ stalling the live preview.
     left (per the convention above); rotate it so that top edge moves to
     the top of the frame instead — i.e. undo the left-ward placement,
     not repeat it.
+- **On-screen orientation guidance (implemented).** Since the raw-capture
+  placement convention above is a UX contract the user has to follow, not
+  something the detector can verify, the guide overlay draws a "TOP" label
+  on whichever frame edge the card's own top should be placed against —
+  derived from the same `computeOutputRotationDegrees` inputs (camera
+  orientation, card print format) and rotated to read upright at that
+  edge. Always visible during scanning, independent of debug mode.
 - This is a pure function of two enums and should be one of the smallest,
   most independently testable units in the whole phase:
 
@@ -135,6 +148,11 @@ stalling the live preview.
   results). Reject the frame immediately if any edge line couldn't be fit
   confidently, or if the resulting quad's side-length ratio falls outside
   the tolerance band around the target aspect ratio.
+- **Live per-edge feedback (implemented).** Each evaluated frame's
+  per-edge found/not-found status is reflected immediately on the guide
+  overlay itself (red = found, green = not found), independent of and
+  prior to full quad acceptance — a "getting close" signal distinct from
+  acceptance, always visible (not gated behind debug mode).
 
 ## Background & occlusion (staged target)
 
@@ -153,20 +171,51 @@ stalling the live preview.
 
 ## Device & resolution handling
 
-- **Live preview stream:** configured at a frame size that keeps
-  per-frame detection fast. Detection runs against the preview
-  resolution, not full sensor resolution.
-- **Final capture:** attempt `ImageCapture.takePhoto()` (or
-  `grabFrame()`) for a full-resolution still on devices/browsers that
-  support it. The accepted quad's geometry is re-derived/rescaled onto
-  that still (same relative guide position, scaled to the still's
-  resolution) before the perspective warp. Where `ImageCapture` isn't
-  supported (notably some desktop webcam/browser combinations), fall
-  back to using the accepted preview frame directly.
-- Detection and final-image capture are deliberately separate concerns:
-  detection produces a quad in preview-frame coordinates; a separate step
-  maps that geometry onto whichever image source is used for the final
-  output.
+- **Minimum resolution (stricter than originally planned).** The camera
+  stream itself is required to be Full HD (1920×1080) or higher —
+  enforced as a hard `min` constraint at `getUserMedia` acquisition time
+  (`startCameraStream`), not just an `ideal` preference. A camera that
+  can't meet this floor fails to start with a clear error rather than
+  silently running at a lower, blurrier resolution. The resolution
+  dropdown only offers 1080p and 4K options accordingly.
+- Detection and the final flattened output both read frames directly off
+  the `<video>` element at whatever resolution the stream negotiated
+  (guaranteed ≥ FHD per above).
+- Detection and final-image capture remain separate concerns in the code
+  (`evaluateFrameForQuad` vs. `captureFlattenedCard`).
+
+## Multi-frame capture & selection (not in original plan)
+
+Rather than committing to the exact frame whose detection first triggered
+acceptance, the shell captures a short burst of further frames afterward
+and selects the best one — on the theory that a frame a moment later,
+mid-hold, is often sharper or better-aligned than the very first frame
+that happened to pass detection.
+
+- Each burst frame is independently run through the same
+  detect-then-flatten pipeline used for live detection
+  (`captureFlattenedFrameBurst`); a frame whose own detection doesn't
+  accept a quad is simply skipped, not retried.
+- Up to `CAPTURE_BURST_FRAME_COUNT` (10) frames are attempted per burst
+  round. If fewer than `CAPTURE_BURST_MIN_USABLE_FRAMES` (5) frames were
+  successfully captured, another round of up to 10 is attempted, up to a
+  hard ceiling of `CAPTURE_BURST_HARD_LIMIT` (30) total frames attempted
+  — so a run of early rejections (card briefly moved, occluded, etc.)
+  doesn't strand the user with too few candidates to choose from. If the
+  hard limit is hit with at least one usable frame but fewer than 5, the
+  best of whatever was captured is still used rather than failing
+  outright; only a burst that captures *zero* usable frames falls back to
+  flattening the original preview-triggering frame directly.
+- The best candidate is picked by `selectBestFrame`
+  (`src/core/frameQuality.ts`), combining two signals, each normalized
+  0–1 against the candidate set and summed with equal weight:
+  - **Sharpness** — Laplacian variance (`laplacianVariance`), a standard
+    blur-detection measure.
+  - **Aspect-ratio match** — how closely the frame's own measured
+    aspect ratio matches the target card aspect ratio.
+- All 4 constants above are starting guesses (`src/core/constants.ts`),
+  flagged there as tuning targets once real-device empirical data is
+  available, same as the other tolerance values in this plan.
 
 ## Architecture: functional core / imperative shell
 
@@ -219,8 +268,8 @@ function computeOutputRotationDegrees(
   validation. `fitEdgeLine` itself stays a pure function in the
   functional core, imported by each worker — the shell only owns the
   message-passing.
-- High-resolution still capture (`ImageCapture`) with the preview-frame
-  fallback, and the final canvas draw/export.
+- Multi-frame burst capture and selection after acceptance, and the
+  final canvas draw/export.
 
 ## Data contracts
 
@@ -269,7 +318,6 @@ interface QuadValidationResult {
 interface CaptureResult {
   image: ImageBitmap; // flattened, cropped, upright
   sourceResolution: Size; // resolution the crop was taken from
-  usedHighResStill: boolean; // false if it fell back to the preview frame
 }
 ```
 
@@ -281,10 +329,9 @@ implementation:
 1. **Occlusion/background robustness is unvalidated.** Needs empirical
    testing against real hand-held photos before committing to the
    "no controlled background" target as the shipped default.
-2. **Quality/focus/readability filtering** was mentioned as happening "at
-   a later stage" — not yet decided whether that's the tail end of this
-   phase (before handing the image to Phase 2) or genuinely part of
-   Phase 2. Needs a decision before Phase 2 is planned.
+2. ~~Quality/focus/readability filtering~~ — resolved: implemented as
+   part of this phase (see Multi-Frame Capture & Selection), not deferred
+   to Phase 2.
 3. **Concrete tolerance values** (position/rotation/zoom tolerance,
    aspect-ratio tolerance band) are left as tunable parameters in
    `ToleranceConfig`, not fixed numbers — they need empirical tuning
@@ -301,11 +348,11 @@ implementation:
   camera feed with a guide overlay matching the device's current
   orientation.
 - Holding a standard-sized card roughly aligned to the guide results in
-  an automatic capture within a bounded time, with no multi-frame
-  stability wait.
+  an automatic *acceptance* within a bounded time, with no multi-frame
+  stability wait — a brief multi-frame capture/selection step (see
+  Multi-Frame Capture & Selection) follows acceptance before output.
 - The output image is a flattened, cropped, correctly oriented (per the
-  print-format rule) image of just the card, at the best resolution the
-  device/browser can provide.
+  print-format rule) image of just the card, at Full HD or higher.
 - Misaligned or card-free frames are rejected fast enough that the live
   preview doesn't visibly stall.
 - Works with both a phone browser (`getUserMedia`) and a desktop/laptop
