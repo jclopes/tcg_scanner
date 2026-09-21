@@ -6,10 +6,17 @@ function line(point: Point, direction: Point, confidence = 1): FittedLine {
   return { point, direction, confidence };
 }
 
+function rectangleCorners(width: number, height: number, origin: Point = { x: 0, y: 0 }): [Point, Point, Point, Point] {
+  return [
+    { x: origin.x, y: origin.y },
+    { x: origin.x + width, y: origin.y },
+    { x: origin.x + width, y: origin.y + height },
+    { x: origin.x, y: origin.y + height },
+  ];
+}
+
 const TOLERANCE: ToleranceConfig = {
-  positionTolerance: 0.05,
   rotationToleranceDegrees: 5,
-  zoomTolerance: 0.05,
   aspectRatioTolerance: 0.08,
 };
 
@@ -78,15 +85,6 @@ describe("intersectLines", () => {
 
 describe("validateQuad", () => {
   const targetAspectRatio = 63 / 88;
-
-  function rectangleCorners(width: number, height: number, origin: Point = { x: 0, y: 0 }): [Point, Point, Point, Point] {
-    return [
-      { x: origin.x, y: origin.y },
-      { x: origin.x + width, y: origin.y },
-      { x: origin.x + width, y: origin.y + height },
-      { x: origin.x, y: origin.y + height },
-    ];
-  }
 
   it("accepts a rectangle exactly matching the target aspect ratio", () => {
     const corners = rectangleCorners(63, 88);

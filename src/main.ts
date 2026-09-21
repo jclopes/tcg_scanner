@@ -1,4 +1,4 @@
-import cvModule from "@techstark/opencv-js";
+import { loadOpenCv } from "./loadOpenCv";
 import { initApp } from "./shell/app";
 
 // Entry point: waits for OpenCV.js to initialize, then hands off to
@@ -15,21 +15,8 @@ function setStatus(text: string): void {
   }
 }
 
-async function waitForOpenCv(): Promise<typeof cvModule> {
-  if (cvModule instanceof Promise) {
-    return cvModule;
-  }
-  if ((cvModule as { Mat?: unknown }).Mat) {
-    return cvModule;
-  }
-  await new Promise<void>((resolve) => {
-    (cvModule as { onRuntimeInitialized?: () => void }).onRuntimeInitialized = () => resolve();
-  });
-  return cvModule;
-}
-
 async function main(): Promise<void> {
-  const cv = await waitForOpenCv();
+  const cv = await loadOpenCv();
   setStatus("Starting camera…");
   initApp(cv);
 }

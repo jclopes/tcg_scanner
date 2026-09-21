@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { EDGE_MIN_CONFIDENCE } from "./constants";
-import { fitEdgeLine } from "./edgeLine";
+import { angleBetweenDirectionsDegrees, fitEdgeLine } from "./edgeLine";
 import { loadOpenCv } from "./testSupport/openCv";
 import type { EdgeBandPixels, OpenCv, Point } from "./types";
 
@@ -31,7 +31,7 @@ function renderEdgeBand(width: number, height: number, point: Point, direction: 
       data[y * width + x] = signedDistance >= 0 ? 255 : 0;
     }
   }
-  return { data, width, height };
+  return { data, width, height, origin: { x: 0, y: 0 } };
 }
 
 /** Perpendicular distance from `p` to the infinite line through
@@ -42,15 +42,22 @@ function perpendicularDistance(p: Point, linePoint: Point, lineDirection: Point)
   return Math.abs((p.x - linePoint.x) * nx + (p.y - linePoint.y) * ny);
 }
 
-/** Absolute angle between two directions, in degrees, treating a direction
- * and its negation as equivalent (a line has no inherent forward). */
-function angleBetweenDirectionsDegrees(a: Point, b: Point): number {
-  const aNorm = Math.hypot(a.x, a.y);
-  const bNorm = Math.hypot(b.x, b.y);
-  const dot = (a.x * b.x + a.y * b.y) / (aNorm * bNorm);
-  const clamped = Math.max(-1, Math.min(1, Math.abs(dot)));
-  return (Math.acos(clamped) * 180) / Math.PI;
-}
+// Used throughout below for bands shaped like a left/right-edge band
+// (tall, narrow — thickness axis is x) and a top/bottom-edge band
+// (short, wide — thickness axis is y), respectively. The actual value only
+// matters for tests that put more than one candidate edge in the band;
+// for single-edge tests it's an arbitrary but shape-appropriate choice.
+const OUTWARD_RIGHT: Point = { x: 1, y: 0 };
+const OUTWARD_TOP: Point = { x: 0, y: -1 };
+
+// A generous rotation tolerance for tests that aren't specifically
+// exercising the angle-plausibility filter itself — comfortably covers the
+// 8°-rotated-edge test below plus normal Hough angular-resolution noise
+// (1°, per EDGE_HOUGH_THETA), without being so wide it'd stop meaning
+// anything. Production uses DEFAULT_TOLERANCE_CONFIG.rotationToleranceDegrees
+// (8°); this is deliberately looser since these tests aren't about that
+// exact value.
+const GENEROUS_ROTATION_TOLERANCE_DEGREES = 15;
 
 describe("fitEdgeLine", () => {
   it("fits a vertical edge in a tall, narrow band (left/right-edge-shaped band)", () => {
@@ -60,7 +67,7 @@ describe("fitEdgeLine", () => {
     const trueDirection = { x: 0, y: 1 };
 
     const band = renderEdgeBand(width, height, truePoint, trueDirection);
-    const result = fitEdgeLine(cv, band);
+    const result = fitEdgeLine(cv, band, OUTWARD_RIGHT, GENEROUS_ROTATION_TOLERANCE_DEGREES);
 
     expect(result).not.toBeNull();
     expect(angleBetweenDirectionsDegrees(result!.direction, trueDirection)).toBeLessThan(3);
@@ -76,7 +83,7 @@ describe("fitEdgeLine", () => {
     const trueDirection = { x: 1, y: 0 };
 
     const band = renderEdgeBand(width, height, truePoint, trueDirection);
-    const result = fitEdgeLine(cv, band);
+    const result = fitEdgeLine(cv, band, OUTWARD_TOP, GENEROUS_ROTATION_TOLERANCE_DEGREES);
 
     expect(result).not.toBeNull();
     expect(angleBetweenDirectionsDegrees(result!.direction, trueDirection)).toBeLessThan(3);
@@ -91,7 +98,7 @@ describe("fitEdgeLine", () => {
     const trueDirection = { x: Math.sin(angleRad), y: Math.cos(angleRad) };
 
     const band = renderEdgeBand(width, height, truePoint, trueDirection);
-    const result = fitEdgeLine(cv, band);
+    const result = fitEdgeLine(cv, band, OUTWARD_RIGHT, GENEROUS_ROTATION_TOLERANCE_DEGREES);
 
     expect(result).not.toBeNull();
     expect(angleBetweenDirectionsDegrees(result!.direction, trueDirection)).toBeLessThan(3);
@@ -115,11 +122,70 @@ describe("fitEdgeLine", () => {
       }
     }
 
-    const result = fitEdgeLine(cv, band);
+    const result = fitEdgeLine(cv, band, OUTWARD_RIGHT, GENEROUS_ROTATION_TOLERANCE_DEGREES);
 
     expect(result).not.toBeNull();
     expect(angleBetweenDirectionsDegrees(result!.direction, trueDirection)).toBeLessThan(5);
     expect(perpendicularDistance(result!.point, truePoint, trueDirection)).toBeLessThan(3);
+  });
+
+  it("prefers the outward-most edge over a further-in feature (e.g. a card's own inner border)", () => {
+    const width = 50;
+    const height = 160;
+    const outerEdgeX = 10;
+    const innerEdgeX = 35;
+
+    // Three flat bands separated by two hard vertical edges: "outside" the
+    // card (x < 10), the card body (10 <= x < 35), and an inner
+    // graphic/border (x >= 35) — simulating a left-edge band where the true
+    // physical card edge (outerEdgeX) sits well outside a strong inner
+    // feature (innerEdgeX).
+    const data = new Uint8ClampedArray(width * height);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const value = x < outerEdgeX ? 0 : x < innerEdgeX ? 128 : 255;
+        data[y * width + x] = value;
+      }
+    }
+    const band: EdgeBandPixels = { data, width, height, origin: { x: 0, y: 0 } };
+
+    // Outward is toward smaller x here (this band's outer boundary, like a
+    // left-side band whose card interior lies toward larger x).
+    const result = fitEdgeLine(cv, band, { x: -1, y: 0 }, GENEROUS_ROTATION_TOLERANCE_DEGREES);
+
+    expect(result).not.toBeNull();
+    expect(Math.abs(result!.point.x - outerEdgeX)).toBeLessThan(3);
+    expect(Math.abs(result!.point.x - innerEdgeX)).toBeGreaterThan(10);
+  });
+
+  it("rejects a strong edge whose angle deviates too far from the expected direction", () => {
+    const width = 50;
+    const height = 160;
+    const truePoint = { x: 25, y: 80 };
+    // 45° off vertical — a genuine, strongly-visible edge, but far outside
+    // any plausible card-rotation tolerance for this band's expected
+    // (vertical, per OUTWARD_RIGHT) direction.
+    const angleRad = (45 * Math.PI) / 180;
+    const trueDirection = { x: Math.sin(angleRad), y: Math.cos(angleRad) };
+
+    const band = renderEdgeBand(width, height, truePoint, trueDirection);
+    const result = fitEdgeLine(cv, band, OUTWARD_RIGHT, 8);
+
+    expect(result).toBeNull();
+  });
+
+  it("accepts that same off-angle edge once the tolerance is widened enough to cover it", () => {
+    const width = 50;
+    const height = 160;
+    const truePoint = { x: 25, y: 80 };
+    const angleRad = (45 * Math.PI) / 180;
+    const trueDirection = { x: Math.sin(angleRad), y: Math.cos(angleRad) };
+
+    const band = renderEdgeBand(width, height, truePoint, trueDirection);
+    const result = fitEdgeLine(cv, band, OUTWARD_RIGHT, 50);
+
+    expect(result).not.toBeNull();
+    expect(angleBetweenDirectionsDegrees(result!.direction, trueDirection)).toBeLessThan(3);
   });
 
   it("returns null for a blank band with no edge (fail-fast)", () => {
@@ -127,7 +193,12 @@ describe("fitEdgeLine", () => {
     const height = 160;
     const data = new Uint8ClampedArray(width * height).fill(128);
 
-    const result = fitEdgeLine(cv, { data, width, height });
+    const result = fitEdgeLine(
+      cv,
+      { data, width, height, origin: { x: 0, y: 0 } },
+      OUTWARD_RIGHT,
+      GENEROUS_ROTATION_TOLERANCE_DEGREES,
+    );
 
     expect(result).toBeNull();
   });
@@ -143,13 +214,23 @@ describe("fitEdgeLine", () => {
       data[i] = 120 + (seed % 5);
     }
 
-    const result = fitEdgeLine(cv, { data, width, height });
+    const result = fitEdgeLine(
+      cv,
+      { data, width, height, origin: { x: 0, y: 0 } },
+      OUTWARD_RIGHT,
+      GENEROUS_ROTATION_TOLERANCE_DEGREES,
+    );
 
     expect(result).toBeNull();
   });
 
   it("returns null for malformed input (data length mismatched with dimensions)", () => {
-    const result = fitEdgeLine(cv, { data: new Uint8ClampedArray(10), width: 50, height: 160 });
+    const result = fitEdgeLine(
+      cv,
+      { data: new Uint8ClampedArray(10), width: 50, height: 160, origin: { x: 0, y: 0 } },
+      OUTWARD_RIGHT,
+      GENEROUS_ROTATION_TOLERANCE_DEGREES,
+    );
     expect(result).toBeNull();
   });
 
@@ -160,7 +241,7 @@ describe("fitEdgeLine", () => {
     const trueDirection = { x: 0, y: 1 };
 
     const fullBand = renderEdgeBand(width, height, truePoint, trueDirection);
-    const fullResult = fitEdgeLine(cv, fullBand);
+    const fullResult = fitEdgeLine(cv, fullBand, OUTWARD_RIGHT, GENEROUS_ROTATION_TOLERANCE_DEGREES);
 
     const mostlyOccludedBand = renderEdgeBand(width, height, truePoint, trueDirection);
     // Blank out all but a small sliver at the top of the band.
@@ -169,7 +250,7 @@ describe("fitEdgeLine", () => {
         mostlyOccludedBand.data[y * width + x] = 128;
       }
     }
-    const occludedResult = fitEdgeLine(cv, mostlyOccludedBand);
+    const occludedResult = fitEdgeLine(cv, mostlyOccludedBand, OUTWARD_RIGHT, GENEROUS_ROTATION_TOLERANCE_DEGREES);
 
     expect(fullResult).not.toBeNull();
     if (occludedResult) {

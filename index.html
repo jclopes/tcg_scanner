@@ -15,11 +15,15 @@
         padding: 1rem;
         background: #111;
         color: #eee;
+        display: flex;
+        justify-content: center;
+        gap: 1rem;
+        align-items: flex-start;
       }
 
       #app {
         max-width: 480px;
-        margin: 0 auto;
+        width: 100%;
         display: flex;
         flex-direction: column;
         gap: 0.75rem;
@@ -43,11 +47,14 @@
       #camera-stage {
         position: relative;
         width: 100%;
-        /* Kept in sync with the live video's intrinsic size in JS
-           (src/shell/app.ts) so the guide-overlay canvas — sized to the
-           same intrinsic pixel dimensions — maps 1:1 onto the video with
-           no letterboxing/cropping mismatch between the two. */
-        aspect-ratio: 4 / 3;
+        /* Initial guess before the video's real dimensions are known —
+           matches every CAMERA_RESOLUTION_OPTIONS entry's own 16:9 shape
+           (config.ts). Kept in sync with the live video's actual intrinsic
+           size in JS (src/shell/app.ts) once it loads, so the guide-overlay
+           canvas — sized to that same intrinsic pixel dimensions — maps 1:1
+           onto the video with no letterboxing/cropping mismatch between the
+           two. */
+        aspect-ratio: 16 / 9;
         background: #000;
         overflow: hidden;
         border-radius: 8px;
@@ -72,24 +79,33 @@
         gap: 0.75rem;
       }
 
-      #format-toggle {
+      #resolution-row {
         display: flex;
-        gap: 0.25rem;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        font-size: 0.85rem;
+        color: #ccc;
       }
 
-      .format-button {
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      .format-select {
         padding: 0.4rem 0.75rem;
         border: 1px solid #555;
         background: #222;
         color: #eee;
         border-radius: 6px;
-      }
-
-      .format-button[aria-pressed="true"] {
-        background: #38e082;
-        color: #111;
-        border-color: #38e082;
-        font-weight: 600;
       }
 
       #scan-button {
@@ -122,6 +138,115 @@
         border-radius: 8px;
         background: #000;
       }
+
+      .debug-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.9rem;
+      }
+
+      #debug-controls {
+        display: flex;
+        justify-content: flex-end;
+      }
+
+      #debug-controls[hidden] {
+        display: none;
+      }
+
+      #debug-force-button {
+        padding: 0.4rem 0.75rem;
+        font-size: 0.85rem;
+        border: 1px solid #555;
+        background: #222;
+        color: #eee;
+        border-radius: 6px;
+      }
+
+      #debug-force-button:disabled {
+        color: #666;
+        border-color: #333;
+      }
+
+      #debug-panel {
+        width: 220px;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+
+      #debug-panel[hidden] {
+        display: none;
+      }
+
+      #debug-panel figure {
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+      }
+
+      #debug-panel img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border-radius: 6px;
+        background: #000;
+      }
+
+      /* Edge-band strips are extreme long/thin rectangles (a ~20-40px thick
+         band running the length of a guide edge) — after rotating so every
+         one reads horizontally (see debugSteps.ts), scaling to the panel's
+         full width the way other debug images do would still crush them to
+         a sliver only a few pixels tall. Pin a legible fixed height instead
+         and let width follow at that height's own (undistorted) aspect
+         ratio; a figure narrower than its image scrolls horizontally rather
+         than squeezing it. */
+      #debug-panel .debug-step--edge-band {
+        overflow-x: auto;
+      }
+
+      #debug-panel .debug-step--edge-band img {
+        width: auto;
+        height: 64px;
+        max-width: none;
+        /* #debug-panel figure is a column flex container, and flex items
+           default to align-items: stretch on the cross axis (width, here) —
+           that silently overrides `width: auto` above and stretches the
+           image back out to the figure's full width, undoing the
+           aspect-ratio-preserving sizing this rule exists for. Opting this
+           one item out of stretch is what actually lets it size itself. */
+        align-self: flex-start;
+      }
+
+      #debug-panel figcaption {
+        font-size: 0.75rem;
+        color: #aaa;
+      }
+
+      .debug-rejection-reason {
+        margin: 0;
+        padding: 0.5rem;
+        border-radius: 6px;
+        background: rgba(255, 123, 123, 0.12);
+        color: #ff7b7b;
+        font-size: 0.8rem;
+      }
+
+      .debug-stage-heading {
+        margin: 0;
+        padding-top: 0.25rem;
+        border-top: 1px solid #333;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #ccc;
+      }
+
+      .debug-stage-heading:first-child {
+        border-top: none;
+        padding-top: 0;
+      }
     </style>
   </head>
   <body>
@@ -134,22 +259,31 @@
         <canvas id="guide-overlay"></canvas>
       </div>
 
+      <div id="resolution-row">
+        <span id="resolution-status">Resolution: —</span>
+        <label>
+          <span class="visually-hidden">Camera resolution</span>
+          <select id="resolution-select" class="format-select"></select>
+        </label>
+      </div>
+
       <div id="controls">
-        <div id="format-toggle" role="group" aria-label="Card print format">
-          <button type="button" id="format-portrait" class="format-button" data-format="portrait" aria-pressed="true">
-            Portrait
-          </button>
-          <button
-            type="button"
-            id="format-landscape"
-            class="format-button"
-            data-format="landscape"
-            aria-pressed="false"
-          >
-            Landscape
-          </button>
-        </div>
-        <button type="button" id="scan-button" disabled>Scan</button>
+        <label>
+          <span class="visually-hidden">Card print format</span>
+          <select id="format-select" class="format-select">
+            <option value="portrait">Portrait</option>
+            <option value="landscape">Landscape</option>
+          </select>
+        </label>
+        <label class="debug-toggle">
+          <input type="checkbox" id="debug-checkbox" />
+          Debug
+        </label>
+        <button type="button" id="scan-button">Start Scan</button>
+      </div>
+
+      <div id="debug-controls" hidden>
+        <button type="button" id="debug-force-button" disabled>Capture Debug Frame</button>
       </div>
 
       <section id="result" hidden>
@@ -157,6 +291,9 @@
         <img id="result-image" alt="Flattened, cropped card capture" />
       </section>
     </main>
+
+    <aside id="debug-panel" hidden></aside>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

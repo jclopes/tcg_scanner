@@ -8,12 +8,12 @@
  *   returns to.
  * - "scanning": the detection loop (src/shell/detectionLoop.ts) is running,
  *   guide overlay is visible.
- * - "processing": a frame was just accepted and the loop stopped, but the
- *   capture/flatten/rotate step (src/shell/capture.ts) hasn't finished yet.
- *   Split out from "scanning" as its own explicit state (rather than a
- *   sub-flag) since it's a meaningfully different moment for the UI: the
- *   guide overlay is gone, the detection loop isn't running, but there's no
- *   result yet either.
+ * - "processing": a quad was accepted and the shell is capturing a short
+ *   burst of further frames to pick the sharpest, best-matched one from
+ *   (src/shell/flattenedFrameBurst.ts) and flattening it into the final
+ *   output — no overlay, no live detection loop running, but there's no
+ *   result yet either. The user is expected to keep holding the card in
+ *   place through this.
  * - "captured": the capture step finished and the result is displayed.
  * - "error": something in the camera/detection pipeline failed in a way the
  *   user needs to see (permission denied, no camera, capture failure,

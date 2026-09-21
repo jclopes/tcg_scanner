@@ -1,39 +1,45 @@
-import {
-  STANDARD_CARD_ASPECT_RATIO,
-  computeGuideGeometry,
-  expectedEdgeBands,
-  intersectLines,
-  validateQuad,
-} from "../core";
-import type { EdgeBand, EdgeBandPixels, FittedLine, Point, Size } from "../core";
+import type { Point, Size } from "../core";
 import type { EdgeDetectionPool } from "../workers";
-import { DEFAULT_TOLERANCE_CONFIG } from "./config";
+import { evaluateFrameForQuad } from "./frameDetection";
+import type { RawEdgeDetection } from "./frameDetection";
 import { FrameSampler } from "./frameSampler";
-import { getVideoOrientation } from "./orientationWatcher";
 
 export interface DetectionLoopResult {
-  /** The accepted quad's 4 corners, in preview-frame pixel coordinates
-   * (i.e. `video.videoWidth`/`videoHeight` space at the moment of
-   * acceptance) — [topLeft, topRight, bottomRight, bottomLeft], per
-   * src/core's corner-order convention. */
+  /** The accepted quad's 4 corners, in `frameCanvas`'s pixel coordinates —
+   * [topLeft, topRight, bottomRight, bottomLeft], per src/core's
+   * corner-order convention. */
   corners: [Point, Point, Point, Point];
   /** The preview frame's size at the moment of acceptance — the coordinate
-   * space `corners` is expressed in. The final capture step needs this to
-   * rescale onto whatever image source it ends up using. */
+   * space `corners` (and `frameCanvas`) are expressed in. */
   frameSize: Size;
+  /** A snapshot of the exact frame `corners` was computed from. The capture
+   * step must warp *this* canvas rather than grabbing a new frame off the
+   * video — capturing an additional frame after acceptance would mean the
+   * flattened output (and any debug imagery) no longer matches what was
+   * actually detected. */
+  frameCanvas: HTMLCanvasElement;
+  /** Only present when the loop was constructed with `debug: true`. See
+   * `RawEdgeDetection`'s doc comment for what's captured and why. */
+  debug?: RawEdgeDetection;
 }
+
+/** A one-off diagnostic snapshot of a single evaluated frame's edge-band
+ * detection, regardless of whether that frame was accepted — see
+ * `DetectionLoop.requestForcedDebugCapture`. Same shape as
+ * `DetectionLoopResult.debug`: `lines` may contain `null`s, since
+ * fitEdgeLine not finding an edge is exactly the kind of thing this is for
+ * diagnosing. */
+export type ForcedDebugSnapshot = RawEdgeDetection;
 
 /**
  * Runs the live per-frame detection loop described in the plan's
- * "Detection strategy": each evaluated frame, compute the guide + its 4
- * edge bands for the video's *current* orientation, sample each band's
- * pixels, run all 4 edges in parallel through the worker pool, and — if all
- * 4 fit and the resulting quad validates against the target aspect ratio —
- * resolve with the accepted quad's corners and stop. Any other outcome
- * (a missing edge, a quad that fails validation, or even a transient
- * detection error) discards the frame and continues — per the plan's
- * fail-fast requirement, a bad frame must never block or visibly stall the
- * live preview.
+ * "Detection strategy": each evaluated frame, run `evaluateFrameForQuad`
+ * (src/shell/frameDetection.ts) against the video's *current* frame, and —
+ * if it accepts a quad — resolve with the result and stop. Any other
+ * outcome (a missing edge, a quad that fails validation, or even a
+ * transient detection error) discards the frame and continues — per the
+ * plan's fail-fast requirement, a bad frame must never block or visibly
+ * stall the live preview.
  *
  * Frame scheduling: uses `requestVideoFrameCallback` when available (ties
  * evaluation to actual new camera frames rather than the display's refresh
@@ -48,22 +54,38 @@ export class DetectionLoop {
   private readonly sampler = new FrameSampler();
   private handle: number | null = null;
   private stopped = true;
+  private forcedDebugCallback: ((snapshot: ForcedDebugSnapshot) => void) | null = null;
 
   constructor(
     private readonly video: HTMLVideoElement,
     private readonly pool: EdgeDetectionPool,
+    /** When true, `evaluateFrame` pays the extra cost (per evaluated frame,
+     * not just the eventually-accepted one) of cloning each sampled band's
+     * pixels so an accepted result can carry them for the debug feature. */
+    private readonly debug: boolean = false,
   ) {}
 
-  /** Starts the loop. `onAccepted` is called (and the loop stopped) as soon
-   * as one frame's quad validates. */
-  start(onAccepted: (result: DetectionLoopResult) => void): void {
+  /**
+   * Starts the loop. `onAccepted` is called (and the loop stopped) as soon
+   * as one frame's quad validates. `onFrameEvaluated`, when given, is
+   * called after *every* evaluated frame (accepted or not, including ones
+   * an evaluation error skipped) with that frame's per-edge found/not-found
+   * status ([top, right, bottom, left]) — driving the live guide overlay's
+   * per-edge color feedback (see app.ts), which needs to know about every
+   * frame's result, not just an eventual acceptance.
+   */
+  start(
+    onAccepted: (result: DetectionLoopResult) => void,
+    onFrameEvaluated?: (edgesFound: [boolean, boolean, boolean, boolean]) => void,
+  ): void {
     this.stopped = false;
 
     const step = (): void => {
       if (this.stopped) return;
       this.evaluateFrame()
-        .then((result) => {
+        .then(({ result, edgesFound }) => {
           if (this.stopped) return;
+          onFrameEvaluated?.(edgesFound);
           if (result) {
             this.stop();
             onAccepted(result);
@@ -80,6 +102,20 @@ export class DetectionLoop {
     };
 
     this.scheduleNext(step);
+  }
+
+  /**
+   * Arms a one-shot request: the *next* frame this loop evaluates —
+   * whichever one that turns out to be, whether it ends up accepted,
+   * rejected, or errors out — invokes `callback` with that frame's sampled
+   * bands and per-edge fitted lines (each `null` if that edge wasn't
+   * found). For diagnosing why detection isn't accepting frames (which
+   * edges are/aren't being found and where), not just inspecting a
+   * successful capture after the fact. Doesn't change the loop's own
+   * accept/reject behavior — this is a side observation, not a control.
+   */
+  requestForcedDebugCapture(callback: (snapshot: ForcedDebugSnapshot) => void): void {
+    this.forcedDebugCallback = callback;
   }
 
   /** Stops the loop. Safe to call even if it's already stopped. */
@@ -103,74 +139,38 @@ export class DetectionLoop {
     }
   }
 
-  private async evaluateFrame(): Promise<DetectionLoopResult | null> {
+  private async evaluateFrame(): Promise<{
+    result: DetectionLoopResult | null;
+    edgesFound: [boolean, boolean, boolean, boolean];
+  }> {
     const { videoWidth, videoHeight } = this.video;
     if (videoWidth === 0 || videoHeight === 0) {
-      return null;
+      return { result: null, edgesFound: [false, false, false, false] };
     }
-
     const frameSize: Size = { width: videoWidth, height: videoHeight };
-    const orientation = getVideoOrientation(this.video);
-    const guide = computeGuideGeometry(orientation, frameSize);
-    const bands = expectedEdgeBands(guide, DEFAULT_TOLERANCE_CONFIG);
-    const [topPixels, rightPixels, bottomPixels, leftPixels] = this.sampler.sampleBands(
-      this.video,
-      bands,
-    ) as [EdgeBandPixels, EdgeBandPixels, EdgeBandPixels, EdgeBandPixels];
 
-    const [topLine, rightLine, bottomLine, leftLine] = await this.pool.detectEdges([
-      topPixels,
-      rightPixels,
-      bottomPixels,
-      leftPixels,
-    ]);
+    const forcedCallback = this.forcedDebugCallback;
+    this.forcedDebugCallback = null; // one-shot: this frame consumes it either way
 
-    // Per src/core's documented contract (QuadValidationResult's doc
-    // comment in types.ts), a missing edge is the caller's responsibility
-    // to short-circuit on — validateQuad is never called with one.
-    if (!topLine || !rightLine || !bottomLine || !leftLine) {
-      return null;
+    const needsRawBands = this.debug || forcedCallback !== null;
+    const evaluation = await evaluateFrameForQuad(this.sampler, this.pool, this.video, frameSize, needsRawBands);
+
+    if (forcedCallback && evaluation.raw) {
+      forcedCallback(evaluation.raw);
     }
 
-    const [topBand, rightBand, bottomBand, leftBand] = bands;
-    const top = toFrameCoordinates(topLine, topBand);
-    const right = toFrameCoordinates(rightLine, rightBand);
-    const bottom = toFrameCoordinates(bottomLine, bottomBand);
-    const left = toFrameCoordinates(leftLine, leftBand);
-
-    let corners: [Point, Point, Point, Point];
-    try {
-      corners = [
-        intersectLines(top, left), // topLeft
-        intersectLines(top, right), // topRight
-        intersectLines(bottom, right), // bottomRight
-        intersectLines(bottom, left), // bottomLeft
-      ];
-    } catch {
-      // intersectLines throws on (near-)parallel adjacent edges — a
-      // genuine per-frame detection failure, not a bug. Discard the frame.
-      return null;
+    if (!evaluation.accepted) {
+      return { result: null, edgesFound: evaluation.edgesFound };
     }
 
-    const validation = validateQuad(corners, STANDARD_CARD_ASPECT_RATIO, DEFAULT_TOLERANCE_CONFIG);
-    if (!validation.valid || !validation.corners) {
-      return null;
-    }
-
-    return { corners: validation.corners, frameSize };
+    return {
+      result: {
+        corners: evaluation.accepted.corners,
+        frameSize,
+        frameCanvas: evaluation.accepted.frameCanvas,
+        debug: this.debug && evaluation.raw ? evaluation.raw : undefined,
+      },
+      edgesFound: evaluation.edgesFound,
+    };
   }
-}
-
-/** Translates a band-local FittedLine (as fitEdgeLine/the worker pool
- * produce it) into frame coordinates by adding the band's region.origin —
- * per FittedLine's doc comment, required before intersecting lines from two
- * different bands. */
-function toFrameCoordinates(line: FittedLine, band: EdgeBand): FittedLine {
-  return {
-    ...line,
-    point: {
-      x: line.point.x + band.region.origin.x,
-      y: line.point.y + band.region.origin.y,
-    },
-  };
 }

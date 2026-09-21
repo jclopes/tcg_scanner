@@ -96,33 +96,24 @@ export interface CaptureResult {
  * Tunable detection tolerances. Concrete values are deliberately not fixed
  * here (per the plan's Open Questions #3 — they need empirical tuning against
  * real devices/cameras), but the fields themselves are pinned down precisely
- * so expectedEdgeBands and validateQuad have an explicit, testable contract.
+ * so fitEdgeLine and validateQuad have an explicit, testable contract.
+ *
+ * Used to size expectedEdgeBands' bands until EDGE_BAND_HALF_THICKNESS_PX /
+ * EDGE_BAND_LENGTH_OVERHANG_PX replaced that with fixed pixel values (see
+ * their doc comments in constants.ts) — this interface used to also carry
+ * `positionTolerance` and `zoomTolerance` for that purpose. Removed rather
+ * than left unused once nothing read them any more.
  */
 export interface ToleranceConfig {
   /**
-   * How far the card's true edge may be shifted from the guide's edge due to
-   * the user not centering the card perfectly, expressed as a fraction of
-   * the guide's corresponding dimension (e.g. 0.05 = up to 5% of the guide's
-   * width/height). Widens expectedEdgeBands' bands perpendicular to each edge.
-   */
-  positionTolerance: number;
-
-  /**
    * How far the card may be rotated relative to the guide, in degrees, due to
-   * the user not holding it perfectly square. Used by expectedEdgeBands to
-   * add extra perpendicular slack to each band (a rotated edge line drifts
-   * away from the nominal edge position as you move along it), so the whole
-   * rotated edge still falls inside its band.
+   * the user not holding it perfectly square. Used by fitEdgeLine's
+   * angle-plausibility filter: a candidate edge segment whose angle deviates
+   * from the band's expected (axis-aligned) direction by more than this is
+   * rejected outright, on the assumption it belongs to something other than
+   * the card's true edge.
    */
   rotationToleranceDegrees: number;
-
-  /**
-   * How far the card's apparent size may differ from the guide's size
-   * (holding the card slightly nearer/farther than an exact fill), expressed
-   * as a fraction of the guide's corresponding dimension. Combines with
-   * positionTolerance to size expectedEdgeBands' band thickness.
-   */
-  zoomTolerance: number;
 
   /**
    * Allowed fractional deviation of the detected quad's measured aspect
@@ -148,6 +139,15 @@ export interface EdgeBandPixels {
   data: Uint8ClampedArray;
   width: number;
   height: number;
+  /** This band's actual top-left origin in the source frame's coordinate
+   * space — i.e. where (0,0) of `data` actually sits. Not necessarily equal
+   * to the `EdgeBand.region.origin` that was requested: extractGrayscaleRegion
+   * clamps a region that extends past the source's bounds (expected near the
+   * frame's edges — see GUIDE_FILL_FRACTION's doc comment), and this is the
+   * clamped value. Callers translating a fitted line's band-local point back
+   * into frame coordinates must add *this* origin, not the requested one, or
+   * every clamped band introduces a silent translation error. */
+  origin: Point;
 }
 
 /**

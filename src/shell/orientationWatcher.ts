@@ -1,16 +1,26 @@
 import type { Orientation, Size } from "../core";
 
 /**
- * Derives the camera/frame `Orientation` from a live video element's actual
- * reported frame dimensions (`videoWidth`/`videoHeight`) — width > height
- * means landscape. Deliberately *not* derived from a device/screen
- * orientation API: the plan's guide geometry is tied to the camera frame's
- * own shape, not the device chrome's orientation (a landscape-mounted
- * webcam on a portrait-oriented screen, for instance, should still get a
- * landscape guide).
+ * Derives an `Orientation` from a frame's actual reported dimensions —
+ * width > height means landscape. Deliberately *not* derived from a
+ * device/screen orientation API: the plan's guide geometry is tied to the
+ * camera frame's own shape, not the device chrome's orientation (a
+ * landscape-mounted webcam on a portrait-oriented screen, for instance,
+ * should still get a landscape guide). Shared by the live video loop
+ * (`getVideoOrientation`) and by one-off still-image detection (e.g. the
+ * high-res confirmation capture), since a still can have a different
+ * aspect ratio than the live preview stream (ImageCapture.takePhoto()
+ * often returns full-sensor-resolution photos) and must have its
+ * orientation derived from its own actual dimensions, not assumed from the
+ * preview's.
  */
+export function orientationFromSize(size: Size): Orientation {
+  return size.width > size.height ? "landscape" : "portrait";
+}
+
+/** `orientationFromSize` for a live video element's current frame size. */
 export function getVideoOrientation(video: HTMLVideoElement): Orientation {
-  return video.videoWidth > video.videoHeight ? "landscape" : "portrait";
+  return orientationFromSize({ width: video.videoWidth, height: video.videoHeight });
 }
 
 /**

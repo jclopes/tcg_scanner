@@ -10,6 +10,7 @@
 // is explicitly left as a later refinement (plan's Open Questions #4) and is
 // deliberately not built here.
 
+import { outwardDirectionForSide } from "../core";
 import type { EdgeBandPixels, FittedLine } from "../core";
 import type { DetectEdgeRequest, WorkerResponse } from "./protocol";
 
@@ -80,8 +81,12 @@ export interface EdgeDetectionPool {
    * for. That means each input band's underlying `ArrayBuffer` is detached
    * (neutered) by this call and must not be read or reused afterwards;
    * pass a freshly-allocated `EdgeBandPixels` per frame per band.
+   *
+   * `rotationToleranceDegrees` is forwarded to `fitEdgeLine` as its
+   * angle-plausibility bound — pass `ToleranceConfig.rotationToleranceDegrees`
+   * (see DEFAULT_TOLERANCE_CONFIG).
    */
-  detectEdges(bands: EdgeBandsInput): Promise<EdgeLineResults>;
+  detectEdges(bands: EdgeBandsInput, rotationToleranceDegrees: number): Promise<EdgeLineResults>;
 
   /**
    * Terminates all 4 workers immediately. Any in-flight `detectEdges()`
@@ -188,7 +193,11 @@ function handleResultMessage(message: WorkerResponse, pending: Map<number, Pendi
   }
 }
 
-function sendDetectRequest(slot: WorkerSlot, band: EdgeBandPixels): Promise<FittedLine | null> {
+function sendDetectRequest(
+  slot: WorkerSlot,
+  band: EdgeBandPixels,
+  rotationToleranceDegrees: number,
+): Promise<FittedLine | null> {
   if (slot.dead) {
     // The worker crashed after `ready` had already resolved (see
     // WorkerSlot.dead's doc comment) — posting to it would either throw or,
@@ -202,7 +211,13 @@ function sendDetectRequest(slot: WorkerSlot, band: EdgeBandPixels): Promise<Fitt
     );
   }
   const id = slot.nextRequestId++;
-  const request: DetectEdgeRequest = { type: "detect-edge", id, band };
+  const request: DetectEdgeRequest = {
+    type: "detect-edge",
+    id,
+    band,
+    outwardDirection: outwardDirectionForSide(slot.side),
+    rotationToleranceDegrees,
+  };
   return new Promise<FittedLine | null>((resolve, reject) => {
     slot.pending.set(id, { resolve, reject });
     slot.worker.postMessage(request, [band.data.buffer]);
@@ -219,7 +234,7 @@ export function createEdgeDetectionPool(): EdgeDetectionPool {
 
   const ready = Promise.all(slots.map((slot) => slot.ready)).then(() => undefined);
 
-  async function detectEdges(bands: EdgeBandsInput): Promise<EdgeLineResults> {
+  async function detectEdges(bands: EdgeBandsInput, rotationToleranceDegrees: number): Promise<EdgeLineResults> {
     await ready;
     const [top, right, bottom, left] = bands;
     const [topSlot, rightSlot, bottomSlot, leftSlot] = slots as [
@@ -229,10 +244,10 @@ export function createEdgeDetectionPool(): EdgeDetectionPool {
       WorkerSlot,
     ];
     const results = await Promise.all([
-      sendDetectRequest(topSlot, top),
-      sendDetectRequest(rightSlot, right),
-      sendDetectRequest(bottomSlot, bottom),
-      sendDetectRequest(leftSlot, left),
+      sendDetectRequest(topSlot, top, rotationToleranceDegrees),
+      sendDetectRequest(rightSlot, right, rotationToleranceDegrees),
+      sendDetectRequest(bottomSlot, bottom, rotationToleranceDegrees),
+      sendDetectRequest(leftSlot, left, rotationToleranceDegrees),
     ]);
     return results as EdgeLineResults;
   }

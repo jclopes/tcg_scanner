@@ -5,7 +5,7 @@
 // contract both sides (pool.ts on the main thread, edgeDetectionWorker.ts
 // inside the worker) must agree on.
 
-import type { EdgeBandPixels, FittedLine } from "../core";
+import type { EdgeBandPixels, FittedLine, Point } from "../core";
 
 /**
  * Sent from the main thread (pool.ts) to a worker.
@@ -14,11 +14,20 @@ import type { EdgeBandPixels, FittedLine } from "../core";
  * produced it (a worker processes one request at a time, but the id keeps
  * the protocol correct even if that ever changes). `band`'s `data.buffer`
  * is transferred (not structured-clone-copied) — see pool.ts.
+ * `outwardDirection` is fitEdgeLine's outward-clustering parameter (see its
+ * doc comment) — always the same value for a given worker slot (it never
+ * handles a different side), but sent per-request rather than configured
+ * once, to keep each request self-contained. `rotationToleranceDegrees` is
+ * fitEdgeLine's angle-plausibility parameter (see its doc comment) — the
+ * same `ToleranceConfig.rotationToleranceDegrees` used for the live scan
+ * loop generally (see DEFAULT_TOLERANCE_CONFIG).
  */
 export interface DetectEdgeRequest {
   type: "detect-edge";
   id: number;
   band: EdgeBandPixels;
+  outwardDirection: Point;
+  rotationToleranceDegrees: number;
 }
 
 /**

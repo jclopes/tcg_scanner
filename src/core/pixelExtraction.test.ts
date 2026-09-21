@@ -40,6 +40,7 @@ describe("extractGrayscaleRegion", () => {
     expect(result.width).toBe(1);
     expect(result.height).toBe(1);
     expect(result.data[0]).toBe(Math.round(0.299 * 200));
+    expect(result.origin).toEqual({ x: 1, y: 1 });
   });
 
   it("clamps a region that extends past the source's right/bottom bounds", () => {
@@ -52,9 +53,11 @@ describe("extractGrayscaleRegion", () => {
     expect(result.width).toBe(2);
     expect(result.height).toBe(2);
     expect(Array.from(result.data)).toEqual([10, 20, 30, 40]);
+    // Clamped on the right/bottom, not the origin corner — origin is unchanged.
+    expect(result.origin).toEqual({ x: 0, y: 0 });
   });
 
-  it("clamps a region whose origin is negative (extends past the top/left bounds)", () => {
+  it("clamps a region whose origin is negative (extends past the top/left bounds), and reports the clamped origin", () => {
     const source = buildBuffer(2, 2, [
       [10, 10, 10, 255], [20, 20, 20, 255],
       [30, 30, 30, 255], [40, 40, 40, 255],
@@ -63,6 +66,11 @@ describe("extractGrayscaleRegion", () => {
     expect(result.width).toBe(1);
     expect(result.height).toBe(1);
     expect(Array.from(result.data)).toEqual([10]);
+    // The requested origin was (-1,-1); a caller translating a line fit
+    // against this data back into the source's coordinate space must use
+    // this clamped (0,0), not the requested (-1,-1), or it'll be off by
+    // exactly the clamped amount (the bug this field exists to prevent).
+    expect(result.origin).toEqual({ x: 0, y: 0 });
   });
 
   it("returns a zero-size result for a region entirely outside the source bounds", () => {

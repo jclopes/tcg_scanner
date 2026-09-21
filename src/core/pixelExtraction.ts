@@ -30,12 +30,14 @@ export interface RgbaPixelBuffer {
  * computed in continuous coordinates) — both are rounded to the nearest
  * pixel. The region may also extend partially or fully outside the source
  * buffer's bounds (e.g. a tolerance-widened band near the frame edge); it is
- * clamped to the source's actual pixel bounds. A region that ends up with
+ * clamped to the source's actual pixel bounds, and the result's `origin` is
+ * the *clamped* top-left corner, not necessarily `region.origin` — callers
+ * must translate using the returned `origin`. A region that ends up with
  * zero width or height after clamping (including one entirely outside the
  * source) returns a degenerate `{ width: 0, height: 0, data: new
- * Uint8ClampedArray(0) }` — callers don't need a special case for this,
- * since `fitEdgeLine` already treats any band with `width < 2 || height < 2`
- * as "not found" (returns `null`).
+ * Uint8ClampedArray(0), origin }` — callers don't need a special case for
+ * this, since `fitEdgeLine` already treats any band with
+ * `width < 2 || height < 2` as "not found" (returns `null`).
  *
  * Grayscale conversion uses the standard Rec. 601 luma weights
  * (0.299 R + 0.587 G + 0.114 B), ignoring alpha, rounded to the nearest
@@ -67,5 +69,5 @@ export function extractGrayscaleRegion(
     }
   }
 
-  return { data, width, height };
+  return { data, width, height, origin: { x: x0, y: y0 } };
 }

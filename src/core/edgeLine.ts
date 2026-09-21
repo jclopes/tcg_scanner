@@ -8,8 +8,9 @@ import {
   EDGE_HOUGH_THETA,
   EDGE_HOUGH_VOTE_THRESHOLD,
   EDGE_MIN_CONFIDENCE,
+  EDGE_OUTWARD_GAP_TOLERANCE_FRACTION,
 } from "./constants";
-import type { EdgeBandPixels, FittedLine, OpenCv } from "./types";
+import type { EdgeBandPixels, FittedLine, OpenCv, Point } from "./types";
 
 /**
  * Cheap fail-fast "is there any meaningful edge in this band at all" check,
@@ -69,6 +70,18 @@ interface Segment {
   length: number;
 }
 
+/** Absolute angle between two directions, in degrees, treating a direction
+ * and its negation as equivalent (a line has no inherent forward) — e.g.
+ * used to check a Hough segment's angle against the edge direction a band
+ * expects, without caring which end of the segment is "first". */
+export function angleBetweenDirectionsDegrees(a: Point, b: Point): number {
+  const aNorm = Math.hypot(a.x, a.y);
+  const bNorm = Math.hypot(b.x, b.y);
+  const dot = (a.x * b.x + a.y * b.y) / (aNorm * bNorm);
+  const clamped = Math.max(-1, Math.min(1, Math.abs(dot)));
+  return (Math.acos(clamped) * 180) / Math.PI;
+}
+
 /**
  * Fits the dominant straight edge line within a band's pixel data.
  *
@@ -79,19 +92,43 @@ interface Segment {
  *    running Canny/HoughLinesP on every frame.
  * 2. Canny edge detection, then HoughLinesP to find straight-line segments.
  * 3. If no segments were found, return null ("edge-not-found").
- * 4. Combine all detected segments (there may be several short, fragmented
- *    segments — e.g. a finger occluding part of the edge) into a single
- *    robust line via a weighted total-least-squares fit: each segment
- *    contributes its two endpoints, weighted by the segment's length, and
- *    the fitted line's direction is the dominant eigenvector of the
- *    resulting 2x2 weighted-covariance matrix (i.e. the endpoint scatter's
- *    principal axis).
- * 5. Confidence combines two [0,1] measures:
+ * 4. Reject segments whose angle isn't plausibly this edge: the band's
+ *    expected edge direction is known ahead of time (perpendicular to
+ *    `outwardDirection`, which is axis-aligned), up to
+ *    `rotationToleranceDegrees` of card rotation. A segment further
+ *    off-angle than that (a shadow, a reflection, a scratch) can't be the
+ *    real edge regardless of how strong or well-placed it is, so it's
+ *    dropped before the outward-preference step below ever sees it. If
+ *    nothing survives, return null ("edge-not-found").
+ * 5. Prefer the outward-most edge: a band can contain more than one strong
+ *    linear feature passing the angle check — the card's true physical
+ *    edge, plus (since the band is deliberately widened by
+ *    position/zoom/rotation tolerance) possibly an inner feature closer to
+ *    the card's interior, e.g. its own printed border or artwork frame,
+ *    that happens to run roughly parallel to it. Blending both
+ *    indiscriminately would pull the fit inward, off the true edge.
+ *    Instead, the surviving segments are sorted by how far "outward" (per
+ *    `outwardDirection`) each one sits and walked from the outward-most
+ *    one inward, stopping as soon as one step's gap exceeds
+ *    EDGE_OUTWARD_GAP_TOLERANCE_FRACTION — a real further-in feature is
+ *    separated from the true edge by a visible gap, whereas fragments of
+ *    one real edge (even one spread out across the band by rotation) stay
+ *    close together step to step. Everything from that gap inward is
+ *    discarded before fitting, the same as if it were noise.
+ * 6. Combine the kept cluster's segments (there may be several short,
+ *    fragmented segments — e.g. a finger occluding part of the edge) into a
+ *    single robust line via a weighted total-least-squares fit: each
+ *    segment contributes its two endpoints, weighted by the segment's
+ *    length, and the fitted line's direction is the dominant eigenvector of
+ *    the resulting 2x2 weighted-covariance matrix (i.e. the endpoint
+ *    scatter's principal axis).
+ * 7. Confidence combines two [0,1] measures:
  *    - "linearity": (λ1-λ2)/(λ1+λ2) of the covariance's eigenvalues — 1 when
  *      all endpoints lie exactly on a line, lower when they're scattered.
- *    - "coverage": total detected segment length / the band's long-axis
+ *    - "coverage": kept segments' total length / the band's long-axis
  *      dimension, capped at 1 — how much of the expected edge length was
- *      actually found.
+ *      actually found (segments discarded as "further inward" don't count
+ *      toward this).
  *    confidence = linearity * coverage. If below EDGE_MIN_CONFIDENCE, the
  *    fit is treated as not-found (returns null) rather than as a usable but
  *    weak line.
@@ -105,7 +142,12 @@ interface Segment {
  * injection) rather than importing/awaiting a global — see OpenCv's doc
  * comment in types.ts.
  */
-export function fitEdgeLine(cv: OpenCv, samples: EdgeBandPixels): FittedLine | null {
+export function fitEdgeLine(
+  cv: OpenCv,
+  samples: EdgeBandPixels,
+  outwardDirection: Point,
+  rotationToleranceDegrees: number,
+): FittedLine | null {
   const { data, width, height } = samples;
   if (width < 2 || height < 2 || data.length !== width * height) {
     return null;
@@ -116,6 +158,7 @@ export function fitEdgeLine(cv: OpenCv, samples: EdgeBandPixels): FittedLine | n
   }
 
   const longAxis = Math.max(width, height);
+  const shortAxis = Math.min(width, height);
 
   const src = cv.matFromArray(height, width, cv.CV_8UC1, data);
   const edges = new cv.Mat();
@@ -143,8 +186,7 @@ export function fitEdgeLine(cv: OpenCv, samples: EdgeBandPixels): FittedLine | n
       return null;
     }
 
-    const segments: Segment[] = [];
-    let totalLength = 0;
+    const allSegments: Segment[] = [];
     for (let i = 0; i < segmentCount; i++) {
       const base = i * 4;
       const x1 = lines.data32S[base]!;
@@ -153,12 +195,50 @@ export function fitEdgeLine(cv: OpenCv, samples: EdgeBandPixels): FittedLine | n
       const y2 = lines.data32S[base + 3]!;
       const length = Math.hypot(x2 - x1, y2 - y1);
       if (length <= 0) continue;
-      segments.push({ x1, y1, x2, y2, length });
-      totalLength += length;
+      allSegments.push({ x1, y1, x2, y2, length });
     }
 
-    if (segments.length === 0) {
+    if (allSegments.length === 0) {
       return null;
+    }
+
+    // Step 4: drop segments that can't plausibly be this edge by angle
+    // alone. The expected edge direction is outwardDirection rotated 90° —
+    // it's always axis-aligned, so the rotation is exact, no trig needed.
+    const alongEdgeDirection: Point = { x: -outwardDirection.y, y: outwardDirection.x };
+    const plausibleSegments = allSegments.filter((segment) => {
+      const segmentDirection: Point = { x: segment.x2 - segment.x1, y: segment.y2 - segment.y1 };
+      return angleBetweenDirectionsDegrees(segmentDirection, alongEdgeDirection) <= rotationToleranceDegrees;
+    });
+
+    if (plausibleSegments.length === 0) {
+      return null;
+    }
+
+    // A segment's position along outwardDirection — its midpoint's
+    // projection, one representative number per segment (see step 5 above).
+    const outwardProjection = (segment: Segment): number =>
+      ((segment.x1 + segment.x2) / 2) * outwardDirection.x + ((segment.y1 + segment.y2) / 2) * outwardDirection.y;
+
+    const sortedByOutward = [...plausibleSegments].sort(
+      (a, b) => outwardProjection(b) - outwardProjection(a),
+    );
+    const gapTolerance = shortAxis * EDGE_OUTWARD_GAP_TOLERANCE_FRACTION;
+    const segments: Segment[] = [sortedByOutward[0]!];
+    let previousProjection = outwardProjection(sortedByOutward[0]!);
+    for (let i = 1; i < sortedByOutward.length; i++) {
+      const segment = sortedByOutward[i]!;
+      const projection = outwardProjection(segment);
+      if (previousProjection - projection > gapTolerance) {
+        break;
+      }
+      segments.push(segment);
+      previousProjection = projection;
+    }
+
+    let totalLength = 0;
+    for (const seg of segments) {
+      totalLength += seg.length;
     }
 
     // Weighted mean of all segment endpoints (each endpoint weighted by
