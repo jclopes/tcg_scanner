@@ -3,23 +3,25 @@ import type { Size } from "../core";
 /** The hard floor this app requires the camera feed to meet — Full HD or
  * higher (see CAMERA_RESOLUTION_OPTIONS in config.ts). Enforced via a
  * `min` constraint in startCameraStream, not just offered as a preference. */
-const MIN_CAMERA_WIDTH = 1920;
-const MIN_CAMERA_HEIGHT = 1080;
+export const MIN_CAMERA_WIDTH = 1920;
+export const MIN_CAMERA_HEIGHT = 1080;
 
 /**
- * Requests camera access and attaches the resulting stream to `video`,
- * preferring the environment/back camera (`facingMode: "environment"`)
- * since this app scans physical cards, not selfies. Resolves once the
- * video's metadata has loaded (so `video.videoWidth`/`videoHeight` are
- * available) and playback has started.
+ * Requests camera access and attaches the resulting stream to `video`.
+ * Resolves once the video's metadata has loaded (so
+ * `video.videoWidth`/`videoHeight` are available) and playback has started.
  *
- * `facingMode` is requested as `ideal`, not `exact` — most laptop/desktop
- * webcams have no "environment" camera at all, and an `exact` constraint
- * would make `getUserMedia` reject outright on those devices instead of
- * just falling back to whatever camera is available (per the plan's
- * "Works with both a phone browser and a desktop/laptop webcam" acceptance
- * criterion). `targetResolution`'s width/height are requested as `ideal`
- * (the caller's preferred size, e.g. from the resolution dropdown — see
+ * When `deviceId` is given, that exact camera is requested (see
+ * listFullHdCameras in cameraDevices.ts, which is how the caller learns
+ * which device ids exist and support Full HD). Otherwise `facingMode` is
+ * requested as `ideal` (not `exact` — most laptop/desktop webcams have no
+ * "environment" camera at all, and an `exact` constraint would make
+ * `getUserMedia` reject outright on those devices instead of just falling
+ * back to whatever camera is available), preferring the environment/back
+ * camera since this app scans physical cards, not selfies.
+ *
+ * `targetResolution`'s width/height are requested as `ideal` (the caller's
+ * preferred size, e.g. from the resolution dropdown — see
  * CAMERA_RESOLUTION_OPTIONS' doc comment in config.ts for why the
  * negotiated size can end up different from what was asked for) but with a
  * hard `min` of 1920×1080: this app requires Full HD or higher, so a
@@ -33,7 +35,11 @@ const MIN_CAMERA_HEIGHT = 1080;
  * is responsible for surfacing this to the user rather than failing
  * silently, per the task's explicit instruction.
  */
-export async function startCameraStream(video: HTMLVideoElement, targetResolution: Size): Promise<void> {
+export async function startCameraStream(
+  video: HTMLVideoElement,
+  targetResolution: Size,
+  deviceId?: string,
+): Promise<void> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error(
       "Camera access (getUserMedia) isn't supported in this browser. Try a recent Chrome or Safari.",
@@ -43,7 +49,7 @@ export async function startCameraStream(video: HTMLVideoElement, targetResolutio
   const constraints: MediaStreamConstraints = {
     audio: false,
     video: {
-      facingMode: { ideal: "environment" },
+      ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: "environment" } }),
       width: { min: MIN_CAMERA_WIDTH, ideal: targetResolution.width },
       height: { min: MIN_CAMERA_HEIGHT, ideal: targetResolution.height },
     },

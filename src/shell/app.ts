@@ -10,8 +10,14 @@ import { createEdgeDetectionPool } from "../workers";
 import type { EdgeDetectionPool } from "../workers";
 import { canvasToObjectURL } from "./canvasUtils";
 import { startCameraStream, stopCameraStream } from "./cameraStream";
+import { listFullHdCameras } from "./cameraDevices";
+import type { CameraOption } from "./cameraDevices";
 import { captureFlattenedCard } from "./capture";
-import { CAMERA_RESOLUTION_OPTIONS, DEFAULT_CAMERA_RESOLUTION } from "./config";
+import { DEFAULT_CAMERA_RESOLUTION, resolutionOptionsForCamera } from "./config";
+import { evaluateFrameForQuad } from "./frameDetection";
+import { FrameSampler } from "./frameSampler";
+import { captureHiResStill } from "./hiResStill";
+import { loadPreferences, savePreferences } from "./preferences";
 import {
   buildBurstFrameSteps,
   buildEdgeBandSteps,
@@ -56,6 +62,7 @@ export function initApp(cv: OpenCv): void {
   const resultSection = requireElement<HTMLElement>("result");
   const resultImage = requireElement<HTMLImageElement>("result-image");
   const formatSelect = requireElement<HTMLSelectElement>("format-select");
+  const cameraSelect = requireElement<HTMLSelectElement>("camera-select");
   const resolutionSelect = requireElement<HTMLSelectElement>("resolution-select");
   const resolutionStatus = requireElement<HTMLElement>("resolution-status");
   const debugCheckbox = requireElement<HTMLInputElement>("debug-checkbox");
@@ -74,11 +81,17 @@ export function initApp(cv: OpenCv): void {
   // requirement beyond "until the page reloads").
   let cardFormat: CardPrintFormat = "portrait";
 
-  // Also sticky — the *requested* camera resolution (see
-  // CAMERA_RESOLUTION_OPTIONS' doc comment for why the camera's actual
-  // negotiated resolution, shown in resolutionStatus, can end up different
-  // from this).
-  let targetCameraResolution: Size = DEFAULT_CAMERA_RESOLUTION;
+  // Camera/resolution choices, by contrast, persist across sessions (see
+  // preferences.ts) — restored below once the camera list has loaded.
+  const preferences = loadPreferences();
+
+  let cameras: CameraOption[] = [];
+  let selectedCamera: CameraOption | null = null;
+
+  // The *requested* camera resolution (see CAMERA_RESOLUTION_OPTIONS' doc
+  // comment for why the camera's actual negotiated resolution, shown in
+  // resolutionStatus, can end up different from this).
+  let targetCameraResolution: Size = preferences.resolution ?? DEFAULT_CAMERA_RESOLUTION;
 
   let latestOrientation: Orientation | null = null;
   let latestFrameSize: Size | null = null;
@@ -136,29 +149,72 @@ export function initApp(cv: OpenCv): void {
     }
   });
 
-  // Forces a one-off debug capture of whichever frame the loop evaluates
-  // next, showing what each edge did and didn't detect — independent of
-  // (and without disturbing) the loop's own accept/reject flow. Only
-  // meaningful while a scan is actually running (detectionLoop is set);
-  // render() keeps the button disabled otherwise.
+  // Forces a one-off debug capture, showing what each edge did and didn't
+  // detect — independent of (and without disturbing) the loop's own
+  // accept/reject flow. Only meaningful while a scan is actually running
+  // (detectionLoop/pool are set); render() keeps the button disabled
+  // otherwise.
   debugForceButton.addEventListener("click", () => {
-    detectionLoop?.requestForcedDebugCapture((snapshot: ForcedDebugSnapshot) => {
-      const entries: DebugEntry[] = [];
-      if (snapshot.rejectionReason) {
-        entries.push(debugRejectionNote(snapshot.rejectionReason));
-      }
-      entries.push(...buildEdgeBandSteps(snapshot.bands, snapshot.lines));
-      renderDebugSteps(debugPanel, entries);
-    });
+    void handleDebugForceCapture();
   });
+
+  /**
+   * Tries for a real hi-res still first (`captureHiResStill`, via
+   * `ImageCapture.takePhoto()`) — a camera's still-photo capability is
+   * often meaningfully sharper/higher-resolution than its live preview
+   * stream, and the whole point of this debug button is to see the edge
+   * detector's best possible look at the card. Runs the same
+   * `evaluateFrameForQuad` detection pass against that still that the live
+   * loop runs against preview frames, via a fresh one-off `FrameSampler`
+   * (cheap; this isn't a hot path).
+   *
+   * Falls back to the live loop's existing "capture whatever frame it
+   * evaluates next" behavior whenever a hi-res still isn't available (no
+   * `ImageCapture` support, or `takePhoto()` failing) — same diagnostic
+   * value, just at preview resolution.
+   */
+  async function handleDebugForceCapture(): Promise<void> {
+    if (!pool) {
+      return;
+    }
+
+    const stillCanvas = await captureHiResStill(video);
+    if (stillCanvas) {
+      try {
+        const frameSize: Size = { width: stillCanvas.width, height: stillCanvas.height };
+        const evaluation = await evaluateFrameForQuad(new FrameSampler(), pool, stillCanvas, frameSize, true);
+        if (evaluation.raw) {
+          renderForcedDebugSnapshot(evaluation.raw, `Hi-res still — ${frameSize.width} × ${frameSize.height}`);
+          return;
+        }
+      } catch (error: unknown) {
+        console.error("Hi-res debug capture failed; falling back to the live preview frame.", error);
+      }
+    }
+
+    detectionLoop?.requestForcedDebugCapture((snapshot) => renderForcedDebugSnapshot(snapshot));
+  }
+
+  function renderForcedDebugSnapshot(snapshot: ForcedDebugSnapshot, sourceLabel?: string): void {
+    const entries: DebugEntry[] = [];
+    if (sourceLabel) {
+      entries.push(debugStageHeading(sourceLabel));
+    }
+    if (snapshot.rejectionReason) {
+      entries.push(debugRejectionNote(snapshot.rejectionReason));
+    }
+    entries.push(...buildEdgeBandSteps(snapshot.bands, snapshot.lines));
+    renderDebugSteps(debugPanel, entries);
+  }
 
   function render(): void {
     statusEl.textContent = cameraStatus === "starting" ? "Starting camera…" : statusMessage(state);
     statusEl.dataset.kind = state.phase === "error" ? "error" : "";
 
-    scanButton.disabled = cameraStatus === "starting";
+    scanButton.disabled = cameraStatus === "starting" || cameras.length === 0;
     scanButton.textContent = scanButtonLabel(cameraStatus);
     resolutionSelect.disabled = cameraStatus === "starting";
+    cameraSelect.disabled = cameraStatus === "starting" || cameras.length === 0;
 
     debugForceButton.disabled = cameraStatus !== "active";
 
@@ -178,13 +234,26 @@ export function initApp(cv: OpenCv): void {
   formatSelect.addEventListener("change", () => setCardFormat(parseCardPrintFormat(formatSelect.value)));
   setCardFormat(cardFormat);
 
-  for (const option of CAMERA_RESOLUTION_OPTIONS) {
-    const el = document.createElement("option");
-    el.value = resolutionOptionValue(option.size);
-    el.textContent = option.label;
-    resolutionSelect.append(el);
+  /** (Re)populates the resolution dropdown with whichever
+   * CAMERA_RESOLUTION_OPTIONS entries the given camera actually supports,
+   * and settles `targetCameraResolution` on the best available match for
+   * the currently-desired one (the persisted preference, or whatever was
+   * already selected) — so switching to a camera with a lower max
+   * resolution doesn't leave the dropdown showing an option it can't
+   * deliver. */
+  function populateResolutionOptions(camera: CameraOption | null, desired: Size): void {
+    const options = camera ? resolutionOptionsForCamera(camera.maxWidth, camera.maxHeight) : [];
+    resolutionSelect.replaceChildren();
+    for (const option of options) {
+      const el = document.createElement("option");
+      el.value = resolutionOptionValue(option.size);
+      el.textContent = option.label;
+      resolutionSelect.append(el);
+    }
+    const match = options.find((option) => resolutionOptionValue(option.size) === resolutionOptionValue(desired));
+    targetCameraResolution = (match ?? options[options.length - 1] ?? { size: DEFAULT_CAMERA_RESOLUTION }).size;
+    resolutionSelect.value = resolutionOptionValue(targetCameraResolution);
   }
-  resolutionSelect.value = resolutionOptionValue(targetCameraResolution);
 
   // Changing resolution while the camera's already running restarts the
   // whole scan cycle with the new target — getUserMedia constraints are
@@ -192,18 +261,69 @@ export function initApp(cv: OpenCv): void {
   // already granted, so this is fast) is simpler and more reliable across
   // devices than trying to renegotiate an already-flowing track in place.
   resolutionSelect.addEventListener("change", () => {
-    const selected = CAMERA_RESOLUTION_OPTIONS.find(
-      (option) => resolutionOptionValue(option.size) === resolutionSelect.value,
-    );
+    const options = selectedCamera ? resolutionOptionsForCamera(selectedCamera.maxWidth, selectedCamera.maxHeight) : [];
+    const selected = options.find((option) => resolutionOptionValue(option.size) === resolutionSelect.value);
     if (!selected) {
       return;
     }
     targetCameraResolution = selected.size;
+    savePreferences({ cameraDeviceId: selectedCamera?.deviceId, resolution: targetCameraResolution });
     if (cameraStatus === "active") {
       stopScan();
       void startScan();
     }
   });
+
+  cameraSelect.addEventListener("change", () => {
+    const camera = cameras.find((c) => c.deviceId === cameraSelect.value);
+    if (!camera) {
+      return;
+    }
+    selectedCamera = camera;
+    populateResolutionOptions(camera, targetCameraResolution);
+    savePreferences({ cameraDeviceId: camera.deviceId, resolution: targetCameraResolution });
+    if (cameraStatus === "active") {
+      stopScan();
+      void startScan();
+    }
+  });
+
+  void populateCameraOptions();
+
+  /**
+   * Probes the device's cameras for Full HD support (see
+   * listFullHdCameras) and fills the camera dropdown — run once at
+   * startup. Restores the persisted camera choice if it's still present,
+   * otherwise defaults to the first supported camera. Runs independently
+   * of OpenCV.js loading / the scan flow: the dropdown is meant to be
+   * populated and ready before the user ever presses Start Scan.
+   */
+  async function populateCameraOptions(): Promise<void> {
+    cameras = await listFullHdCameras();
+    cameraSelect.replaceChildren();
+
+    if (cameras.length === 0) {
+      const el = document.createElement("option");
+      el.value = "";
+      el.textContent = "No Full HD camera found";
+      cameraSelect.append(el);
+      cameraSelect.disabled = true;
+      resolutionSelect.replaceChildren();
+      return;
+    }
+
+    for (const camera of cameras) {
+      const el = document.createElement("option");
+      el.value = camera.deviceId;
+      el.textContent = camera.label;
+      cameraSelect.append(el);
+    }
+
+    selectedCamera = cameras.find((c) => c.deviceId === preferences.cameraDeviceId) ?? cameras[0]!;
+    cameraSelect.value = selectedCamera.deviceId;
+    populateResolutionOptions(selectedCamera, targetCameraResolution);
+    render();
+  }
 
   scanButton.addEventListener("click", () => {
     if (cameraStatus === "active") {
@@ -214,7 +334,7 @@ export function initApp(cv: OpenCv): void {
   });
 
   async function startScan(): Promise<void> {
-    if (cameraStatus !== "stopped") {
+    if (cameraStatus !== "stopped" || !selectedCamera) {
       return;
     }
 
@@ -223,7 +343,7 @@ export function initApp(cv: OpenCv): void {
     cameraStatus = "starting";
     setState({ phase: "idle" });
     try {
-      await startCameraStream(video, targetCameraResolution);
+      await startCameraStream(video, targetCameraResolution, selectedCamera.deviceId);
       cameraStatus = "active";
       if (!pool) {
         pool = createEdgeDetectionPool();
@@ -456,7 +576,7 @@ export function initApp(cv: OpenCv): void {
     releaseScanResources();
     clearGuideOverlay(overlayCanvas);
     clearResultImage();
-    resolutionStatus.textContent = "Resolution: —";
+    resolutionStatus.textContent = "-";
     setState({ phase: "idle" });
   }
 
@@ -477,7 +597,7 @@ export function initApp(cv: OpenCv): void {
     // The camera's *actual* negotiated resolution — may differ from
     // targetCameraResolution, since it's requested as `ideal` (see
     // CAMERA_RESOLUTION_OPTIONS' doc comment).
-    resolutionStatus.textContent = `Resolution: ${frameSize.width} × ${frameSize.height}`;
+    resolutionStatus.textContent = `${frameSize.width} × ${frameSize.height}`;
     // Keep the camera-stage container's aspect ratio matching the video's
     // actual intrinsic frame shape, so the guide-overlay canvas (sized to
     // that same frame in guideOverlay.ts) lines up pixel-for-pixel with the

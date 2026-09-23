@@ -8,13 +8,30 @@
       :root {
         color-scheme: dark;
         font-family: system-ui, sans-serif;
+        --bg: #111;
+        --panel-bg: #1a1a1a;
+        --panel-border: #2e2e2e;
+        --text: #eee;
+        --text-muted: #999;
+        --accent: #38e082;
+        --accent-text: #111;
+        --danger: #ff7b7b;
+        --control-bg: #222;
+        --control-border: #444;
+        --radius: 8px;
+        --radius-sm: 6px;
+        --gap: 0.75rem;
+      }
+
+      * {
+        box-sizing: border-box;
       }
 
       body {
         margin: 0;
         padding: 1rem;
-        background: #111;
-        color: #eee;
+        background: var(--bg);
+        color: var(--text);
         display: flex;
         justify-content: center;
         gap: 1rem;
@@ -26,7 +43,7 @@
         width: 100%;
         display: flex;
         flex-direction: column;
-        gap: 0.75rem;
+        gap: 1rem;
       }
 
       h1 {
@@ -38,10 +55,11 @@
         min-height: 1.2em;
         margin: 0;
         font-size: 0.9rem;
+        color: var(--text-muted);
       }
 
       #status[data-kind="error"] {
-        color: #ff7b7b;
+        color: var(--danger);
       }
 
       #camera-stage {
@@ -57,7 +75,7 @@
         aspect-ratio: 16 / 9;
         background: #000;
         overflow: hidden;
-        border-radius: 8px;
+        border-radius: var(--radius);
       }
 
       #camera-video,
@@ -72,20 +90,11 @@
         object-fit: cover;
       }
 
-      #controls {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.75rem;
-      }
-
-      #resolution-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.75rem;
-        font-size: 0.85rem;
-        color: #ccc;
+      #resolution-status {
+        margin: -0.5rem 0 0;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        text-align: right;
       }
 
       .visually-hidden {
@@ -100,21 +109,64 @@
         border: 0;
       }
 
-      .format-select {
-        padding: 0.4rem 0.75rem;
-        border: 1px solid #555;
-        background: #222;
-        color: #eee;
-        border-radius: 6px;
+      #settings {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        padding: 0.85rem;
+        border: 1px solid var(--panel-border);
+        border-radius: var(--radius);
+        background: var(--panel-bg);
+      }
+
+      .setting-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--gap);
+      }
+
+      .setting-row label {
+        font-size: 0.85rem;
+        color: #ccc;
+      }
+
+      .setting-select {
+        flex: 1 1 auto;
+        max-width: 65%;
+        padding: 0.4rem 0.6rem;
+        font-size: 0.9rem;
+        border: 1px solid var(--control-border);
+        background: var(--control-bg);
+        color: var(--text);
+        border-radius: var(--radius-sm);
+      }
+
+      .setting-select:disabled {
+        opacity: 0.6;
+      }
+
+      .debug-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.85rem;
+        color: #ccc;
+      }
+
+      #actions {
+        display: flex;
+        justify-content: center;
       }
 
       #scan-button {
-        padding: 0.6rem 1.25rem;
+        width: 100%;
+        padding: 0.7rem 1.25rem;
         font-size: 1rem;
-        border-radius: 8px;
+        border-radius: var(--radius);
         border: none;
-        background: #38e082;
-        color: #111;
+        background: var(--accent);
+        color: var(--accent-text);
         font-weight: 600;
       }
 
@@ -133,17 +185,15 @@
         display: none;
       }
 
-      #result img {
-        max-width: 100%;
-        border-radius: 8px;
-        background: #000;
+      #result h2 {
+        font-size: 1rem;
+        margin: 0;
       }
 
-      .debug-toggle {
-        display: flex;
-        align-items: center;
-        gap: 0.4rem;
-        font-size: 0.9rem;
+      #result img {
+        max-width: 100%;
+        border-radius: var(--radius);
+        background: #000;
       }
 
       #debug-controls {
@@ -158,10 +208,10 @@
       #debug-force-button {
         padding: 0.4rem 0.75rem;
         font-size: 0.85rem;
-        border: 1px solid #555;
-        background: #222;
-        color: #eee;
-        border-radius: 6px;
+        border: 1px solid var(--control-border);
+        background: var(--control-bg);
+        color: var(--text);
+        border-radius: var(--radius-sm);
       }
 
       #debug-force-button:disabled {
@@ -191,7 +241,7 @@
         width: 100%;
         height: auto;
         display: block;
-        border-radius: 6px;
+        border-radius: var(--radius-sm);
         background: #000;
       }
 
@@ -228,9 +278,9 @@
       .debug-rejection-reason {
         margin: 0;
         padding: 0.5rem;
-        border-radius: 6px;
+        border-radius: var(--radius-sm);
         background: rgba(255, 123, 123, 0.12);
-        color: #ff7b7b;
+        color: var(--danger);
         font-size: 0.8rem;
       }
 
@@ -259,31 +309,38 @@
         <canvas id="guide-overlay"></canvas>
       </div>
 
-      <div id="resolution-row">
-        <span id="resolution-status">Resolution: —</span>
-        <label>
-          <span class="visually-hidden">Camera resolution</span>
-          <select id="resolution-select" class="format-select"></select>
-        </label>
-      </div>
-
-      <div id="controls">
-        <label>
-          <span class="visually-hidden">Card print format</span>
-          <select id="format-select" class="format-select">
+      <section id="settings" aria-label="Scan settings">
+        <div class="setting-row">
+          <label for="camera-select">Camera</label>
+          <select id="camera-select" class="setting-select">
+            <option value="">Detecting cameras…</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <label for="resolution-select">Resolution</label>
+          <select id="resolution-select" class="setting-select"></select>
+        </div>
+        <p id="resolution-status">-</p>
+        <div class="setting-row">
+          <label for="format-select">Card format</label>
+          <select id="format-select" class="setting-select">
             <option value="portrait">Portrait</option>
             <option value="landscape">Landscape</option>
           </select>
-        </label>
-        <label class="debug-toggle">
-          <input type="checkbox" id="debug-checkbox" />
-          Debug
-        </label>
-        <button type="button" id="scan-button">Start Scan</button>
-      </div>
+        </div>
+        <div class="setting-row">
+          <label class="debug-toggle" for="debug-checkbox">
+            <input type="checkbox" id="debug-checkbox" />
+            Debug mode
+          </label>
+          <div id="debug-controls" hidden>
+            <button type="button" id="debug-force-button" disabled>Capture Debug Frame</button>
+          </div>
+        </div>
+      </section>
 
-      <div id="debug-controls" hidden>
-        <button type="button" id="debug-force-button" disabled>Capture Debug Frame</button>
+      <div id="actions">
+        <button type="button" id="scan-button">Start Scan</button>
       </div>
 
       <section id="result" hidden>

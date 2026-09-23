@@ -42,9 +42,29 @@ export const DEFAULT_TOLERANCE_CONFIG: ToleranceConfig = {
  */
 export const CAMERA_RESOLUTION_OPTIONS: readonly { label: string; size: Size }[] = [
   { label: "1920 × 1080 (Full HD)", size: { width: 1920, height: 1080 } },
+  { label: "2560 × 1440 (QHD)", size: { width: 2560, height: 1440 } },
   { label: "3840 × 2160 (4K)", size: { width: 3840, height: 2160 } },
 ];
 
 /** The resolution pre-selected when the app first loads — the minimum this
  * app supports (see CAMERA_RESOLUTION_OPTIONS' doc comment). */
 export const DEFAULT_CAMERA_RESOLUTION: Size = CAMERA_RESOLUTION_OPTIONS[0]!.size;
+
+/**
+ * Narrows CAMERA_RESOLUTION_OPTIONS down to the ones a specific camera can
+ * actually deliver, given its probed max width/height (see
+ * listFullHdCameras in cameraDevices.ts) — per the requirement that the
+ * resolution dropdown's choices depend on the selected camera, while the
+ * Full HD floor still always applies (every CAMERA_RESOLUTION_OPTIONS entry
+ * already meets it, and every camera offered by listFullHdCameras already
+ * meets it too, so this can never return an empty list).
+ */
+export function resolutionOptionsForCamera(
+  maxWidth: number,
+  maxHeight: number,
+): readonly { label: string; size: Size }[] {
+  const supported = CAMERA_RESOLUTION_OPTIONS.filter(
+    (option) => option.size.width <= maxWidth && option.size.height <= maxHeight,
+  );
+  return supported.length > 0 ? supported : [CAMERA_RESOLUTION_OPTIONS[0]!];
+}
