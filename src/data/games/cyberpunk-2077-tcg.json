@@ -1,0 +1,25 @@
+{
+  "game": "cyberpunk-2077-tcg",
+  "regions": [
+    {
+      "label": "collector_number",
+      "type": "text",
+      "allowed_chars_regex": "[B0-9]",
+      "x_mm": 58.80,
+      "y_mm": 97.62,
+      "width_mm": 5.20,
+      "height_mm": 2.23,
+      "rotation_deg": -45
+    },
+    {
+      "label": "set_code",
+      "type": "text",
+      "allowed_chars_regex": "[A-Z0-9\\-\\[\\] ]",
+      "x_mm": 72.40,
+      "y_mm": 60.0,
+      "width_mm": 11.70,
+      "height_mm": 2.30,
+      "rotation_deg": -90
+    }
+  ]
+}

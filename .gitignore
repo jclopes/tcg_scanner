@@ -2,6 +2,8 @@ node_modules/
 dist/
 *.local
 
-# Copied from node_modules by vite.config.ts's copyOpenCvToPublic plugin on
-# every dev/build run — always regenerated, never hand-edited.
+# Copied from node_modules by vite.config.ts's copyOpenCvToPublic /
+# copyTesseractToPublic plugins on every dev/build run — always
+# regenerated, never hand-edited.
 /public/opencv.js
+/public/tesseract/

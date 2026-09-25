@@ -10,3 +10,4 @@ export * from "./perspective";
 export * from "./orientation";
 export * from "./pixelExtraction";
 export * from "./frameQuality";
+export * from "./identification";

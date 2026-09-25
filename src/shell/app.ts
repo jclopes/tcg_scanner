@@ -2,6 +2,7 @@ import {
   CAPTURE_BURST_FRAME_COUNT,
   CAPTURE_BURST_MIN_USABLE_FRAMES,
   CAPTURE_BURST_HARD_LIMIT,
+  computeRegionPixelRects,
   selectBestFrame,
   STANDARD_CARD_ASPECT_RATIO,
 } from "../core";
@@ -16,8 +17,12 @@ import { captureFlattenedCard } from "./capture";
 import { DEFAULT_CAMERA_RESOLUTION, resolutionOptionsForCamera } from "./config";
 import { evaluateFrameForQuad } from "./frameDetection";
 import { FrameSampler } from "./frameSampler";
+import { loadGameConfig } from "./gameConfig";
 import { captureHiResStill } from "./hiResStill";
+import { createOcrWorker, recognizeRegion } from "./ocr";
 import { loadPreferences, savePreferences } from "./preferences";
+import { cropRegion } from "./regionExtraction";
+import type { Worker as TesseractWorker } from "tesseract.js";
 import {
   buildBurstFrameSteps,
   buildEdgeBandSteps,
@@ -61,6 +66,9 @@ export function initApp(cv: OpenCv): void {
   const scanButton = requireElement<HTMLButtonElement>("scan-button");
   const resultSection = requireElement<HTMLElement>("result");
   const resultImage = requireElement<HTMLImageElement>("result-image");
+  const identificationSection = requireElement<HTMLElement>("identification");
+  const identificationStatus = requireElement<HTMLElement>("identification-status");
+  const identificationResults = requireElement<HTMLDListElement>("identification-results");
   const formatSelect = requireElement<HTMLSelectElement>("format-select");
   const cameraSelect = requireElement<HTMLSelectElement>("camera-select");
   const resolutionSelect = requireElement<HTMLSelectElement>("resolution-select");
@@ -126,6 +134,36 @@ export function initApp(cv: OpenCv): void {
       currentResultObjectUrl = null;
     }
     resultImage.removeAttribute("src");
+  }
+
+  function clearIdentificationResults(): void {
+    identificationSection.hidden = true;
+    identificationStatus.textContent = "";
+    identificationResults.replaceChildren();
+  }
+
+  // Hardcoded to the one bundled game config for now — no game-selector UI
+  // yet (see docs/plan/06-card-identification.md's "Out of scope": one
+  // config per game to start). loadGameConfig throws if this doesn't match
+  // a bundled config, which identifyCard's try/catch below surfaces as an
+  // identification error rather than crashing the scan flow.
+  const IDENTIFICATION_GAME = "cyberpunk-2077-tcg";
+
+  // The Tesseract.js worker (see src/shell/ocr.ts) is expensive to spin up
+  // (loading its WASM core + English language data) but cheap to reuse —
+  // unlike `pool` (the edge-detection pool), it's deliberately *not* tied to
+  // the scan/camera lifecycle (releaseScanResources leaves it alone) and is
+  // created once, lazily, on the first identification pass, then kept alive
+  // for the rest of the page's session. Terminated only on "pagehide".
+  let ocrWorker: TesseractWorker | null = null;
+  let ocrWorkerPromise: Promise<TesseractWorker> | null = null;
+
+  function getOcrWorker(): Promise<TesseractWorker> {
+    ocrWorkerPromise ??= createOcrWorker().then((worker) => {
+      ocrWorker = worker;
+      return worker;
+    });
+    return ocrWorkerPromise;
   }
 
   // A scan cycle spans an awaited async flatten step; this is checked
@@ -339,6 +377,7 @@ export function initApp(cv: OpenCv): void {
     }
 
     clearResultImage();
+    clearIdentificationResults();
     debugPanel.replaceChildren();
     cameraStatus = "starting";
     setState({ phase: "idle" });
@@ -558,6 +597,14 @@ export function initApp(cv: OpenCv): void {
       });
       if (debugEntries.length > 0) {
         debugEntries.push({ label: "Flattened output", canvas: outputCanvas });
+      }
+
+      await identifyCard(outputCanvas, requestId, debugEntries);
+      if (!isCurrentScan(requestId)) {
+        return;
+      }
+
+      if (debugEntries.length > 0) {
         renderDebugSteps(debugPanel, debugEntries);
       }
       clearGuideOverlay(overlayCanvas);
@@ -572,10 +619,92 @@ export function initApp(cv: OpenCv): void {
     }
   }
 
+  /**
+   * Automatically runs after every successful capture (called from
+   * confirmAndCapture, right before it finalizes the "captured" state):
+   * loads the hardcoded game's region config, crops+rotates each of its
+   * regions out of `cardCanvas` (see cropRegion in regionExtraction.ts),
+   * OCRs the `type: "text"` ones via the shared, lazily-created Tesseract
+   * worker (see getOcrWorker), and renders the results into the
+   * always-visible identification panel. `type: "image"` regions are
+   * cropped but not OCR'd this phase (see the plan's Open Questions).
+   *
+   * No dataset matching yet (see docs/plan/06-card-identification.md's
+   * eventual UX flow) — this just surfaces what OCR actually read, per
+   * region, so region coordinates and OCR accuracy can be iterated on
+   * against real captures before the matching step is built.
+   *
+   * When `debugEnabled`, each region's cropped/rotated image (the exact
+   * thing handed to Tesseract, per an earlier requirement) is appended to
+   * `debugEntries` — the caller renders those into the debug panel
+   * afterward, alongside the rest of that capture's debug trail, rather
+   * than this function rendering the debug panel itself (which would wipe
+   * out the entries already accumulated for edge bands/quad overlay/burst
+   * frames — renderDebugSteps replaces the whole panel, it doesn't append).
+   *
+   * Never throws — a failure (missing game config, OCR error) is caught
+   * and shown in the identification panel's own status line, since
+   * identification failing shouldn't block the rest of the capture flow
+   * (the flattened image, the main status) from completing normally.
+   */
+  async function identifyCard(
+    cardCanvas: HTMLCanvasElement,
+    requestId: number,
+    debugEntries: DebugEntry[],
+  ): Promise<void> {
+    identificationSection.hidden = false;
+    identificationStatus.textContent = "Identifying…";
+    identificationResults.replaceChildren();
+
+    try {
+      const gameConfig = loadGameConfig(IDENTIFICATION_GAME);
+      const pixelRegions = computeRegionPixelRects(gameConfig.regions, {
+        width: cardCanvas.width,
+        height: cardCanvas.height,
+      });
+
+      const worker = await getOcrWorker();
+      if (!isCurrentScan(requestId)) {
+        return;
+      }
+
+      const results: { label: string; text: string }[] = [];
+      for (const region of pixelRegions) {
+        const cropped = cropRegion(cardCanvas, region);
+        if (debugEnabled) {
+          debugEntries.push({ label: `Region: ${region.label}`, canvas: cropped });
+        }
+        if (region.type !== "text") {
+          continue;
+        }
+        const { filteredText } = await recognizeRegion(worker, cropped, region.allowedCharsRegex);
+        if (!isCurrentScan(requestId)) {
+          return;
+        }
+        results.push({ label: region.label, text: filteredText });
+      }
+
+      identificationStatus.textContent = `Game: ${gameConfig.game}`;
+      for (const result of results) {
+        const dt = document.createElement("dt");
+        dt.textContent = result.label;
+        const dd = document.createElement("dd");
+        dd.textContent = result.text || "(no text recognized)";
+        identificationResults.append(dt, dd);
+      }
+    } catch (error: unknown) {
+      if (!isCurrentScan(requestId)) {
+        return;
+      }
+      identificationStatus.textContent = describeError(error, "Identification failed.");
+    }
+  }
+
   function stopScan(): void {
     releaseScanResources();
     clearGuideOverlay(overlayCanvas);
     clearResultImage();
+    clearIdentificationResults();
     resolutionStatus.textContent = "-";
     setState({ phase: "idle" });
   }
@@ -626,6 +755,10 @@ export function initApp(cv: OpenCv): void {
     releaseScanResources();
     clearGuideOverlay(overlayCanvas);
     render();
+    // The OCR worker is long-lived (see getOcrWorker's doc comment) and so,
+    // unlike `pool`, isn't torn down by releaseScanResources — this is its
+    // one cleanup point.
+    void ocrWorker?.terminate();
   });
 }
 

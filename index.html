@@ -196,6 +196,49 @@
         background: #000;
       }
 
+      #identification {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        padding: 0.85rem;
+        border: 1px solid var(--panel-border);
+        border-radius: var(--radius);
+        background: var(--panel-bg);
+      }
+
+      #identification[hidden] {
+        display: none;
+      }
+
+      #identification h2 {
+        font-size: 1rem;
+        margin: 0;
+      }
+
+      #identification-status {
+        margin: 0;
+        font-size: 0.85rem;
+        color: var(--text-muted);
+      }
+
+      #identification-results {
+        margin: 0;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.3rem 0.75rem;
+      }
+
+      #identification-results dt {
+        font-size: 0.85rem;
+        color: #ccc;
+      }
+
+      #identification-results dd {
+        margin: 0;
+        font-size: 0.9rem;
+        font-family: ui-monospace, monospace;
+      }
+
       #debug-controls {
         display: flex;
         justify-content: flex-end;
@@ -346,6 +389,12 @@
       <section id="result" hidden>
         <h2>Captured card</h2>
         <img id="result-image" alt="Flattened, cropped card capture" />
+      </section>
+
+      <section id="identification" hidden>
+        <h2>Identification</h2>
+        <p id="identification-status"></p>
+        <dl id="identification-results"></dl>
       </section>
     </main>
 

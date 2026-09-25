@@ -17,6 +17,8 @@
     "vitest": "^5.0.1"
   },
   "dependencies": {
-    "@techstark/opencv-js": "^5.0.0-release.1"
+    "@techstark/opencv-js": "^5.0.0-release.1",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "tesseract.js": "^7.0.0"
   }
 }
