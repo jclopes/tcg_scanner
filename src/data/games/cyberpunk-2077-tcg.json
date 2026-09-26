@@ -4,12 +4,13 @@
     {
       "label": "collector_number",
       "type": "text",
-      "allowed_chars_regex": "[B0-9]",
-      "x_mm": 59.50,
+      "allowed_chars_regex": "[B0-9a-z]",
+      "x_mm": 59.60,
       "y_mm": 97.75,
-      "width_mm": 5.50,
-      "height_mm": 2.20,
-      "rotation_deg": -45
+      "width_mm": 5.80,
+      "height_mm": 1.90,
+      "rotation_deg": -45,
+      "max_gap_text_heights": 0.5
     },
     {
       "label": "set_code",
@@ -17,8 +18,8 @@
       "allowed_chars_regex": "[A-Z0-9\\-\\[\\] ]",
       "x_mm": 73.00,
       "y_mm": 59.50,
-      "width_mm": 12.60,
-      "height_mm": 1.90,
+      "width_mm": 13.60,
+      "height_mm": 2.80,
       "rotation_deg": -90
     }
   ]

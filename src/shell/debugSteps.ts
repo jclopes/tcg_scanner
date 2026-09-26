@@ -2,6 +2,7 @@ import type { EdgeBandPixels, FittedLine, Quad } from "../core";
 import { canvasToObjectURL, createCanvas, require2dContext, rotateCanvas } from "./canvasUtils";
 import type { BurstFrameDebugEntry } from "./frameBurst";
 import type { EdgeBands, EdgeLines, QuadRejectionReason } from "./frameDetection";
+import type { TextCropAnalysis } from "./regionExtraction";
 
 /** One labeled image in the debug trail. `variant: "edge-band"` gives the
  * long, thin band strips their own CSS sizing. */
@@ -58,6 +59,103 @@ export function buildQuadOverlayStep(sourceCanvas: HTMLCanvasElement, corners: Q
   ctx.stroke();
 
   return { label, canvas };
+}
+
+const TEXT_PROFILE_STYLE = "rgba(80, 200, 255, 0.8)";
+const LINE_PROFILE_STYLE = "rgba(255, 150, 40, 0.8)";
+
+/**
+ * A text region's search area with its profile plots: row profiles on the
+ * right (glyph-stroke energy in blue, horizontal-line energy in orange),
+ * the column profile underneath (blue), each scaled to its own max with its
+ * threshold as a marker line. The crop rectangle is drawn in green across the
+ * image and plots.
+ */
+export function buildTextBandStep(regionLabel: string, searchCanvas: HTMLCanvasElement, analysis: TextCropAnalysis): DebugStep {
+  const { rows, columns } = analysis;
+  const plotWidth = Math.max(40, Math.round(searchCanvas.width * 0.5));
+  const plotHeight = Math.max(30, Math.round(searchCanvas.height * 0.5));
+  const canvas = createCanvas({ width: searchCanvas.width + plotWidth, height: searchCanvas.height + plotHeight });
+  const ctx = require2dContext(canvas);
+  ctx.fillStyle = "black";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(searchCanvas, 0, 0);
+
+  drawRowProfile(ctx, rows.textProfile, rows.textThreshold, searchCanvas.width, plotWidth, TEXT_PROFILE_STYLE);
+  drawRowProfile(ctx, rows.lineProfile, rows.lineThreshold, searchCanvas.width, plotWidth, LINE_PROFILE_STYLE);
+  if (columns) {
+    drawColumnProfile(ctx, columns.profile, columns.threshold, canvas.height, plotHeight, TEXT_PROFILE_STYLE);
+  }
+
+  ctx.strokeStyle = OVERLAY_STROKE_STYLE;
+  ctx.lineWidth = Math.max(1, Math.round(searchCanvas.height * 0.01));
+  ctx.beginPath();
+  for (const y of rows.crop ? [rows.crop.top, rows.crop.bottom] : []) {
+    ctx.moveTo(0, y);
+    ctx.lineTo(canvas.width, y);
+  }
+  for (const x of columns?.crop ? [columns.crop.left, columns.crop.right] : []) {
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, canvas.height);
+  }
+  ctx.stroke();
+
+  const outcome = rows.crop ? "text crop" : "no text found, using full search area";
+  return { label: `Region: ${regionLabel} — ${outcome}`, canvas };
+}
+
+/** One 1px-tall bar per row, length proportional to `profile[y] / max`, plus
+ * a vertical marker at `threshold`. */
+function drawRowProfile(
+  ctx: CanvasRenderingContext2D,
+  profile: readonly number[],
+  threshold: number,
+  left: number,
+  width: number,
+  style: string,
+): void {
+  const max = Math.max(...profile);
+  if (max <= 0) {
+    return;
+  }
+  ctx.fillStyle = style;
+  profile.forEach((value, y) => {
+    ctx.fillRect(left, y, (value / max) * width, 1);
+  });
+  ctx.strokeStyle = style;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(left + (threshold / max) * width, 0);
+  ctx.lineTo(left + (threshold / max) * width, profile.length);
+  ctx.stroke();
+}
+
+/** One 1px-wide bar per column, rising from `bottom`, height proportional to
+ * `profile[x] / max`, plus a horizontal marker at `threshold`. */
+function drawColumnProfile(
+  ctx: CanvasRenderingContext2D,
+  profile: readonly number[],
+  threshold: number,
+  bottom: number,
+  height: number,
+  style: string,
+): void {
+  const max = Math.max(...profile);
+  if (max <= 0) {
+    return;
+  }
+  ctx.fillStyle = style;
+  profile.forEach((value, x) => {
+    const barHeight = (value / max) * height;
+    ctx.fillRect(x, bottom - barHeight, 1, barHeight);
+  });
+  const thresholdY = bottom - (threshold / max) * height;
+  ctx.strokeStyle = style;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, thresholdY);
+  ctx.lineTo(profile.length, thresholdY);
+  ctx.stroke();
 }
 
 /** One step per attempted burst frame, 1-indexed, in capture order. */

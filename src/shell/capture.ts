@@ -1,5 +1,5 @@
 import { canonicalCardSizeFor, computeOutputRotationDegrees, computePerspectiveTransform, FLATTEN_OVERSAMPLE_FACTOR } from "../core";
-import type { CardPrintFormat, OpenCv, Point, Quad, Size } from "../core";
+import type { CardPrintFormat, Matrix3x3, OpenCv, Point, Quad, Size } from "../core";
 import { createCanvas, rotateCanvas } from "./canvasUtils";
 import type { AcceptedFrame } from "./frameDetection";
 import { orientationFromSize } from "./orientationWatcher";
@@ -7,7 +7,8 @@ import { orientationFromSize } from "./orientationWatcher";
 /**
  * Produces the final card image: perspective-warps `frame`'s quad into an
  * oversampled, exactly card-proportioned canvas, then rotates it upright.
- * The one place the card image is made; display and region OCR both use it.
+ * Used for display and debug; OCR regions are warped straight from the frame
+ * (see warpRegion).
  */
 export function captureFlattenedCard(cv: OpenCv, frame: AcceptedFrame, cardFormat: CardPrintFormat): HTMLCanvasElement {
   const outputSize = flattenedOutputSize(frame.corners);
@@ -36,16 +37,21 @@ function flattenedOutputSize(corners: Quad): Size {
 }
 
 /** `cv.warpPerspective` of `corners` in `source` onto a new `outputSize`
- * canvas. Frees every Mat it allocates. */
+ * canvas. */
 function warpQuad(cv: OpenCv, source: HTMLCanvasElement, corners: Quad, outputSize: Size): HTMLCanvasElement {
-  const matrix = computePerspectiveTransform(cv, corners, outputSize);
-  const output = createCanvas(outputSize);
+  return warpWithMatrix(cv, source, computePerspectiveTransform(cv, corners, outputSize), outputSize);
+}
 
+/** `source` warped by the source→output homography `matrix` onto a new
+ * `outputSize` canvas, with bicubic interpolation (the default bilinear
+ * softens glyph edges when upsampling). Frees every Mat it allocates. */
+export function warpWithMatrix(cv: OpenCv, source: HTMLCanvasElement, matrix: Matrix3x3, outputSize: Size): HTMLCanvasElement {
+  const output = createCanvas(outputSize);
   const srcMat = cv.imread(source);
   const warped = new cv.Mat();
   const transformMat = cv.matFromArray(3, 3, cv.CV_64F, matrix.flat());
   try {
-    cv.warpPerspective(srcMat, warped, transformMat, new cv.Size(outputSize.width, outputSize.height));
+    cv.warpPerspective(srcMat, warped, transformMat, new cv.Size(outputSize.width, outputSize.height), cv.INTER_CUBIC);
     cv.imshow(output, warped);
   } finally {
     srcMat.delete();

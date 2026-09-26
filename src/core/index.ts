@@ -11,3 +11,6 @@ export * from "./orientation";
 export * from "./pixelExtraction";
 export * from "./frameQuality";
 export * from "./identification";
+export * from "./textBand";
+export * from "./regionWarp";
+export * from "./textPolarity";

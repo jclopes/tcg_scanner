@@ -77,6 +77,11 @@ orientation):
   (common in collector numbers like `025/102`). Reduces OCR misreads by
   ignoring junk characters Tesseract may hallucinate outside the expected
   character set.
+- `max_gap_text_heights` — optional, `type: "text"` only. The largest gap
+  between characters, in text heights, still treated as the same line when
+  fitting the crop horizontally. Set it tight (e.g. `0.5`) for single-word
+  regions; omit it for text with spaces (default 1.5). See "Text-band
+  fitting".
 - `rotation_deg` — optional, defaults to `0` (unrotated) when omitted. The
   angle, in degrees, the region's printed content is rotated relative to
   upright on the flattened card image, counter-clockwise positive (e.g. a
@@ -97,13 +102,11 @@ orientation):
   own (larger) axis-aligned bounding box — wasted corner space that reads
   as background noise to Tesseract. Rotating the whole card first means the
   target content is already upright by the time cropping happens, so the
-  box can be tight around just that content. The rotation itself matches
-  Phase 1's `rotateCanvas` (`src/shell/capture.ts`), whose `degrees`
-  parameter is also clockwise-positive — except `rotateCanvas` only accepts
-  90°-multiples (all it's needed for so far) and never needs to grow its
-  canvas as a result, whereas region extraction's arbitrary-angle rotation
-  (`cropRegion`, `src/shell/regionExtraction.ts`) sizes the rotated card's
-  canvas to its full rotated bounding box so no corner is clipped.
+  box can be tight around just that content. The rotated card is sized to
+  its full rotated bounding box, centered, so no corner is clipped (see
+  `regionWarpMatrix`, `src/core/regionWarp.ts`).
+- For `type: "text"` regions the box is a **search area**, not the final
+  crop: see "Text-band fitting" under OCR strategy.
 - Config files live alongside the app (e.g. `src/data/games/*.json`) and
   are selected by the `game` key, not auto-discovered from card content.
 
@@ -190,28 +193,80 @@ the app can display:
   options. Both still run: the whitelist doesn't make `filterAllowedChars`
   redundant, just usually a no-op — a cheap backstop for whatever Tesseract
   still emits alongside the constrained run (e.g. incidental whitespace).
-- The flattened card a region is cropped from is itself deliberately
-  oversampled (`captureFlattenedCard`, `src/shell/capture.ts`, targets
-  `FLATTEN_OVERSAMPLE_FACTOR`× the detected quad's native measured size,
-  not its native size directly — see that constant's doc comment,
-  `src/core/constants.ts`) — every card-shaped transform between the raw
-  camera frame and a region crop (the perspective warp itself, then each
-  rotated region's own correction rotation) then runs against denser
-  source data, instead of compounding blur across several lossy passes
-  each done at native resolution before a single upscale at the very end
-  (an earlier version of this pipeline's approach — see git history).
-- Immediately before OCR, each region crop is then scaled *back down* to a
-  fixed target density (`OCR_TARGET_PX_PER_MM`, `src/shell/ocr.ts`, ~26
-  px/mm) — counterintuitively, Tesseract's `eng` LSTM model reads *worse*
-  against the fully-oversampled crop than against the same crop scaled
-  down to this density, despite the oversampled version having strictly
-  more real detail; the model appears to have its own preferred character-
-  size range from training, and exceeding it hurts just as falling short
-  of it does. See `scaleForOcr`'s doc comment for the manual sweep (target
-  density × page-segmentation mode) that picked this value, run against
-  real camera captures. A tuning parameter like Phase 1's edge-detection
-  constants (`src/core/constants.ts`) — a reasonable default from the
-  cards tested so far, not exhaustively validated.
+- **Single-pass region warp.** Each region is warped straight out of the
+  selected camera frame by `warpRegion` (`src/shell/regionExtraction.ts`),
+  one bicubic `cv.warpPerspective` with a matrix composed in core
+  (`regionWarpMatrix`, `src/core/regionWarp.ts`): camera frame → card mm
+  (the detected quad's perspective transform) → upright card → card rotated
+  by `rotationDeg` → region box at `REGION_PX_PER_MM`. That is one
+  interpolation from real camera pixels. The earlier pipeline had up to
+  four: flatten the whole card, rotate the whole card, crop at a sub-pixel
+  offset, then rescale for OCR, each blurring the text a little more. The
+  flattened card (`captureFlattenedCard`) is now only used for display and
+  debug.
+- `REGION_PX_PER_MM` (26, `src/core/constants.ts`) is the density
+  Tesseract's `eng` LSTM model reads best. It was found by sweeping real
+  captures; both larger and smaller character sizes read worse. Regions are
+  warped directly to it, so no separate OCR rescale step exists. It's a
+  tuning parameter, not exhaustively validated.
+- **OCR preprocessing** (`prepareForOcr`, `src/shell/ocrPreprocessing.ts`):
+  grayscale, then inverted to dark-on-light when `isLightTextOnDark`
+  (`src/core/textPolarity.ts`: the smaller Otsu class is the text) finds
+  light text, then a bilateral filter (d=5), which is edge-preserving
+  denoising. Chosen by comparing variants side by side on real captures:
+  - bilateral read as well as warping at 1.5× density, at about the cost of
+    no filtering;
+  - median read about the same (bilateral was chosen);
+  - 1.5× and 2× density helped the small set code but hurt the collector
+    number, and an automatic density chosen from the text height didn't
+    beat bilateral;
+  - Otsu/adaptive binarization and unsharp-mask sharpening read worst.
+
+  Non-local-means denoising isn't in the bundled OpenCV.js build.
+- **Text-band fitting.** A text region's configured box is padded by
+  `TEXT_SEARCH_PADDING_Y_MM` above and below and `TEXT_SEARCH_PADDING_X_MM`
+  left and right (`padRegion`, `src/core/identification.ts`) and warped as a
+  search area.
+  `analyzeTextRows` (`src/core/textBand.ts`) then builds two row profiles:
+  - glyph-stroke energy (mean horizontal gradient per row). The text band
+    is the contiguous run of rows above
+    `TEXT_BAND_ENERGY_THRESHOLD_FRACTION` of the min→max range around the
+    strongest row. It only counts as text when that peak is at least
+    `TEXT_BAND_MIN_PEAK_TO_BACKGROUND` × the median row. The gate is
+    relative because real, blurry, oversampled crops have low absolute
+    gradients: an earlier absolute threshold rejected every real capture.
+  - horizontal-line energy (mean vertical gradient per row edge). A row
+    edge is a line (e.g. a badge border) when it exceeds both
+    `HORIZONTAL_LINE_MIN_ENERGY_TO_BACKGROUND` × the median and every
+    horizontal edge inside the text band (the letters' own tops and
+    bottoms).
+
+  The crop's rows are the band plus a `TEXT_BAND_MARGIN_FRACTION` margin,
+  kept between the nearest lines above and below it. Its columns come from
+  `analyzeTextColumns`, a per-column stroke-energy profile (horizontal and
+  vertical gradient) over the text rows. Runs of columns above
+  `TEXT_COLUMN_ENERGY_THRESHOLD_FRACTION` of the
+  `TEXT_COLUMN_REFERENCE_PERCENTILE` (90th percentile) column are grouped
+  while the gaps stay within the region's
+  `max_gap_text_heights` (default `DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS`,
+  1.5), plus a `TEXT_COLUMN_MARGIN_TEXT_HEIGHTS` margin. Regions with spaces
+  need the wide default: word gaps measured up to ~1.2 text heights. A
+  single-word region should set a tight value, for example
+  `collector_number: 0.5` (its character gaps measured 0.1–0.2). Otherwise
+  nearby artwork gets merged in and read as bogus characters. The group
+  with the most total stroke energy is taken as the text. Both the
+  percentile reference and the energy vote guard against a narrow but very
+  strong feature: the card's edge against the background once set the
+  threshold (as the max) and won the seed (as the peak), which cropped the
+  set code to just the edge. `fitCropToText`
+  (`src/shell/regionExtraction.ts`) copies that rectangle 1:1. When no text is found, the whole search area is OCR'd. This is an
+  expected outcome. The debug trail shows the search area next to both
+  profiles and their thresholds. All `TEXT_*`/`HORIZONTAL_LINE_*` constants
+  are starting guesses.
+
+  Next option if this proves insufficient: OpenCV morphology
+  (morphological gradient + horizontal closing + contours) for classic
+  text localization.
 
 ## ID validation
 
@@ -240,18 +295,13 @@ interface RegionConfig {
   allowedCharsRegex?: string; // required for type: "text"; POSIX regex constraining OCR output
 }
 
-interface PixelRegion {
-  label: string;
-  type: RegionConfig["type"];
-  rect: { origin: Point; size: Size }; // pixel coordinates, axis-aligned
-  rotationDeg?: number; // carried through from RegionConfig, clockwise degrees
-  allowedCharsRegex?: string; // carried through from RegionConfig for type: "text"
-}
-
-function computeRegionPixelRects(
-  regions: readonly RegionConfig[],
-  cardPixelSize: Size, // the flattened output image's own size
-): PixelRegion[] { /* ... */ }
+function regionWarpMatrix(
+  frameToCardMm: Matrix3x3, // perspective transform of the detected quad, in card mm
+  camera: Orientation,
+  cardFormat: CardPrintFormat,
+  region: RegionConfig,
+  pxPerMm: number,
+): Matrix3x3 { /* camera frame px -> region px */ }
 
 function normalizeOcrText(raw: string): string { /* ... */ }
 
@@ -270,11 +320,8 @@ function matchIdentifier(
 
 - Loading a game's region config + ID dataset JSON (fetch or bundled
   import) when the game selector changes.
-- Cropping each `PixelRegion`'s rect out of the flattened output canvas
-  into its own canvas/`ImageBitmap`, then rotating that crop clockwise by
-  `rotationDeg` (when set) so printed content is upright before OCR — the
-  same clockwise `rotateCanvas` helper Phase 1 already uses
-  (`src/shell/capture.ts`), reused rather than reimplemented.
+- Warping each region straight out of the selected camera frame with
+  `regionWarpMatrix`'s matrix (`warpRegion`), upright and at OCR density.
 - The Tesseract.js worker wrapper: dispatching each region's cropped
   image for OCR and collecting recognized text, analogous to how
   `src/workers/pool.ts` dispatches edge-band crops to the Phase 1 edge

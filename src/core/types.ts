@@ -56,11 +56,15 @@ export interface ToleranceConfig {
   aspectRatioTolerance: number;
 }
 
-/** One edge band's grayscale pixels (1 byte/pixel, row-major). */
-export interface EdgeBandPixels {
+/** Grayscale pixels, 1 byte/pixel, row-major. */
+export interface GrayscalePixels {
   data: Uint8ClampedArray;
   width: number;
   height: number;
+}
+
+/** One edge band's grayscale pixels. */
+export interface EdgeBandPixels extends GrayscalePixels {
   /** Where `data`'s (0,0) sits in the source frame — the *clamped* origin,
    * which is what band-local coordinates must be translated by. */
   origin: Point;

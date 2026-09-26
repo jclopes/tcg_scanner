@@ -14,6 +14,7 @@ interface RawRegionConfig {
   width_mm: number;
   height_mm: number;
   rotation_deg?: number;
+  max_gap_text_heights?: number;
 }
 
 interface RawGameConfig {
@@ -62,6 +63,7 @@ export function loadGameConfig(game: string): GameConfig {
       heightMm: region.height_mm,
       rotationDeg: region.rotation_deg,
       allowedCharsRegex: region.allowed_chars_regex,
+      maxGapTextHeights: region.max_gap_text_heights,
     })),
   };
 }

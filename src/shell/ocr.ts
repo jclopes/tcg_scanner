@@ -50,62 +50,6 @@ export async function createOcrWorker(): Promise<TesseractWorker> {
   );
 }
 
-/**
- * The region-crop pixel density (in pixels per physical mm of card) that
- * reads most reliably for Tesseract's `eng` LSTM model — not "as much
- * resolution as possible": that model appears to have its own preferred
- * character-size range, tied to what it was trained on, and feeding it
- * text *larger* than that hurts accuracy just as feeding it text smaller
- * does. Confirmed by sweeping target density against real camera captures
- * once `captureFlattenedCard` started oversampling its own output (see
- * FLATTEN_OVERSAMPLE_FACTOR, src/core/constants.ts): a region crop taken
- * directly from that oversampled flatten, with *no* further scaling, reads
- * *worse* than the same crop scaled back down to around this density —
- * despite the oversampled crop having strictly more real detail in it, not
- * less. 26 was the best balance found across two regions on two different
- * real captures; noisy at the single-pixel level like every OCR tuning
- * parameter in this file, not a value with a clean derivation.
- */
-const OCR_TARGET_PX_PER_MM = 26;
-
-/**
- * Scales `canvas` — one region's crop, at `currentPxPerMm` (that capture's
- * actual flattened density, e.g. `cardCanvas.width / STANDARD_CARD_WIDTH_MM`
- * — every region crop from the same capture shares this same density) —
- * to `OCR_TARGET_PX_PER_MM` before handing it to Tesseract. See that
- * constant's doc comment for why a *target density* rather than a fixed
- * multiplier: `captureFlattenedCard` now deliberately oversamples (see
- * FLATTEN_OVERSAMPLE_FACTOR), so a region crop usually needs scaling
- * *down* to reach the density that actually reads best, not up — the
- * opposite of what this function did (always upscale by a fixed factor)
- * before that change. Smooth (the browser's default `imageSmoothingEnabled`)
- * rather than nearest-neighbor: nearest-neighbor was the right choice for
- * the old always-upscale-a-tiny-blurry-crop case (see git history), where
- * the crop had no real detail to preserve and blocky-but-crisp beat
- * smoothed-into-more-blur; scaling down (the normal case now) is ordinary
- * downsampling of a genuinely detailed image, where smooth interpolation
- * is the standard, correct choice.
- */
-function scaleForOcr(canvas: HTMLCanvasElement, currentPxPerMm: number): HTMLCanvasElement {
-  const scaleFactor = OCR_TARGET_PX_PER_MM / currentPxPerMm;
-  const scaled = document.createElement("canvas");
-  scaled.width = Math.max(1, Math.round(canvas.width * scaleFactor));
-  scaled.height = Math.max(1, Math.round(canvas.height * scaleFactor));
-  const ctx = scaled.getContext("2d");
-  if (!ctx) {
-    throw new Error("Could not get a 2D canvas context to scale a region for OCR.");
-  }
-  // imageSmoothingEnabled is already true by default, but Canvas 2D's
-  // *quality* default is "low", not "high" — silently blurrier/more
-  // aliased resampling than intended for what's usually now a meaningful
-  // downscale (see OCR_TARGET_PX_PER_MM's doc comment); see the equivalent
-  // fix in regionExtraction.ts's require2dContext for the fuller story.
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(canvas, 0, 0, scaled.width, scaled.height);
-  return scaled;
-}
-
 /** The printable-ASCII range `tesseractWhitelistFor` tests `allowedCharsRegex`
  * against — every character an OCR'd card region could plausibly contain
  * (letters, digits, punctuation); deliberately not the full Unicode range,
@@ -141,61 +85,24 @@ function tesseractWhitelistFor(allowedCharsRegex: string): string {
 }
 
 /**
- * Runs `worker` against `regionCanvas` (one `type: "text"` region's cropped,
- * upright image — see `cropRegion` in regionExtraction.ts) and returns both
- * Tesseract's raw recognized text and, when `allowedCharsRegex` is given,
- * that text filtered down to only the characters it allows (see
- * `filterAllowedChars`). Both are returned (not just the filtered text) so
- * a caller/debug view can show what Tesseract actually saw versus what
- * survived filtering.
+ * OCRs one upright text region (already at REGION_PX_PER_MM — see
+ * warpRegion) and returns Tesseract's raw text plus that text filtered to
+ * `allowedCharsRegex`.
  *
- * `allowedCharsRegex`, when given, constrains recognition itself via
- * Tesseract's `tessedit_char_whitelist` (see `tesseractWhitelistFor`) *and*
- * still gets applied afterward via `filterAllowedChars` — not redundant:
- * validated manually against a real camera capture that the whitelist does
- * more than post-filtering alone can. A region whose true character wasn't
- * even a candidate Tesseract was choosing between (e.g. a `]` it kept
- * misreading as `)`/`}`, neither of which `filterAllowedChars` could ever
- * turn back into a `]` after the fact) got fixed once `)`/`}` were excluded
- * from what it was allowed to output at all, forcing it to pick from the
- * remaining, correct candidates instead. `filterAllowedChars` stays in
- * place as a cheap defense-in-depth backstop (e.g. for whatever Tesseract
- * still emits alongside the whitelisted run, such as a trailing space) —
- * removing it now that the whitelist does most of the work isn't warranted.
+ * `allowedCharsRegex` is used twice on purpose: as Tesseract's
+ * `tessedit_char_whitelist`, so a misread can't land on a disallowed
+ * character (e.g. `]` read as `)`), and again via `filterAllowedChars` as a
+ * cheap backstop for anything else emitted (e.g. stray spaces).
  *
- * `regionCanvas` is scaled to OCR_TARGET_PX_PER_MM first (see
- * `scaleForOcr`) — recognizing directly against a region crop at whatever
- * density the flatten happened to produce measurably hurts accuracy in
- * both directions, too small *and* too large (see OCR_TARGET_PX_PER_MM's
- * doc comment). `currentPxPerMm` is the flattened card's own actual
- * density (`cardCanvas.width / STANDARD_CARD_WIDTH_MM` — the same for
- * every region cropped from one capture, so a caller computes it once, not
- * per region).
+ * Page segmentation is SINGLE_LINE: every region is one short line.
+ * SINGLE_WORD and RAW_LINE consistently misread the first character (e.g.
+ * "B" as "8") on real captures.
  *
- * Sets `tessedit_pageseg_mode` to `SINGLE_LINE` before recognizing — every
- * region this phase's regions are small, single-line crops (a collector
- * number, a set code), not a full paragraph, so Tesseract's default "assume
- * a general page layout" mode is the wrong starting point. Validated
- * against the alternatives (SINGLE_BLOCK, SINGLE_WORD, RAW_LINE) in the
- * same manual sweep that picked OCR_TARGET_PX_PER_MM: SINGLE_WORD and
- * RAW_LINE consistently misread the crop's *first* character (e.g. "B" as
- * "8") regardless of preprocessing, which SINGLE_LINE and SINGLE_BLOCK
- * never did.
- *
- * Regions are recognized one at a time against a single shared worker
- * (see createOcrWorker's caller in app.ts) — `recognize()` calls against
- * one Tesseract.js worker are inherently sequential regardless, and
- * per-region init cost is zero (the expensive WASM/language-data load
- * already happened once, in createOcrWorker). Because the whitelist is a
- * `setParameters` call scoped to *this* worker for its *next* `recognize()`
- * call, it has to be set fresh before every region — a worker shared across
- * regions with different `allowedCharsRegex` would otherwise keep
- * whichever region's whitelist was set last.
+ * The whitelist is a worker-wide parameter, so it's set before every region.
  */
 export async function recognizeRegion(
   worker: TesseractWorker,
   regionCanvas: HTMLCanvasElement,
-  currentPxPerMm: number,
   allowedCharsRegex?: string,
 ): Promise<{ rawText: string; filteredText: string }> {
   await worker.setParameters({
@@ -204,7 +111,7 @@ export async function recognizeRegion(
   });
   const {
     data: { text },
-  } = await worker.recognize(scaleForOcr(regionCanvas, currentPxPerMm));
+  } = await worker.recognize(regionCanvas);
   const rawText = text.trim();
   const filteredText = allowedCharsRegex ? filterAllowedChars(rawText, allowedCharsRegex) : rawText;
   return { rawText, filteredText };

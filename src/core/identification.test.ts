@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CANONICAL_CARD_MIN_PX_PER_MM, STANDARD_CARD_HEIGHT_MM, STANDARD_CARD_WIDTH_MM } from "./constants";
-import { canonicalCardSizeFor, computeRegionPixelRects, filterAllowedChars } from "./identification";
+import { canonicalCardSizeFor, filterAllowedChars, padRegion } from "./identification";
 import type { RegionConfig } from "./identification";
 
 describe("canonicalCardSizeFor", () => {
@@ -45,49 +45,6 @@ describe("canonicalCardSizeFor", () => {
   });
 });
 
-describe("computeRegionPixelRects", () => {
-  it("maps mm-space regions onto the card image's actual pixel size", () => {
-    const regions: RegionConfig[] = [
-      { label: "collector_number", type: "text", xMm: 2.7, yMm: 79.0, widthMm: 7.5, heightMm: 6.0, rotationDeg: -45 },
-    ];
-    // 733x1024 is the standard 63x88mm card at ~11.63 px/mm.
-    const result = computeRegionPixelRects(regions, { width: 733, height: 1024 });
-
-    expect(result).toHaveLength(1);
-    const [region] = result;
-    expect(region!.label).toBe("collector_number");
-    expect(region!.type).toBe("text");
-    expect(region!.rotationDeg).toBe(-45);
-    expect(region!.rect.origin.x).toBeCloseTo((2.7 / 63) * 733, 3);
-    expect(region!.rect.origin.y).toBeCloseTo((79.0 / 88) * 1024, 3);
-    expect(region!.rect.size.width).toBeCloseTo((7.5 / 63) * 733, 3);
-    expect(region!.rect.size.height).toBeCloseTo((6.0 / 88) * 1024, 3);
-  });
-
-  it("carries allowedCharsRegex through unchanged, and leaves it undefined when absent", () => {
-    const regions: RegionConfig[] = [
-      { label: "collector_number", type: "text", xMm: 0, yMm: 0, widthMm: 1, heightMm: 1, allowedCharsRegex: "[0-9]" },
-      { label: "set_symbol", type: "image", xMm: 0, yMm: 0, widthMm: 1, heightMm: 1 },
-    ];
-    const result = computeRegionPixelRects(regions, { width: 733, height: 1024 });
-
-    expect(result[0]!.allowedCharsRegex).toBe("[0-9]");
-    expect(result[1]!.allowedCharsRegex).toBeUndefined();
-    expect(result[1]!.rotationDeg).toBeUndefined();
-  });
-
-  it("preserves region order and handles an empty region list", () => {
-    const regions: RegionConfig[] = [
-      { label: "a", type: "text", xMm: 0, yMm: 0, widthMm: 1, heightMm: 1 },
-      { label: "b", type: "image", xMm: 0, yMm: 0, widthMm: 1, heightMm: 1 },
-    ];
-    const result = computeRegionPixelRects(regions, { width: 733, height: 1024 });
-    expect(result.map((r) => r.label)).toEqual(["a", "b"]);
-
-    expect(computeRegionPixelRects([], { width: 733, height: 1024 })).toEqual([]);
-  });
-});
-
 describe("filterAllowedChars", () => {
   it("keeps only digits when filtered against a digit class", () => {
     expect(filterAllowedChars(";001'", "[0-9]")).toBe("001");
@@ -103,5 +60,24 @@ describe("filterAllowedChars", () => {
 
   it("returns an empty string for empty input", () => {
     expect(filterAllowedChars("", "[0-9]")).toBe("");
+  });
+});
+
+describe("padRegion", () => {
+  it("grows the box by the padding on each side, leaving everything else unchanged", () => {
+    const region: RegionConfig = {
+      label: "set_code",
+      type: "text",
+      xMm: 73,
+      yMm: 59.5,
+      widthMm: 12.6,
+      heightMm: 1.9,
+      rotationDeg: -90,
+      allowedCharsRegex: "[A-Z]",
+    };
+
+    const padded = padRegion(region, { xMm: 1.5, yMm: 1 });
+
+    expect(padded).toEqual({ ...region, xMm: 71.5, yMm: 58.5, widthMm: 15.6, heightMm: 3.9 });
   });
 });

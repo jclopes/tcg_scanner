@@ -1,5 +1,12 @@
-import { computeRegionPixelRects, selectBestFrame, STANDARD_CARD_ASPECT_RATIO, STANDARD_CARD_WIDTH_MM } from "../core";
-import type { CardPrintFormat, FrameCandidate, OpenCv, PixelRegion, Size } from "../core";
+import {
+  DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
+  padRegion,
+  selectBestFrame,
+  STANDARD_CARD_ASPECT_RATIO,
+  TEXT_SEARCH_PADDING_X_MM,
+  TEXT_SEARCH_PADDING_Y_MM,
+} from "../core";
+import type { CardPrintFormat, FrameCandidate, OpenCv, RegionConfig, Size } from "../core";
 import { createEdgeDetectionPool } from "../workers";
 import type { EdgeDetectionPool } from "../workers";
 import type { Worker as TesseractWorker } from "tesseract.js";
@@ -13,6 +20,7 @@ import {
   buildBurstFrameSteps,
   buildEdgeBandSteps,
   buildQuadOverlayStep,
+  buildTextBandStep,
   debugRejectionNote,
   debugStageHeading,
   renderDebugSteps,
@@ -37,18 +45,40 @@ import {
 import type { EdgeColors } from "./guideOverlay";
 import { captureHiResStill } from "./hiResStill";
 import { createOcrWorker, recognizeRegion } from "./ocr";
+import { prepareForOcr } from "./ocrPreprocessing";
 import { orientationFromSize, videoFrameSize, watchVideoOrientation } from "./orientationWatcher";
 import { loadPreferences, savePreferences } from "./preferences";
-import { cropRegion } from "./regionExtraction";
+import { fitCropToText, warpRegion } from "./regionExtraction";
+import type { TextCropAnalysis } from "./regionExtraction";
 import { INITIAL_SCAN_STATE } from "./state";
 import type { ScanState } from "./state";
 
 /** The one bundled game config (no game selector yet). */
 const IDENTIFICATION_GAME = "cyberpunk-2077-tcg";
 
+/** One region warped out of the camera frame. For a text region,
+ * `searchCanvas` is the padded search area, `analysis` its text-row analysis
+ * and `canvas` the fitted crop (the whole search area when no text was
+ * found); for an image region both canvases are the configured box and
+ * `analysis` is null. */
 interface RegionCrop {
-  region: PixelRegion;
+  region: RegionConfig;
+  searchCanvas: HTMLCanvasElement;
+  analysis: TextCropAnalysis | null;
   canvas: HTMLCanvasElement;
+}
+
+/** A text region's OCR: the preprocessed image Tesseract saw and what it read. */
+interface RegionOcr {
+  canvas: HTMLCanvasElement;
+  inverted: boolean;
+  text: string;
+}
+
+/** A region's crop plus its OCR (null for image regions). */
+interface RegionResult {
+  crop: RegionCrop;
+  ocr: RegionOcr | null;
 }
 
 /**
@@ -370,13 +400,13 @@ export function initApp(cv: OpenCv): void {
       const cardCanvas = captureFlattenedCard(cv, selected, cardFormat);
       showResultImage(cardCanvas, requestId);
 
-      const regionCrops = await identifyCard(cardCanvas, requestId);
+      const regionResults = await identifyCard(selected, requestId);
       if (!isCurrentScan(requestId)) {
         return;
       }
 
       if (debug) {
-        renderDebugSteps(debugPanel, buildCaptureDebugTrail(preview, burst, selected, cardCanvas, regionCrops));
+        renderDebugSteps(debugPanel, buildCaptureDebugTrail(preview, burst, selected, cardCanvas, regionResults));
       }
       clearGuideOverlay(overlayCanvas);
       setState({ phase: "captured" });
@@ -386,38 +416,35 @@ export function initApp(cv: OpenCv): void {
   }
 
   /**
-   * Crops every configured region out of the card, OCRs the text regions and
-   * shows the results (no dataset matching yet). Returns the crops for the
+   * Warps every configured region straight out of `frame` (text regions
+   * fitted to their text line, see extractRegion), OCRs the text regions and
+   * shows the results (no dataset matching yet). Returns everything for the
    * debug trail. Stops early, without rendering, if the scan becomes stale.
    */
-  async function identifyCard(cardCanvas: HTMLCanvasElement, requestId: number): Promise<RegionCrop[]> {
+  async function identifyCard(frame: AcceptedFrame, requestId: number): Promise<RegionResult[]> {
     identificationSection.hidden = false;
     identificationStatus.textContent = "Identifying…";
     identificationResults.replaceChildren();
 
     const gameConfig = loadGameConfig(IDENTIFICATION_GAME);
-    const crops = computeRegionPixelRects(gameConfig.regions, cardCanvas).map((region) => ({
-      region,
-      canvas: cropRegion(cardCanvas, region),
-    }));
-    const cardPxPerMm = cardCanvas.width / STANDARD_CARD_WIDTH_MM;
     const worker = await getOcrWorker();
 
-    const results: { label: string; text: string }[] = [];
-    for (const { region, canvas } of crops) {
+    const results: RegionResult[] = [];
+    for (const region of gameConfig.regions.map(toSearchRegion)) {
       if (!isCurrentScan(requestId)) {
-        return crops;
+        return results;
       }
-      if (region.type === "text") {
-        const { filteredText } = await recognizeRegion(worker, canvas, cardPxPerMm, region.allowedCharsRegex);
-        results.push({ label: region.label, text: filteredText });
-      }
+      const crop = extractRegion(cv, frame, cardFormat, region);
+      results.push({ crop, ocr: region.type === "text" ? await recognizeCrop(cv, worker, crop) : null });
     }
 
     if (isCurrentScan(requestId)) {
-      showIdentificationResults(gameConfig.game, results);
+      showIdentificationResults(
+        gameConfig.game,
+        results.flatMap(({ crop, ocr }) => (ocr ? [{ label: crop.region.label, text: ocr.text }] : [])),
+      );
     }
-    return crops;
+    return results;
   }
 
   function stopScan(): void {
@@ -552,6 +579,35 @@ export function initApp(cv: OpenCv): void {
   void populateCameraOptions();
 }
 
+/** A text region's configured box is only where to look for its text: pad it
+ * so text slightly outside it is still found. */
+function toSearchRegion(region: RegionConfig): RegionConfig {
+  return region.type === "text"
+    ? padRegion(region, { xMm: TEXT_SEARCH_PADDING_X_MM, yMm: TEXT_SEARCH_PADDING_Y_MM })
+    : region;
+}
+
+/** Warps `region` out of the camera frame; a text region's crop is then
+ * narrowed to its text line. */
+function extractRegion(cv: OpenCv, frame: AcceptedFrame, cardFormat: CardPrintFormat, region: RegionConfig): RegionCrop {
+  const searchCanvas = warpRegion(cv, frame, cardFormat, region);
+  if (region.type !== "text") {
+    return { region, searchCanvas, analysis: null, canvas: searchCanvas };
+  }
+  const { canvas, analysis } = fitCropToText(
+    searchCanvas,
+    region.maxGapTextHeights ?? DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
+  );
+  return { region, searchCanvas, analysis, canvas };
+}
+
+/** Preprocesses a text region's fitted crop (prepareForOcr) and OCRs it. */
+async function recognizeCrop(cv: OpenCv, worker: TesseractWorker, crop: RegionCrop): Promise<RegionOcr> {
+  const prepared = prepareForOcr(cv, crop.canvas);
+  const { filteredText } = await recognizeRegion(worker, prepared.canvas, crop.region.allowedCharsRegex);
+  return { canvas: prepared.canvas, inverted: prepared.inverted, text: filteredText };
+}
+
 /** The best accepted burst frame, or `fallback` if the burst accepted none. */
 function selectFrameToFlatten(accepted: readonly AcceptedFrame[], fallback: AcceptedFrame): AcceptedFrame {
   const candidates = accepted.length > 0 ? accepted : [fallback];
@@ -569,7 +625,7 @@ function buildCaptureDebugTrail(
   burst: FrameBurstResult,
   selected: AcceptedFrame,
   cardCanvas: HTMLCanvasElement,
-  regionCrops: readonly RegionCrop[],
+  regionResults: readonly RegionResult[],
 ): DebugEntry[] {
   return [
     ...buildEdgeBandSteps(preview.bands, preview.lines),
@@ -578,7 +634,17 @@ function buildCaptureDebugTrail(
     ...buildBurstFrameSteps(burst.debugFrames),
     buildQuadOverlayStep(selected.frameCanvas, selected.corners, "Selected frame"),
     { label: "Flattened output", canvas: cardCanvas },
-    ...regionCrops.map(({ region, canvas }) => ({ label: `Region: ${region.label}`, canvas })),
+    ...regionResults.flatMap(({ crop: { region, searchCanvas, analysis, canvas }, ocr }) =>
+      analysis && ocr
+        ? [
+            buildTextBandStep(region.label, searchCanvas, analysis),
+            {
+              label: `Region: ${region.label} — OCR input${ocr.inverted ? " (inverted)" : ""} → "${ocr.text}"`,
+              canvas: ocr.canvas,
+            },
+          ]
+        : [{ label: `Region: ${region.label}`, canvas }],
+    ),
   ];
 }
 
