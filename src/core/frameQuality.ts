@@ -1,18 +1,11 @@
+import { quadAspectRatio } from "./geometry";
 import type { RgbaPixelBuffer } from "./pixelExtraction";
+import type { Quad } from "./types";
 
 /**
- * A sharpness estimate for an RGBA frame: the variance of its Laplacian — a
- * standard blur-detection measure. A sharp, in-focus image has a lot of
- * high-frequency edge content, which the Laplacian responds to strongly and
- * unevenly (high variance); a blurred image's response is small and flat
- * across the frame (low variance). Higher is sharper.
- *
- * Converts to grayscale first (same Rec. 601 luma weights as
- * extractGrayscaleRegion), then convolves with the standard discrete
- * Laplacian kernel `[[0,1,0],[1,-4,1],[0,1,0]]`. Plain array math, no
- * OpenCV.js dependency — cheap enough on an already-flattened card-sized
- * image not to need it, and keeping this cv-free is simpler to call and
- * test.
+ * Sharpness estimate: variance of the grayscale image's discrete Laplacian
+ * (kernel [[0,1,0],[1,-4,1],[0,1,0]]). Higher is sharper. 0 for images
+ * smaller than 3x3.
  */
 export function laplacianVariance(frame: RgbaPixelBuffer): number {
   const { data, width, height } = frame;
@@ -55,49 +48,44 @@ export function laplacianVariance(frame: RgbaPixelBuffer): number {
   return squaredDeviationSum / responseCount;
 }
 
+/** A frame to score: its accepted quad plus the card's pixels in the raw
+ * (unflattened) frame. */
+export interface FrameCandidate {
+  corners: Quad;
+  cardPixels: RgbaPixelBuffer;
+}
+
 /**
- * Picks the best of several candidate frames — e.g. the burst
- * `captureFlattenedFrameBurst` (src/shell/flattenedFrameBurst.ts) captures
- * after a quad is first accepted — by combining two signals: sharpness
- * (`laplacianVariance`) and how closely the frame's own measured aspect
- * ratio matches `targetAspectRatio`. A frame that's sharp but badly cropped
- * (a wobbly detection on one burst frame) and a frame that's well-cropped
- * but blurry (motion blur mid-burst) are both bad picks, so neither signal
- * is used alone.
+ * Picks the best candidate by two signals, each normalized 0-1 against the
+ * candidate set and summed with equal weight:
+ * - sharpness: `laplacianVariance(cardPixels)`
+ * - quad geometry: closeness of `quadAspectRatio(corners)` to `targetAspectRatio`
  *
- * Both signals are normalized against the candidate set (0-1, best in the
- * set scores 1) rather than compared in absolute units, which aren't
- * meaningfully comparable to each other, then summed with equal weight.
- *
- * `frames` must be non-empty.
+ * Runs before flattening, so only the winner pays for the perspective warp.
+ * `candidates` must be non-empty.
  */
-export function selectBestFrame<T extends RgbaPixelBuffer>(frames: readonly T[], targetAspectRatio: number): T {
-  if (frames.length === 0) {
+export function selectBestFrame<T extends FrameCandidate>(candidates: readonly T[], targetAspectRatio: number): T {
+  if (candidates.length === 0) {
     throw new Error("selectBestFrame requires at least one frame.");
   }
-  if (frames.length === 1) {
-    return frames[0]!;
+  if (candidates.length === 1) {
+    return candidates[0]!;
   }
 
-  const sharpness = frames.map(laplacianVariance);
-  const aspectRatioError = frames.map((frame) => {
-    const measuredRatio = Math.min(frame.width, frame.height) / Math.max(frame.width, frame.height);
-    return Math.abs(measuredRatio - targetAspectRatio);
-  });
+  const sharpness = candidates.map((candidate) => laplacianVariance(candidate.cardPixels));
+  const aspectRatioError = candidates.map((candidate) =>
+    Math.abs(quadAspectRatio(candidate.corners) - targetAspectRatio),
+  );
 
   const maxSharpness = Math.max(...sharpness);
   const maxAspectRatioError = Math.max(...aspectRatioError);
 
-  let bestIndex = 0;
-  let bestScore = -Infinity;
-  for (let i = 0; i < frames.length; i++) {
+  const scores = candidates.map((_, i) => {
     const sharpnessScore = maxSharpness > 0 ? sharpness[i]! / maxSharpness : 1;
     const aspectRatioScore = maxAspectRatioError > 0 ? 1 - aspectRatioError[i]! / maxAspectRatioError : 1;
-    const score = sharpnessScore + aspectRatioScore;
-    if (score > bestScore) {
-      bestScore = score;
-      bestIndex = i;
-    }
-  }
-  return frames[bestIndex]!;
+    return sharpnessScore + aspectRatioScore;
+  });
+
+  const bestIndex = scores.reduce((best, score, i) => (score > scores[best]! ? i : best), 0);
+  return candidates[bestIndex]!;
 }

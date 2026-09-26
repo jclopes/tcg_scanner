@@ -17,53 +17,93 @@ import { filterAllowedChars } from "../core";
  * `createWorker`'s own contract. Defaults to `OEM.LSTM_ONLY` (Tesseract.js's
  * own default engine mode, not overridden here) — the Legacy engine's
  * assets aren't even vendored (see copyTesseractToPublic's doc comment).
+ *
+ * The `load_*_dawg` config disables every one of Tesseract's built-in
+ * dictionaries ("dawgs" — system word list, frequent-words list,
+ * punctuation patterns, number patterns, etc.) at load time. These act as
+ * a language-model prior during LSTM decoding, biasing recognition toward
+ * sequences that look like real English words/punctuation *even among
+ * characters `tessedit_char_whitelist` already allows* — actively
+ * counterproductive for this app's actual input (collector numbers, set
+ * codes: structured alphanumeric strings, never real words). This has to
+ * be set at init time via `createWorker`'s `config` argument, not
+ * per-`recognize()` via `setParameters` — the dictionaries are loaded
+ * together with the language data itself, not reconsulted per call.
  */
 export async function createOcrWorker(): Promise<TesseractWorker> {
-  return createWorker("eng", undefined, {
-    workerPath: "/tesseract/worker.min.js",
-    corePath: "/tesseract/core",
-    langPath: "/tesseract/lang-data",
-  });
+  return createWorker(
+    "eng",
+    undefined,
+    {
+      workerPath: "/tesseract/worker.min.js",
+      corePath: "/tesseract/core",
+      langPath: "/tesseract/lang-data",
+    },
+    {
+      load_system_dawg: "0",
+      load_freq_dawg: "0",
+      load_punc_dawg: "0",
+      load_number_dawg: "0",
+      load_unambig_dawg: "0",
+      load_bigram_dawg: "0",
+    },
+  );
 }
 
 /**
- * A region crop (a collector number, a set code) is a handful of
- * millimeters of printed card — at the flattened output's native
- * resolution, that's typically well under 100px on a side (e.g. ~80×35 for
- * a real camera capture at a typical negotiated resolution). Recognizing
- * at that native size measurably hurts accuracy — validated manually
- * against a real camera capture (not just clean reference card art): the
- * same crop read "B007," (wrong) at native size versus "B001," (correct
- * after `filterAllowedChars`) at 5×. 5× was the sweet spot found by sweeping
- * both scale factor and resampling filter against that same capture — small
- * enough to stay fast, large enough that Tesseract's LSTM model (trained on
- * ordinary-sized text) has enough pixels to work with. See REGION_OCR_SCALE.
+ * The region-crop pixel density (in pixels per physical mm of card) that
+ * reads most reliably for Tesseract's `eng` LSTM model — not "as much
+ * resolution as possible": that model appears to have its own preferred
+ * character-size range, tied to what it was trained on, and feeding it
+ * text *larger* than that hurts accuracy just as feeding it text smaller
+ * does. Confirmed by sweeping target density against real camera captures
+ * once `captureFlattenedCard` started oversampling its own output (see
+ * FLATTEN_OVERSAMPLE_FACTOR, src/core/constants.ts): a region crop taken
+ * directly from that oversampled flatten, with *no* further scaling, reads
+ * *worse* than the same crop scaled back down to around this density —
+ * despite the oversampled crop having strictly more real detail in it, not
+ * less. 26 was the best balance found across two regions on two different
+ * real captures; noisy at the single-pixel level like every OCR tuning
+ * parameter in this file, not a value with a clean derivation.
  */
-const REGION_OCR_SCALE = 5;
+const OCR_TARGET_PX_PER_MM = 26;
 
 /**
- * Upscales `canvas` by `REGION_OCR_SCALE`× with nearest-neighbor sampling
- * (`imageSmoothingEnabled = false`) before handing it to Tesseract — see
- * REGION_OCR_SCALE's doc comment for why upscaling matters at all.
- * Nearest-neighbor specifically (as opposed to the browser's default
- * smooth/bilinear scaling) because it won a same manual sweep against a
- * real camera capture: it kept hard glyph edges crisp rather than
- * softening them into a blur, which is what actually matters for an LSTM
- * OCR model reading small stylized-font text, and every smooth filter
- * tried (bilinear-like and Lanczos-like) did measurably worse or no better
- * on the same test crops.
+ * Scales `canvas` — one region's crop, at `currentPxPerMm` (that capture's
+ * actual flattened density, e.g. `cardCanvas.width / STANDARD_CARD_WIDTH_MM`
+ * — every region crop from the same capture shares this same density) —
+ * to `OCR_TARGET_PX_PER_MM` before handing it to Tesseract. See that
+ * constant's doc comment for why a *target density* rather than a fixed
+ * multiplier: `captureFlattenedCard` now deliberately oversamples (see
+ * FLATTEN_OVERSAMPLE_FACTOR), so a region crop usually needs scaling
+ * *down* to reach the density that actually reads best, not up — the
+ * opposite of what this function did (always upscale by a fixed factor)
+ * before that change. Smooth (the browser's default `imageSmoothingEnabled`)
+ * rather than nearest-neighbor: nearest-neighbor was the right choice for
+ * the old always-upscale-a-tiny-blurry-crop case (see git history), where
+ * the crop had no real detail to preserve and blocky-but-crisp beat
+ * smoothed-into-more-blur; scaling down (the normal case now) is ordinary
+ * downsampling of a genuinely detailed image, where smooth interpolation
+ * is the standard, correct choice.
  */
-function upscaleForOcr(canvas: HTMLCanvasElement): HTMLCanvasElement {
-  const upscaled = document.createElement("canvas");
-  upscaled.width = canvas.width * REGION_OCR_SCALE;
-  upscaled.height = canvas.height * REGION_OCR_SCALE;
-  const ctx = upscaled.getContext("2d");
+function scaleForOcr(canvas: HTMLCanvasElement, currentPxPerMm: number): HTMLCanvasElement {
+  const scaleFactor = OCR_TARGET_PX_PER_MM / currentPxPerMm;
+  const scaled = document.createElement("canvas");
+  scaled.width = Math.max(1, Math.round(canvas.width * scaleFactor));
+  scaled.height = Math.max(1, Math.round(canvas.height * scaleFactor));
+  const ctx = scaled.getContext("2d");
   if (!ctx) {
-    throw new Error("Could not get a 2D canvas context to upscale a region for OCR.");
+    throw new Error("Could not get a 2D canvas context to scale a region for OCR.");
   }
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(canvas, 0, 0, upscaled.width, upscaled.height);
-  return upscaled;
+  // imageSmoothingEnabled is already true by default, but Canvas 2D's
+  // *quality* default is "low", not "high" — silently blurrier/more
+  // aliased resampling than intended for what's usually now a meaningful
+  // downscale (see OCR_TARGET_PX_PER_MM's doc comment); see the equivalent
+  // fix in regionExtraction.ts's require2dContext for the fuller story.
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(canvas, 0, 0, scaled.width, scaled.height);
+  return scaled;
 }
 
 /** The printable-ASCII range `tesseractWhitelistFor` tests `allowedCharsRegex`
@@ -123,19 +163,24 @@ function tesseractWhitelistFor(allowedCharsRegex: string): string {
  * still emits alongside the whitelisted run, such as a trailing space) —
  * removing it now that the whitelist does most of the work isn't warranted.
  *
- * `regionCanvas` is upscaled first (see upscaleForOcr) — recognizing
- * directly against the tiny native-resolution crop measurably hurts
- * accuracy (see REGION_OCR_SCALE's doc comment).
+ * `regionCanvas` is scaled to OCR_TARGET_PX_PER_MM first (see
+ * `scaleForOcr`) — recognizing directly against a region crop at whatever
+ * density the flatten happened to produce measurably hurts accuracy in
+ * both directions, too small *and* too large (see OCR_TARGET_PX_PER_MM's
+ * doc comment). `currentPxPerMm` is the flattened card's own actual
+ * density (`cardCanvas.width / STANDARD_CARD_WIDTH_MM` — the same for
+ * every region cropped from one capture, so a caller computes it once, not
+ * per region).
  *
  * Sets `tessedit_pageseg_mode` to `SINGLE_LINE` before recognizing — every
  * region this phase's regions are small, single-line crops (a collector
  * number, a set code), not a full paragraph, so Tesseract's default "assume
  * a general page layout" mode is the wrong starting point. Validated
  * against the alternatives (SINGLE_BLOCK, SINGLE_WORD, RAW_LINE) in the
- * same manual sweep that picked REGION_OCR_SCALE and upscaleForOcr's
- * resampling: SINGLE_WORD and RAW_LINE consistently misread the crop's
- * *first* character (e.g. "B" as "8") regardless of preprocessing, which
- * SINGLE_LINE and SINGLE_BLOCK never did.
+ * same manual sweep that picked OCR_TARGET_PX_PER_MM: SINGLE_WORD and
+ * RAW_LINE consistently misread the crop's *first* character (e.g. "B" as
+ * "8") regardless of preprocessing, which SINGLE_LINE and SINGLE_BLOCK
+ * never did.
  *
  * Regions are recognized one at a time against a single shared worker
  * (see createOcrWorker's caller in app.ts) — `recognize()` calls against
@@ -150,6 +195,7 @@ function tesseractWhitelistFor(allowedCharsRegex: string): string {
 export async function recognizeRegion(
   worker: TesseractWorker,
   regionCanvas: HTMLCanvasElement,
+  currentPxPerMm: number,
   allowedCharsRegex?: string,
 ): Promise<{ rawText: string; filteredText: string }> {
   await worker.setParameters({
@@ -158,7 +204,7 @@ export async function recognizeRegion(
   });
   const {
     data: { text },
-  } = await worker.recognize(upscaleForOcr(regionCanvas));
+  } = await worker.recognize(scaleForOcr(regionCanvas, currentPxPerMm));
   const rawText = text.trim();
   const filteredText = allowedCharsRegex ? filterAllowedChars(rawText, allowedCharsRegex) : rawText;
   return { rawText, filteredText };

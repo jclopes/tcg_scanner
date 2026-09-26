@@ -3,7 +3,7 @@
 // "Architecture: functional core / imperative shell") for the authoritative
 // spec these implement.
 
-import { STANDARD_CARD_HEIGHT_MM, STANDARD_CARD_WIDTH_MM } from "./constants";
+import { CANONICAL_CARD_MIN_PX_PER_MM, STANDARD_CARD_HEIGHT_MM, STANDARD_CARD_WIDTH_MM } from "./constants";
 import type { Point, Size } from "./types";
 
 /** `"text"` regions are OCR'd and matched against a game's ID dataset;
@@ -65,6 +65,22 @@ export interface PixelRegion {
   rect: { origin: Point; size: Size };
   rotationDeg?: number;
   allowedCharsRegex?: string;
+}
+
+/**
+ * An exactly card-proportioned pixel size (STANDARD_CARD_WIDTH_MM :
+ * STANDARD_CARD_HEIGHT_MM) that is never lower-resolution than
+ * `sourcePixelSize` on either axis: it uses the larger of the two axes'
+ * implied px-per-mm, floored at CANONICAL_CARD_MIN_PX_PER_MM.
+ */
+export function canonicalCardSizeFor(sourcePixelSize: Size): Size {
+  const impliedPxPerMmX = sourcePixelSize.width / STANDARD_CARD_WIDTH_MM;
+  const impliedPxPerMmY = sourcePixelSize.height / STANDARD_CARD_HEIGHT_MM;
+  const pxPerMm = Math.max(CANONICAL_CARD_MIN_PX_PER_MM, impliedPxPerMmX, impliedPxPerMmY);
+  return {
+    width: Math.round(STANDARD_CARD_WIDTH_MM * pxPerMm),
+    height: Math.round(STANDARD_CARD_HEIGHT_MM * pxPerMm),
+  };
 }
 
 /**

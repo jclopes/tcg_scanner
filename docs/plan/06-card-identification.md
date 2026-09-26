@@ -132,7 +132,13 @@ the app can display:
    alongside the existing card-format selector, following the same "set
    once, stays set across scans" pattern. The selected game determines
    which region config and ID dataset are loaded.
-2. Phase 1 runs unchanged, producing a flattened, upright card image.
+2. Phase 1 produces a flattened, upright card image — deliberately
+   oversampled and exactly on-ratio (see `FLATTEN_OVERSAMPLE_FACTOR`'s doc
+   comment, `src/core/constants.ts`), a Phase 2 requirement Phase 1's own
+   design didn't originally have (it used to size its output to the
+   detected quad's raw measured extent — see git history), added here
+   rather than as a separate step later, per "keep the transformations to
+   a minimum."
 3. **Region extraction**: each configured region's mm rect is mapped to a
    pixel rect (functional core — px-per-mm scale against the flattened
    image's actual pixel dimensions, which represent the full 63mm × 88mm
@@ -184,15 +190,28 @@ the app can display:
   options. Both still run: the whitelist doesn't make `filterAllowedChars`
   redundant, just usually a no-op — a cheap backstop for whatever Tesseract
   still emits alongside the constrained run (e.g. incidental whitespace).
-- Region crops are upscaled (currently 5×, nearest-neighbor) before being
-  handed to Tesseract — recognizing directly against a region's tiny
-  native-resolution crop (a few dozen pixels on a side) measurably hurts
-  accuracy; see `upscaleForOcr`/`REGION_OCR_SCALE` in `src/shell/ocr.ts`
-  for the manual sweep (scale factor × resampling filter × page-
-  segmentation mode) that picked these values, run against a real camera
-  capture. Tuning parameters like Phase 1's edge-detection constants
-  (`src/core/constants.ts`) — reasonable defaults from the cards tested so
-  far, not exhaustively validated.
+- The flattened card a region is cropped from is itself deliberately
+  oversampled (`captureFlattenedCard`, `src/shell/capture.ts`, targets
+  `FLATTEN_OVERSAMPLE_FACTOR`× the detected quad's native measured size,
+  not its native size directly — see that constant's doc comment,
+  `src/core/constants.ts`) — every card-shaped transform between the raw
+  camera frame and a region crop (the perspective warp itself, then each
+  rotated region's own correction rotation) then runs against denser
+  source data, instead of compounding blur across several lossy passes
+  each done at native resolution before a single upscale at the very end
+  (an earlier version of this pipeline's approach — see git history).
+- Immediately before OCR, each region crop is then scaled *back down* to a
+  fixed target density (`OCR_TARGET_PX_PER_MM`, `src/shell/ocr.ts`, ~26
+  px/mm) — counterintuitively, Tesseract's `eng` LSTM model reads *worse*
+  against the fully-oversampled crop than against the same crop scaled
+  down to this density, despite the oversampled version having strictly
+  more real detail; the model appears to have its own preferred character-
+  size range from training, and exceeding it hurts just as falling short
+  of it does. See `scaleForOcr`'s doc comment for the manual sweep (target
+  density × page-segmentation mode) that picked this value, run against
+  real camera captures. A tuning parameter like Phase 1's edge-detection
+  constants (`src/core/constants.ts`) — a reasonable default from the
+  cards tested so far, not exhaustively validated.
 
 ## ID validation
 

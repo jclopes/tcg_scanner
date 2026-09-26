@@ -1,24 +1,13 @@
-import type { Matrix3x3, OpenCv, Point, Size } from "./types";
+import type { Matrix3x3, OpenCv, Quad, Size } from "./types";
 
 /**
- * Computes the 3x3 perspective transform matrix that maps the detected quad
- * corners onto an axis-aligned rectangle of `outputSize`, for flattening the
- * card crop.
- *
- * Corner order: `corners` is assumed to be
- * [topLeft, topRight, bottomRight, bottomLeft] (clockwise), matching
- * validateQuad's assumed order. They map respectively onto
- * outputSize's (0,0), (width,0), (width,height), (0,height).
- *
- * Takes the already-initialized OpenCV.js instance explicitly (dependency
- * injection — see OpenCv's doc comment in types.ts). Internally allocates
- * OpenCV.js Mats to call cv.getPerspectiveTransform, but frees them all
- * before returning, so the caller only ever deals with a plain numeric
- * Matrix3x3 value — no cv.Mat lifecycle leaks out of this function.
+ * The perspective transform mapping `corners` onto an axis-aligned
+ * `outputSize` rectangle ((0,0), (w,0), (w,h), (0,h), in corner order).
+ * Frees every OpenCV Mat it allocates; returns plain numbers.
  */
 export function computePerspectiveTransform(
   cv: OpenCv,
-  corners: [Point, Point, Point, Point],
+  corners: Quad,
   outputSize: Size,
 ): Matrix3x3 {
   const [topLeft, topRight, bottomRight, bottomLeft] = corners;

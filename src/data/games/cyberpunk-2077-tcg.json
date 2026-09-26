@@ -5,20 +5,20 @@
       "label": "collector_number",
       "type": "text",
       "allowed_chars_regex": "[B0-9]",
-      "x_mm": 58.80,
-      "y_mm": 97.62,
-      "width_mm": 5.20,
-      "height_mm": 2.23,
+      "x_mm": 59.50,
+      "y_mm": 97.75,
+      "width_mm": 5.50,
+      "height_mm": 2.20,
       "rotation_deg": -45
     },
     {
       "label": "set_code",
       "type": "text",
       "allowed_chars_regex": "[A-Z0-9\\-\\[\\] ]",
-      "x_mm": 72.40,
-      "y_mm": 60.0,
-      "width_mm": 11.70,
-      "height_mm": 2.30,
+      "x_mm": 73.00,
+      "y_mm": 59.50,
+      "width_mm": 12.60,
+      "height_mm": 1.90,
       "rotation_deg": -90
     }
   ]

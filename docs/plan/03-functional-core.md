@@ -22,13 +22,9 @@ equivalent relative path) gets all of it.
   take an already-initialized instance as an explicit `cv: OpenCv` parameter.
   No file in `src/core` (other than `types.ts`, for the type-only alias) ever
   imports `@techstark/opencv-js` itself.
-- **Corner order convention.** Everywhere a `[Point, Point, Point, Point]`
-  tuple represents a quad's corners (`validateQuad`'s input,
-  `computePerspectiveTransform`'s input), the assumed order is
-  **[topLeft, topRight, bottomRight, bottomLeft]**, clockwise. This isn't
-  enforced by the type system — it's a convention the caller (eventually the
-  shell, when it wires `intersectLines` calls together from
-  `expectedEdgeBands`' `[top, right, bottom, left]` band order) must follow.
+- **Corner order convention.** A `Quad` is always
+  **[topLeft, topRight, bottomRight, bottomLeft]**, clockwise
+  (`quadFromEdgeLines` produces it from `[top, right, bottom, left]` lines).
 - **Edge-band tuple order.** `expectedEdgeBands` returns
   `[top, right, bottom, left]` (clockwise, starting at top).
 
@@ -44,8 +40,7 @@ equivalent relative path) gets all of it.
 | `GuideRect` | `{ center: Point; width: number; height: number; orientation: Orientation }` | |
 | `EdgeBand` | `{ region: { origin: Point; size: Size }; side: "top"\|"right"\|"bottom"\|"left" }` | |
 | `FittedLine` | `{ point: Point; direction: Point; confidence: number }` | `direction` is unit-length; sign is arbitrary. `confidence` is in `[0, 1]`. `point`/`direction` are in whatever coordinate space the input was in (band-local for `fitEdgeLine`'s output — see below). |
-| `QuadValidationResult` | `{ valid: boolean; corners: [Point,Point,Point,Point] \| null; reason?: "edge-not-found" \| "aspect-ratio-out-of-tolerance" }` | See `validateQuad` below for which `reason`s this module actually produces. |
-| `CaptureResult` | `{ image: ImageBitmap; sourceResolution: Size; usedHighResStill: boolean }` | Defined for completeness per the plan's data contracts; not constructed by anything in `src/core` — it's the eventual output of the imperative shell's capture step. |
+| `Quad` | `readonly [Point, Point, Point, Point]` | Quad corners in the order above. |
 | `ToleranceConfig` | see below | New/refined beyond the plan — the plan named this type but didn't specify its fields. |
 | `EdgeBandPixels` | `{ data: Uint8ClampedArray; width: number; height: number }` | New — not in the plan's original contract list, but required to make `fitEdgeLine`'s `samples` parameter concrete. Single-channel grayscale, row-major, one byte per pixel. `data.length` must equal `width * height`. Deliberately a flat, transferable-friendly shape (one `Uint8ClampedArray`/`ArrayBuffer` + two numbers) since this is what a future Web Worker will receive via `postMessage`. |
 | `Matrix3x3` | `readonly [readonly [n,n,n], readonly [n,n,n], readonly [n,n,n]]` | New — the plan left `computePerspectiveTransform`'s return type open ("a 3x3 matrix type ... your call"). Chose a plain row-major nested-array value over returning OpenCV.js's own `cv.Mat`, so callers get ordinary, inspectable, structured-clone-able data with no `cv.Mat.delete()` lifecycle to manage — `computePerspectiveTransform` allocates and frees all intermediate `cv.Mat`s internally. |
@@ -69,7 +64,7 @@ interface ToleranceConfig {
    * positionTolerance to size expectedEdgeBands' band thickness. */
   zoomTolerance: number;
 
-  /** Allowed fractional deviation of validateQuad's measured aspect ratio
+  /** Allowed fractional deviation of isQuadAspectRatioValid's measured aspect ratio
    * from targetAspectRatio before rejecting, e.g. 0.08 = +/-8%. */
   aspectRatioTolerance: number;
 }
@@ -86,7 +81,7 @@ aspectRatioTolerance: 0.08 }`.
 | Constant | Value | Used by |
 |---|---|---|
 | `STANDARD_CARD_WIDTH_MM` / `STANDARD_CARD_HEIGHT_MM` | `63` / `88` | Documents the physical card model. |
-| `STANDARD_CARD_ASPECT_RATIO` | `63/88 ≈ 0.7159` | `computeGuideGeometry`'s guide shape; the `targetAspectRatio` callers should pass to `validateQuad` for the standard card format. |
+| `STANDARD_CARD_ASPECT_RATIO` | `63/88 ≈ 0.7159` | `computeGuideGeometry`'s guide shape; the `targetAspectRatio` callers should pass to `isQuadAspectRatioValid` for the standard card format. |
 | `GUIDE_FILL_FRACTION` | `0.92` | `computeGuideGeometry` — how much of the frame the guide fills. Judgment call (see file comment for reasoning). |
 | `EDGE_BAND_CORNER_INSET_FRACTION` | `0.12` | `expectedEdgeBands` — fraction trimmed off each end of a band's length to stay clear of the card's rounded corners. |
 | `EDGE_FAIL_FAST_MEAN_GRADIENT_THRESHOLD` | `20` | `fitEdgeLine`'s fail-fast check threshold (0-255 scale; see `fitEdgeLine` below for what's actually measured). |
@@ -132,90 +127,66 @@ rotated edge exhibits at the ends of its (inset) length, given
 `rotationToleranceDegrees`. Opposite bands are symmetric around the guide's
 center.
 
-### `fitEdgeLine(cv: OpenCv, samples: EdgeBandPixels): FittedLine | null`
+### `fitEdgeLine(cv: OpenCv, samples: EdgeBandPixels, outwardDirection: Point, rotationToleranceDegrees: number): FittedLine | null`
 
 File: `src/core/edgeLine.ts`
 
-**Signature differs from the plan's sketch** (`fitEdgeLine(samples): FittedLine
-| null`, no `cv` parameter) — this was a deliberate, instructed deviation:
-OpenCV.js must be dependency-injected, not imported, so `cv` was added as the
-first parameter.
+`cv` is dependency-injected (not imported). Throws if `samples.data.length
+!== width * height` (a caller bug); returns `null` ("edge not found") for a
+band under 2px in either dimension (clamped at the frame boundary) and for
+every step below that finds nothing. The steps are small private helpers:
 
-Algorithm:
-1. **Fail-fast.** Rejects immediately (`null`) if the band has no
-   meaningful edge signal, checked via a max-gradient-per-scanline score
-   (see `fastEdgeScore` in `edgeLine.ts`) rather than a naive whole-band mean
-   gradient — a real sharp edge's mean gets diluted to near-zero by all the
-   flat pixels away from it on any band of realistic size, which was caught
-   empirically while writing this module's tests. Threshold:
-   `EDGE_FAIL_FAST_MEAN_GRADIENT_THRESHOLD`.
-2. `cv.Canny` then `cv.HoughLinesP` to find straight-line segments.
-   `minLineLength`/`maxLineGap` scale with the band's long-axis dimension
-   (`EDGE_HOUGH_MIN_LINE_LENGTH_FRACTION`/`EDGE_HOUGH_MAX_LINE_GAP_FRACTION`).
-   **Implementation note:** this build of OpenCV.js's `HoughLinesP` returns a
-   1-row Mat with one *column* per detected segment, not one row per segment
-   as the C++ docs' `Nx1` convention might suggest — confirmed empirically.
-   The code reads the segment count via `lines.total()`, not `lines.rows`.
-3. If no segments were found, returns `null`.
-4. Combines all segments into one robust line via a length-weighted
-   total-least-squares fit: each segment contributes both endpoints,
-   weighted by the segment's length; the fitted `direction` is the dominant
-   eigenvector of the resulting 2x2 weighted-covariance matrix (the endpoint
-   scatter's principal axis), and `point` is the weighted centroid. This
-   combines fragmented Hough segments (e.g. an edge partly occluded by a
-   finger) into a single line robustly.
-5. **Confidence** = `linearity * coverage`, both in `[0, 1]`:
-   - `linearity = (λ1 - λ2) / (λ1 + λ2)` of the covariance's eigenvalues — 1
-     when all endpoints are exactly collinear, lower when scattered.
-   - `coverage = min(1, totalSegmentLength / bandLongAxis)` — how much of
-     the band's expected edge length was actually detected.
-   If `confidence < EDGE_MIN_CONFIDENCE`, returns `null` (treated as
-   not-found rather than a weak-but-usable line).
+1. `edgeScore` — fail fast unless scanlines cross a strong transition
+   (average of per-scanline max gradients, better of rows/columns;
+   threshold `EDGE_FAIL_FAST_MEAN_GRADIENT_THRESHOLD`).
+2. `houghSegments` — `cv.Canny` + `cv.HoughLinesP` (length/gap scale with the
+   band's long axis). This OpenCV.js build returns a 1-row Mat, so the
+   segment count is `lines.total()`. All Mats are freed in a `finally`.
+3. `filterByAngle` — drop segments more than `rotationToleranceDegrees` off
+   the edge direction (perpendicular to the axis-aligned `outwardDirection`).
+4. `outwardMostCluster` — walk segments outward → inward and stop at the
+   first per-step gap above `EDGE_OUTWARD_GAP_TOLERANCE_FRACTION` of the band
+   thickness, so an inner parallel feature (the card's printed border)
+   doesn't pull the fit inward.
+5. `fitWeightedLine` — length-weighted total-least-squares line through the
+   kept segments' endpoints; confidence = linearity × coverage. Below
+   `EDGE_MIN_CONFIDENCE` counts as not found.
 
-`point`/`direction` are returned in **band-local pixel coordinates** (same
-space as `samples`, origin at `samples`' `(0,0)`) — callers must translate
-into frame coordinates (add the band's `region.origin`) before calling
-`intersectLines` across two different bands' results.
+`point`/`direction` are in band-local coordinates; callers translate by the
+band's (clamped) `origin` before intersecting lines from different bands.
 
-All intermediate `cv.Mat`s (`src`, `edges`, `lines`) are freed
-(`.delete()`) before returning, in a `finally` block — no memory leak even
-if OpenCV.js throws mid-call.
-
-### `intersectLines(a: FittedLine, b: FittedLine): Point`
+### `intersectLines(a: FittedLine, b: FittedLine): Point | null`
 
 File: `src/core/geometry.ts`
 
-Standard point+direction line-line intersection. Sign-agnostic (flipping
-either line's `direction` doesn't change the result). Both lines must be in
-the same coordinate space (typically frame coordinates).
+Standard point+direction line-line intersection, sign-agnostic, both lines
+in the same coordinate space. Returns `null` when the directions' cross
+product is within `1e-9` of zero (parallel lines are an expected detection
+outcome, not an error).
 
-**Judgment call:** the plan's contract returns a plain `Point`, not
-`Point | null`. Since adjacent guide edges are expected to be roughly
-perpendicular, a (near-)parallel pair is treated as a genuine invariant
-violation: this function **throws** (`Error`, message matching `/parallel/i`)
-rather than silently returning `NaN`/`Infinity`, when the two directions'
-cross product is within `1e-9` of zero.
-
-### `validateQuad(corners: [Point,Point,Point,Point], targetAspectRatio: number, tolerance: ToleranceConfig): QuadValidationResult`
+### `quadFromEdgeLines(lines: [FittedLine, FittedLine, FittedLine, FittedLine]): Quad | null`
 
 File: `src/core/geometry.ts`
 
-`corners` assumed order: `[topLeft, topRight, bottomRight, bottomLeft]`
-(clockwise). Computes each side's length, averages opposite sides
-(`avgWidth = (top+bottom)/2`, `avgHeight = (left+right)/2`), and compares
-`min(avgWidth,avgHeight)/max(avgWidth,avgHeight)` against
-`targetAspectRatio` within `tolerance.aspectRatioTolerance` (relative
-deviation). Returns `{ valid: false, corners: null, reason:
-"aspect-ratio-out-of-tolerance" }` on failure (including degenerate
-zero/non-finite side lengths), `{ valid: true, corners }` on success.
+Intersects adjacent edge lines (`[top, right, bottom, left]`, frame
+coordinates) into a `Quad`; `null` if any adjacent pair is parallel.
 
-**This function never produces `reason: "edge-not-found"`** — see
-`QuadValidationResult`'s doc comment in `types.ts`: since `corners` is a
-required, already-computed tuple, a missing/unfittable edge has to be
-detected by the caller (the shell) *before* corners can even be
-intersected, by checking `fitEdgeLine`'s 4 results for `null` and
-short-circuiting without calling `validateQuad` at all. This is a
-deliberate, documented reading of an underspecified part of the plan.
+### `quadAspectRatio(corners: Quad): number`
+
+File: `src/core/geometry.ts`
+
+`min(avgWidth,avgHeight)/max(avgWidth,avgHeight)` from averaged opposite
+side lengths; `NaN` for a degenerate quad. Shared by
+`isQuadAspectRatioValid` and `selectBestFrame`.
+
+### `isQuadAspectRatioValid(corners: Quad, targetAspectRatio: number, tolerance: ToleranceConfig): boolean`
+
+File: `src/core/geometry.ts`
+
+Whether `quadAspectRatio(corners)` is within
+`tolerance.aspectRatioTolerance` (relative deviation) of
+`targetAspectRatio`. A degenerate quad is invalid. Missing edges are the
+caller's concern — it never sees an incomplete quad.
 
 ### `computePerspectiveTransform(cv: OpenCv, corners: [Point,Point,Point,Point], outputSize: Size): Matrix3x3`
 
@@ -230,7 +201,7 @@ respectively onto `outputSize`'s `(0,0)`, `(width,0)`, `(width,height)`,
 `3x3`, `CV_64F` result into a plain `Matrix3x3`; all intermediate `cv.Mat`s
 are freed before returning.
 
-### `computeOutputRotationDegrees(camera: Orientation, card: CardPrintFormat): 0 | 90 | 180 | 270`
+### `computeOutputRotationDegrees(camera: Orientation, card: CardPrintFormat): 0 | 90`
 
 File: `src/core/orientation.ts`
 
@@ -323,7 +294,8 @@ Vitest's Node-side transform.
   `90`.
 - `geometry.test.ts` — `intersectLines`: perpendicular lines, non-unit
   direction vectors, sign-flipped directions, arbitrary angled lines,
-  parallel and near-parallel lines (must throw). `validateQuad`: exact
+  parallel and near-parallel lines (`null`). `quadFromEdgeLines`: rectangle
+  reconstruction and parallel-edge `null`. `isQuadAspectRatioValid`: exact
   match, both guide orientations, small in-tolerance perturbation, two
   out-of-tolerance shapes, a degenerate (coincident-corner) quad, and a
   widened-tolerance acceptance case.
@@ -337,7 +309,7 @@ Vitest's Node-side transform.
   known ground-truth point+direction: a vertical edge (tall/narrow band), a
   horizontal edge (short/wide band), a slightly rotated edge, an edge with a
   simulated occlusion gap (still recovered), a blank band (`null`), a
-  low-contrast noisy band (`null`), malformed input (`null`), and a relative
+  low-contrast noisy band (`null`), too-thin band (`null`), malformed input (throws), and a relative
   check that full-visibility confidence exceeds mostly-occluded confidence.
   Uses the real OpenCV.js WASM build (via `loadOpenCv()`), not a mock.
 - `perspective.test.ts` — `computePerspectiveTransform` against the real

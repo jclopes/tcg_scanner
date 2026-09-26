@@ -1,28 +1,92 @@
+import type { Quad, RgbaPixelBuffer, Size } from "../core";
+
+/** The canvas's 2D context. Throws if the browser can't provide one. */
+export function require2dContext(
+  canvas: HTMLCanvasElement,
+  options?: CanvasRenderingContext2DSettings,
+): CanvasRenderingContext2D {
+  const ctx = canvas.getContext("2d", options);
+  if (!ctx) {
+    throw new Error("Could not get a 2D canvas context.");
+  }
+  return ctx;
+}
+
+export function createCanvas(size: Size): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = size.width;
+  canvas.height = size.height;
+  return canvas;
+}
+
+/** A new canvas holding `source` drawn at `size`. */
+export function snapshotSource(source: CanvasImageSource, size: Size): HTMLCanvasElement {
+  const canvas = createCanvas(size);
+  require2dContext(canvas).drawImage(source, 0, 0, size.width, size.height);
+  return canvas;
+}
+
+export function imageDataToCanvas(imageData: ImageData): HTMLCanvasElement {
+  const canvas = createCanvas(imageData);
+  require2dContext(canvas).putImageData(imageData, 0, 0);
+  return canvas;
+}
+
+/** `source` rotated clockwise by `degrees` onto a new canvas (width/height
+ * swapped for 90/270). Returns `source` itself for 0. */
+export function rotateCanvas(source: HTMLCanvasElement, degrees: 0 | 90 | 180 | 270): HTMLCanvasElement {
+  if (degrees === 0) {
+    return source;
+  }
+  const swap = degrees === 90 || degrees === 270;
+  const output = createCanvas(
+    swap ? { width: source.height, height: source.width } : { width: source.width, height: source.height },
+  );
+  const ctx = require2dContext(output);
+  ctx.translate(output.width / 2, output.height / 2);
+  ctx.rotate((degrees * Math.PI) / 180);
+  ctx.drawImage(source, -source.width / 2, -source.height / 2);
+  return output;
+}
+
+/** The pixels inside `corners`' axis-aligned bounding box (clamped to the
+ * canvas) — the card as it appears in the raw frame. */
+export function readQuadBoundingBoxPixels(canvas: HTMLCanvasElement, corners: Quad): RgbaPixelBuffer {
+  const xs = corners.map((corner) => corner.x);
+  const ys = corners.map((corner) => corner.y);
+  const left = Math.max(0, Math.floor(Math.min(...xs)));
+  const top = Math.max(0, Math.floor(Math.min(...ys)));
+  const right = Math.min(canvas.width, Math.ceil(Math.max(...xs)));
+  const bottom = Math.min(canvas.height, Math.ceil(Math.max(...ys)));
+
+  const imageData = require2dContext(canvas).getImageData(left, top, right - left, bottom - top);
+  return { data: imageData.data, width: imageData.width, height: imageData.height };
+}
+
 /**
- * Converts `canvas` to a `blob:` object URL — short and stable regardless of
- * image size, unlike a `data:` URL (`canvas.toDataURL()`), which embeds the
- * entire image as base64 text directly in the URL string. That difference
- * matters beyond just tidiness: a full-resolution capture can produce a
- * data: URL tens of megabytes long, and browsers reliably fail to navigate
- * to one that long — e.g. a right-click "open image in new tab" on an
- * `<img>` whose `src` is such a URL silently does nothing. A `blob:` URL
- * has no such limit, since the actual bytes live in the browser's own blob
- * store, not the URL itself.
- *
- * The trade-off is that a `blob:` URL must be explicitly freed via
- * `URL.revokeObjectURL` once it's no longer needed, or the underlying image
- * data (which can be several MB per image) stays alive for the rest of the
- * page's lifetime — callers are responsible for this (see debugSteps.ts and
- * app.ts for the two places that track and revoke their own).
- *
- * Resolves to `null` if the canvas can't produce a blob — `toBlob`'s own
- * contract allows this, though it isn't expected to actually happen for a
- * same-origin canvas with real pixel content.
+ * `canvas` as a `blob:` object URL. Unlike a `data:` URL, its length doesn't
+ * grow with the image, so browsers can open large captures (e.g. "open image
+ * in new tab"). The caller must `URL.revokeObjectURL` it when done.
  */
-export function canvasToObjectURL(canvas: HTMLCanvasElement): Promise<string | null> {
-  return new Promise((resolve) => {
+export function canvasToObjectURL(canvas: HTMLCanvasElement): Promise<string> {
+  return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
-      resolve(blob ? URL.createObjectURL(blob) : null);
+      if (blob) {
+        resolve(URL.createObjectURL(blob));
+      } else {
+        reject(new Error("Could not encode canvas as an image blob."));
+      }
     }, "image/png");
   });
+}
+
+/** Calls `callback` on the video's next frame (`requestVideoFrameCallback`,
+ * falling back to `requestAnimationFrame`). Returns a cancel function. */
+export function scheduleVideoFrame(video: HTMLVideoElement, callback: () => void): () => void {
+  if (typeof video.requestVideoFrameCallback === "function") {
+    const handle = video.requestVideoFrameCallback(callback);
+    return () => video.cancelVideoFrameCallback(handle);
+  }
+  const handle = requestAnimationFrame(callback);
+  return () => cancelAnimationFrame(handle);
 }

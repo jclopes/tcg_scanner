@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { laplacianVariance, selectBestFrame } from "./frameQuality";
 import type { RgbaPixelBuffer } from "./pixelExtraction";
+import type { Point } from "./types";
 
 /** A uniform-color frame — no edge content, so laplacianVariance should be
  * (near) zero regardless of size or color. */
@@ -53,26 +54,38 @@ describe("laplacianVariance", () => {
   });
 });
 
+/** Axis-aligned quad corners for a `width` x `height` card, in
+ * [topLeft, topRight, bottomRight, bottomLeft] order. */
+function rectCorners(width: number, height: number): [Point, Point, Point, Point] {
+  return [
+    { x: 0, y: 0 },
+    { x: width, y: 0 },
+    { x: width, y: height },
+    { x: 0, y: height },
+  ];
+}
+
 describe("selectBestFrame", () => {
-  it("returns the only frame when given exactly one", () => {
-    const only = solidFrame(10, 10, 0);
-    expect(selectBestFrame([only], 0.7159)).toBe(only);
+  const targetAspectRatio = 0.7159; // standard card ratio
+
+  it("returns the only candidate when given exactly one", () => {
+    const only = { corners: rectCorners(100, 140), cardPixels: solidFrame(10, 10, 0) };
+    expect(selectBestFrame([only], targetAspectRatio)).toBe(only);
   });
 
-  it("prefers the sharper frame when aspect ratios are equally good", () => {
-    const blurry = checkerboardFrame(100, 140, 100, 155);
-    const sharp = checkerboardFrame(100, 140, 0, 255);
-    expect(selectBestFrame([blurry, sharp], 100 / 140)).toBe(sharp);
+  it("prefers the sharper candidate when quad geometry is equally good", () => {
+    const blurry = { corners: rectCorners(100, 140), cardPixels: checkerboardFrame(20, 20, 100, 155) };
+    const sharp = { corners: rectCorners(100, 140), cardPixels: checkerboardFrame(20, 20, 0, 255) };
+    expect(selectBestFrame([blurry, sharp], targetAspectRatio)).toBe(sharp);
   });
 
-  it("prefers the frame whose aspect ratio better matches the target when sharpness is equal", () => {
-    const targetAspectRatio = 0.7159; // standard card ratio
-    const wellMatched = checkerboardFrame(100, 140, 0, 255); // ratio ~0.714
-    const badlyMatched = checkerboardFrame(100, 200, 0, 255); // ratio 0.5
+  it("prefers the candidate whose quad better matches the target aspect ratio when sharpness is equal", () => {
+    const wellMatched = { corners: rectCorners(100, 140), cardPixels: checkerboardFrame(20, 20, 0, 255) }; // ~0.714
+    const badlyMatched = { corners: rectCorners(100, 200), cardPixels: checkerboardFrame(20, 20, 0, 255) }; // 0.5
     expect(selectBestFrame([badlyMatched, wellMatched], targetAspectRatio)).toBe(wellMatched);
   });
 
-  it("throws on an empty frame list", () => {
-    expect(() => selectBestFrame([], 0.7159)).toThrow();
+  it("throws on an empty candidate list", () => {
+    expect(() => selectBestFrame([], targetAspectRatio)).toThrow();
   });
 });

@@ -41,14 +41,18 @@ stays in `src/shell/frameSampler.ts` and calls this.
 
 ```
 src/shell/
-  config.ts             DEFAULT_TOLERANCE_CONFIG + PREVIEW_STREAM_SIZE (placeholder tuning values)
+  config.ts             DEFAULT_TOLERANCE_CONFIG + camera resolution options
   state.ts               ScanPhase / ScanState (the explicit state machine's data shape)
   cameraStream.ts         getUserMedia acquisition, error mapping, teardown
-  orientationWatcher.ts   Derives/watches Orientation from the live video's frame dimensions
+  orientationWatcher.ts   Orientation/frame size from the video's own dimensions; resize watcher
   guideOverlay.ts         Draws/clears the guide rectangle on the overlay canvas
-  frameSampler.ts         Impure: reads a video frame's pixels, calls core's extractGrayscaleRegion per band
-  detectionLoop.ts        The rVFC/rAF per-frame detect-and-validate loop
-  capture.ts              Final still capture, corner rescale, perspective warp (OpenCV.js), upright rotation
+  canvasUtils.ts          Shared canvas helpers (context, create/snapshot/rotate, blob URLs, frame scheduling)
+  frameSampler.ts         Reads a frame's pixels, calls core's extractGrayscaleRegion per band
+  frameDetection.ts       One quad-detection pass on a frame → FrameEvaluation
+  detectionLoop.ts        The per-frame live detection loop
+  frameBurst.ts           Post-acceptance burst of detection-only frames
+  capture.ts              Perspective warp (OpenCV.js) + upright rotation of the selected frame
+  debugSteps.ts           Builds/renders the debug trail
   app.ts                  Orchestrator: DOM wiring, event handlers, the state machine
 ```
 
@@ -84,24 +88,18 @@ requirement beyond until the page reloads").
 
 ### 3. Orientation detection — `orientationWatcher.ts`
 
-`getVideoOrientation(video)` is `video.videoWidth > video.videoHeight ?
-"landscape" : "portrait"` — derived from the live video's actual reported
-frame dimensions, never a device/screen-orientation API, per the task's
-explicit instruction (the guide is tied to camera/frame orientation, not
-device chrome). `watchVideoOrientation(video, onChange)` subscribes to the
-video element's own `"resize"` event (which `HTMLVideoElement` fires
-whenever `videoWidth`/`videoHeight` change intrinsically — e.g. the camera
-stream renegotiates after a device rotation) plus `"loadedmetadata"` for
-the first reading, and calls `onChange` on every dimension change (even a
-same-category one, since guide geometry depends on the concrete frame size
-too). `DetectionLoop` re-derives orientation this same way independently,
-every frame, from the video element directly — it doesn't depend on the
-watcher's callback at all, so detection is always correct even if a resize
-event were somehow missed.
+`orientationFromSize(size)` is `width > height ? "landscape" : "portrait"`
+— derived from the frame's own dimensions, never a device/screen-orientation
+API. `videoFrameSize(video)` reads the video's intrinsic size and throws if
+it has none (frames are only read from a started stream).
+`watchVideoOrientation(video, onChange)` listens to the video element's own
+`"resize"` and `"loadedmetadata"` events. Everything that draws or detects
+re-reads the size from the video (or the frame canvas) directly rather than
+caching it.
 
 ### 4. Guide overlay — `guideOverlay.ts`
 
-`drawGuideOverlay(canvas, orientation, frameSize)` sets the overlay
+`drawGuideOverlay(canvas, orientation, frameSize, edgeColors, cardFormat)` sets the overlay
 canvas's internal pixel buffer (`canvas.width`/`height`) to exactly
 `frameSize` (the video's intrinsic size) and draws `computeGuideGeometry`'s
 rectangle directly in that same coordinate space — no scaling math needed
@@ -143,65 +141,53 @@ Again" (enabled — clicking it in this phase goes straight back into
 call that `"idle"`/`"error"` use; it does not pass through `"idle"` first.
 See Judgment calls below for why.).
 
-### 6. The frame-sampling loop — `detectionLoop.ts`
+### 6. Frame detection and the live loop — `frameDetection.ts` / `detectionLoop.ts`
 
-`DetectionLoop.start(onAccepted)` schedules `evaluateFrame()` via
-`video.requestVideoFrameCallback` when available (ties evaluation to actual
-new camera frames, not the display refresh rate — the more correct choice
-for a camera feed), falling back to `requestAnimationFrame`.
-`requestVideoFrameCallback` fires once per registration, so `start()`'s
-step function re-schedules itself after every evaluated frame rather than
-being a persistent subscription.
+`evaluateFrameForQuad(sampler, pool, source, frameSize)` runs one pass:
+`computeGuideGeometry` → `expectedEdgeBands` → `FrameSampler` (one
+`getImageData`, then `extractGrayscaleRegion` per band) →
+`pool.detectEdges` → `quadFromEdgeLines` (lines translated by each band's
+clamped origin) → `isQuadAspectRatioValid`. It returns a `FrameEvaluation`
+union: `{ status: "accepted", frame: { corners, frameCanvas } }` or
+`{ status: "rejected", reason }` (`edge-not-found` / `parallel-edges` /
+`aspect-ratio-out-of-tolerance`), always with the band pixels and lines for
+the debug views.
 
-Each evaluated frame: reads `video.videoWidth`/`videoHeight`, derives
-orientation, runs `computeGuideGeometry` → `expectedEdgeBands(guide,
-DEFAULT_TOLERANCE_CONFIG)`, samples all 4 bands via `FrameSampler` (one
-`getImageData` call over the whole frame, then `extractGrayscaleRegion`
-per band — see Judgment calls), calls `pool.detectEdges(...)`. If any of
-the 4 results is `null`, the frame is discarded (per `src/core`'s
-documented contract: a missing edge is the caller's job to short-circuit
-on before ever calling `validateQuad`). Otherwise each `FittedLine` is
-translated from band-local to frame coordinates (`point.x/y +=
-band.region.origin.x/y`, per `FittedLine`'s doc comment), the 4 corners are
-reconstructed via `intersectLines` on adjacent band pairs
-(`[topLeft, topRight, bottomRight, bottomLeft]`, matching `src/core`'s
-corner-order convention), and `validateQuad` checks the aspect ratio. A
-`null` edge, a parallel-lines exception from `intersectLines` (adjacent
-edges detected as parallel — a genuine per-frame failure, not a bug), or a
-failed `validateQuad` all just discard the frame and continue — nothing
-ever blocks or visibly stalls the loop, per the plan's fail-fast
-requirement. The first frame that produces a valid quad calls `stop()`
-*then* `onAccepted(result)`.
+`DetectionLoop.start({ onAccepted, onFrameEvaluated, onError })` evaluates
+one frame per `scheduleVideoFrame` (`requestVideoFrameCallback`, falling
+back to `requestAnimationFrame`). A rejected frame is an expected outcome:
+report its edges and schedule the next frame. The first accepted frame stops
+the loop and calls `onAccepted`. An unexpected failure (a crashed worker, a
+video without dimensions) stops the loop and calls `onError`, which
+`app.ts` shows as the `"error"` state.
 
-### 7. Capture on success — `capture.ts`
+### 7. Burst, selection and capture — `frameBurst.ts` / `capture.ts`
 
-`captureFlattenedCard(input)`:
+After acceptance, `collectBurstFrames` runs detection-only bursts (see
+docs/plan/01-capture-and-detection.md for the frame-count policy). `app.ts`
+picks the best accepted frame with core's `selectBestFrame` (card-region
+sharpness + quad aspect ratio), falling back to the preview frame if no
+burst frame was accepted, and only that frame is flattened.
 
-1. **Still image**: tries `ImageCapture.takePhoto()` first (a genuine
-   full-resolution photo, where supported), then `ImageCapture.grabFrame()`
-   as a second-choice fallback, then finally just draws the current
-   `<video>` frame onto a canvas if `ImageCapture` isn't supported at all
-   or both calls throw — feature-detected via `typeof ImageCapture !==
-   "undefined"`. Returns `usedHighResStill: true` only for the first two
-   paths.
-2. **Rescale corners**: `scaleX/Y = stillSize / previewFrameSize`; each of
-   the 4 accepted corners (in preview-frame coordinates from
-   `DetectionLoop`) is multiplied by that ratio, since the still can have
-   different pixel dimensions than the preview frame the quad was detected
-   in.
-3. **Output size**: chosen as the scaled quad's own measured side lengths
-   (`distance(topLeft, topRight)` for width, `distance(topLeft,
-   bottomLeft)` for height), rounded — not a fixed constant — so the
-   output preserves as much of the still's actual resolution as the quad
-   occupies, rather than down/up-sampling to an arbitrary fixed size (see
-   Judgment calls).
-4. **Warp**: `computePerspectiveTransform` (from `src/core`) produces the
-   `Matrix3x3`; `cv.warpPerspective` (OpenCV.js) applies it onto a canvas
-   via `cv.imread`/`cv.imshow`.
-5. **Rotate**: `computeOutputRotationDegrees(camera, cardFormat)` from
-   `src/core` gives `0 | 90`; a 90° rotation is applied via
-   `ctx.translate/rotate/drawImage` onto a new canvas with swapped
-   width/height.
+`captureFlattenedCard(cv, frame, cardFormat)`:
+
+1. **Output size** (`flattenedOutputSize`): the quad's measured side
+   lengths × `FLATTEN_OVERSAMPLE_FACTOR`, snapped to the card's exact
+   aspect ratio by `canonicalCardSizeFor`. Short/long sides come from the
+   measured lengths, since a pre-rotation quad may be sideways.
+2. **Warp** (`warpQuad`): `computePerspectiveTransform` + `cv.warpPerspective`
+   from the frame canvas the quad was detected in.
+3. **Rotate**: `computeOutputRotationDegrees(orientationFromSize(frame),
+   cardFormat)` gives `0 | 90`, applied with `rotateCanvas`.
+
+### Error handling
+
+Expected outcomes of a function's own logic are handled where they occur
+(an edge not found, parallel edges, a bad aspect ratio, `ImageCapture`
+unsupported → `captureHiResStill` returns `null`). Everything else
+propagates: a missing 2D context (`require2dContext` throws), a worker
+failure, an OCR or game-config failure all reach `failScan` in `app.ts`
+and show the `"error"` state — unless that scan cycle is already stale.
 
 ### 8. Display the result — `app.ts`
 

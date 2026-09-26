@@ -224,10 +224,21 @@ describe("fitEdgeLine", () => {
     expect(result).toBeNull();
   });
 
-  it("returns null for malformed input (data length mismatched with dimensions)", () => {
+  it("throws for malformed input (data length mismatched with dimensions)", () => {
+    expect(() =>
+      fitEdgeLine(
+        cv,
+        { data: new Uint8ClampedArray(10), width: 50, height: 160, origin: { x: 0, y: 0 } },
+        OUTWARD_RIGHT,
+        GENEROUS_ROTATION_TOLERANCE_DEGREES,
+      ),
+    ).toThrow();
+  });
+
+  it("returns null for a band too thin to hold an edge (clamped at the frame boundary)", () => {
     const result = fitEdgeLine(
       cv,
-      { data: new Uint8ClampedArray(10), width: 50, height: 160, origin: { x: 0, y: 0 } },
+      { data: new Uint8ClampedArray(160), width: 1, height: 160, origin: { x: 0, y: 0 } },
       OUTWARD_RIGHT,
       GENEROUS_ROTATION_TOLERANCE_DEGREES,
     );

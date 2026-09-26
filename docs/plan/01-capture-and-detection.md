@@ -192,10 +192,10 @@ and selects the best one — on the theory that a frame a moment later,
 mid-hold, is often sharper or better-aligned than the very first frame
 that happened to pass detection.
 
-- Each burst frame is independently run through the same
-  detect-then-flatten pipeline used for live detection
-  (`captureFlattenedFrameBurst`); a frame whose own detection doesn't
-  accept a quad is simply skipped, not retried.
+- Each burst frame is independently run through the same quad detection
+  used for live detection (`captureFrameBurst`) — detection only, no
+  flattening; a frame whose own detection doesn't accept a quad is simply
+  skipped, not retried. Only the single selected frame is flattened.
 - Up to `CAPTURE_BURST_FRAME_COUNT` (10) frames are attempted per burst
   round. If fewer than `CAPTURE_BURST_MIN_USABLE_FRAMES` (5) frames were
   successfully captured, another round of up to 10 is attempted, up to a
@@ -205,14 +205,14 @@ that happened to pass detection.
   hard limit is hit with at least one usable frame but fewer than 5, the
   best of whatever was captured is still used rather than failing
   outright; only a burst that captures *zero* usable frames falls back to
-  flattening the original preview-triggering frame directly.
+  the original preview-triggering frame.
 - The best candidate is picked by `selectBestFrame`
   (`src/core/frameQuality.ts`), combining two signals, each normalized
   0–1 against the candidate set and summed with equal weight:
   - **Sharpness** — Laplacian variance (`laplacianVariance`), a standard
-    blur-detection measure.
-  - **Aspect-ratio match** — how closely the frame's own measured
-    aspect ratio matches the target card aspect ratio.
+    blur-detection measure, of the card's bounding box in the raw frame.
+  - **Quad geometry match** — how closely the accepted quad's measured
+    aspect ratio (`quadAspectRatio`) matches the target card aspect ratio.
 - All 4 constants above are starting guesses (`src/core/constants.ts`),
   flagged there as tuning targets once real-device empirical data is
   available, same as the other tolerance values in this plan.

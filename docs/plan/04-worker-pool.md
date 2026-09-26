@@ -89,10 +89,8 @@ The pool's one per-frame entry point. Call it once per evaluated frame.
 - **`null` entries:** exactly what `fitEdgeLine` itself returns for a
   not-found/low-confidence edge — this pool is a transparent pass-through,
   it doesn't add its own notion of failure for a normal "edge not found"
-  result. Per `src/core`'s documented contract (see
-  [03-functional-core.md](./03-functional-core.md), `QuadValidationResult`),
-  it's the caller's job to short-circuit (skip `validateQuad`, reject the
-  frame) as soon as any of the 4 results is `null`.
+  result. The caller (`evaluateFrameForQuad`) rejects the frame as
+  `edge-not-found` as soon as any of the 4 results is `null`.
 - **Coordinates:** each `FittedLine`'s `point`/`direction` are in
   band-local pixel coordinates, exactly as `fitEdgeLine` produces them —
   this pool does no coordinate translation. The caller still owns adding

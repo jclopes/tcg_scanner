@@ -7,15 +7,8 @@ import {
 } from "./constants";
 import type { EdgeBand, GuideRect, Orientation, Point, Size } from "./types";
 
-/**
- * The unit direction, in a band's own local pixel coordinates, that points
- * away from the guide's center ("outward") for a given edge side — e.g. for
- * the top band, outward is -y (toward the frame's top edge); for bottom,
- * +y; and so on. Lets `fitEdgeLine` prefer segments nearest a band's
- * outward extreme (the card's true physical edge) over ones further inward
- * (e.g. the card's own printed border/artwork frame) without `fitEdgeLine`
- * itself needing to know which side it's fitting — see its doc comment.
- */
+/** Unit direction pointing away from the guide's center for an edge side
+ * (e.g. top → -y). Lets `fitEdgeLine` prefer the outward-most segment. */
 export function outwardDirectionForSide(side: EdgeBand["side"]): Point {
   switch (side) {
     case "top":
@@ -30,20 +23,9 @@ export function outwardDirectionForSide(side: EdgeBand["side"]): Point {
 }
 
 /**
- * Computes the on-screen guide rectangle for a given camera orientation and
- * frame size.
- *
- * The guide's shape is a pure function of camera orientation only (never of
- * card print format — see plan, "Orientation handling"): portrait camera ->
- * height > width; landscape camera -> width > height. This holds
- * unconditionally regardless of the frame's own aspect ratio, because the
- * guide is always built from the standard card aspect ratio applied to
- * whichever of the frame's two dimensions is unconstrained (see below), never
- * from the frame's shape directly.
- *
- * The guide is centered in the frame and sized to fill as much of it as
- * possible (see GUIDE_FILL_FRACTION) while (a) respecting
- * STANDARD_CARD_ASPECT_RATIO and (b) fitting entirely within the frame.
+ * The guide rectangle: centered, card-shaped (STANDARD_CARD_ASPECT_RATIO),
+ * long side vertical for a portrait camera and horizontal for landscape,
+ * as large as fits within GUIDE_FILL_FRACTION of the frame.
  */
 export function computeGuideGeometry(camera: Orientation, frameSize: Size): GuideRect {
   const availableWidth = frameSize.width * GUIDE_FILL_FRACTION;
@@ -53,8 +35,6 @@ export function computeGuideGeometry(camera: Orientation, frameSize: Size): Guid
   let height: number;
 
   if (camera === "portrait") {
-    // Long side (height) is the constrained dimension; derive width from it.
-    // STANDARD_CARD_ASPECT_RATIO < 1, so width < height always holds here.
     height = availableHeight;
     width = height * STANDARD_CARD_ASPECT_RATIO;
     if (width > availableWidth) {
@@ -75,17 +55,8 @@ export function computeGuideGeometry(camera: Orientation, frameSize: Size): Guid
   return { center, width, height, orientation: camera };
 }
 
-/**
- * How much bigger (or smaller) `frameSize` is than
- * EDGE_BAND_REFERENCE_FRAME_SIZE, as a single linear scale factor — e.g. 3
- * for a 3840x2160 frame (exactly 3x the reference's linear dimensions), 1
- * for the reference resolution itself. Derived from the *area* ratio
- * (`sqrt(frameArea / referenceArea)`) rather than comparing one dimension
- * directly, so it stays meaningful even when the camera's aspect ratio
- * isn't the reference's own 16:9 (e.g. a 4:3 request) — width- or
- * height-only would either over- or under-scale depending on which axis
- * happened to change.
- */
+/** Linear scale of `frameSize` relative to EDGE_BAND_REFERENCE_FRAME_SIZE,
+ * from the area ratio so it holds for any aspect ratio. */
 function edgeBandScaleFactor(frameSize: Size): number {
   const referenceArea = EDGE_BAND_REFERENCE_FRAME_SIZE.width * EDGE_BAND_REFERENCE_FRAME_SIZE.height;
   const frameArea = frameSize.width * frameSize.height;
@@ -93,30 +64,11 @@ function edgeBandScaleFactor(frameSize: Size): number {
 }
 
 /**
- * Computes the 4 expected-edge-location bands for a guide, per the plan's
- * "Search-space reduction" strategy: instead of scanning the whole frame,
- * only these 4 narrow regions (one per guide edge) are searched.
- *
- * Each band is a fixed-pixel-margin rectangle around its guide edge, the
- * same on all 4 sides:
- * - Its thickness (perpendicular to the edge) is
- *   `EDGE_BAND_HALF_THICKNESS_PX * edgeBandScaleFactor(frameSize)` on *each*
- *   side of the edge line — the band is centered on the line, not offset to
- *   one side of it.
- * - Its length (along the edge) is the guide's corresponding side length,
- *   extended by `EDGE_BAND_LENGTH_OVERHANG_PX * edgeBandScaleFactor(frameSize)`
- *   past *each* end — this still legitimately differs between the top/bottom
- *   bands (length derived from guide.width) and the left/right bands (length
- *   derived from guide.height), since a non-square card's own sides really
- *   are different lengths; only the scaled overhang amount is shared.
- *
- * Both margins are pixel counts *at* EDGE_BAND_REFERENCE_FRAME_SIZE, scaled
- * to `frameSize` — not fractions of the guide's size — see
- * EDGE_BAND_HALF_THICKNESS_PX / EDGE_BAND_LENGTH_OVERHANG_PX / and
- * EDGE_BAND_REFERENCE_FRAME_SIZE's doc comments in constants.ts for why.
- * `frameSize` must match the frame `guide` itself was computed against
- * (`computeGuideGeometry`'s own `frameSize` argument) — the two aren't
- * cross-checked here.
+ * The 4 search bands ([top, right, bottom, left]) around the guide's edges.
+ * Each is centered on its edge line, EDGE_BAND_HALF_THICKNESS_PX thick on
+ * each side, and extends EDGE_BAND_LENGTH_OVERHANG_PX past each end — both
+ * scaled from the reference frame size to `frameSize`, which must be the
+ * frame `guide` was computed for.
  */
 export function expectedEdgeBands(guide: GuideRect, frameSize: Size): [EdgeBand, EdgeBand, EdgeBand, EdgeBand] {
   const halfWidth = guide.width / 2;

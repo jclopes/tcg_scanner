@@ -1,8 +1,14 @@
 import type { PixelRegion } from "../core";
 
 /**
- * Extracts `region` from `source` (a flattened card canvas): if
- * `region.rotationDeg` is set, first rotates the *entire* card clockwise by
+ * Extracts `region` from `source` — a flattened card canvas straight from
+ * `captureFlattenedCard` (src/shell/capture.ts), already exactly on-ratio
+ * and oversampled by the time it gets here (see FLATTEN_OVERSAMPLE_FACTOR's
+ * doc comment, src/core/constants.ts — that used to be a separate
+ * normalization step run here, before cropping; it now happens as part of
+ * the perspective warp itself, one step earlier and one fewer lossy
+ * resample). If `region.rotationDeg` is set, first
+ * rotates the *entire* card clockwise by
  * that many degrees to undo the region's printed tilt, then crops
  * `region.rect`'s axis-aligned pixel box out of that rotated card. Returns
  * a plain crop, no rotation step, when `rotationDeg` is `0`/unset.
@@ -47,7 +53,7 @@ export function cropRegion(source: HTMLCanvasElement, region: PixelRegion): HTML
   const cropCanvas = document.createElement("canvas");
   cropCanvas.width = cropWidth;
   cropCanvas.height = cropHeight;
-  const cropCtx = require2dContext(cropCanvas, "crop a region");
+  const cropCtx = require2dContext(cropCanvas, "crop a region", { highQuality: true });
   cropCtx.drawImage(rotatedSource, origin.x, origin.y, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
   return cropCanvas;
 }
@@ -62,7 +68,7 @@ function rotateCardClockwise(source: HTMLCanvasElement, degrees: number): HTMLCa
   const rotatedCanvas = document.createElement("canvas");
   rotatedCanvas.width = outputWidth;
   rotatedCanvas.height = outputHeight;
-  const rotatedCtx = require2dContext(rotatedCanvas, "rotate the card");
+  const rotatedCtx = require2dContext(rotatedCanvas, "rotate the card", { highQuality: true });
   rotatedCtx.fillStyle = "white";
   rotatedCtx.fillRect(0, 0, outputWidth, outputHeight);
   rotatedCtx.translate(outputWidth / 2, outputHeight / 2);
@@ -71,10 +77,30 @@ function rotateCardClockwise(source: HTMLCanvasElement, degrees: number): HTMLCa
   return rotatedCanvas;
 }
 
-function require2dContext(canvas: HTMLCanvasElement, purpose: string): CanvasRenderingContext2D {
+/**
+ * `highQuality` sets `imageSmoothingQuality = "high"` in addition to the
+ * (already-default) `imageSmoothingEnabled` — Canvas 2D's own spec default
+ * for the *quality* of that smoothing is `"low"`, not `"high"`, a
+ * lesser-known gotcha that otherwise silently blurs exactly the
+ * `drawImage` calls in this file (rotating and cropping a now-oversampled,
+ * tens-of-megapixels card canvas — see FLATTEN_OVERSAMPLE_FACTOR,
+ * src/core/constants.ts) that most need real resampling quality: caught
+ * from a real capture whose region crop looked visibly blurrier than the
+ * flattened card it was cropped from, despite coming from the exact same
+ * (sharp) image data.
+ */
+function require2dContext(
+  canvas: HTMLCanvasElement,
+  purpose: string,
+  options?: { highQuality?: boolean },
+): CanvasRenderingContext2D {
   const ctx = canvas.getContext("2d");
   if (!ctx) {
     throw new Error(`Could not get a 2D canvas context to ${purpose}.`);
+  }
+  if (options?.highQuality) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
   }
   return ctx;
 }
