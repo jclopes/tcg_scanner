@@ -14,32 +14,15 @@ const OPENCV_JS_URL = "/opencv.js";
  * `copyOpenCvToPublic` plugin) and resolves once its WASM runtime has
  * finished initializing.
  *
- * Deliberately *not* `import cvModule from "@techstark/opencv-js"` — that's
- * what all 3 of this app's separate JS execution contexts (the main
- * thread, plus the edge-detection and super-resolution Web Workers, each a
- * `type: "module"` worker) used to do, and Vite/Rolldown has no way to
- * share a chunk between a worker's isolated build and the main build — so
- * each of the 3 got its own fully-inlined ~13MB copy of the library at
- * build time. A production visit downloaded the same library 3 times over,
- * with no way for the browser to recognize the 3 copies as "the same
- * thing" (3 different files, 3 different content hashes). Loading it
- * instead as an ordinary static asset from one fixed URL means the browser
- * fetches and caches it exactly once — every context after the first gets
- * it from cache.
+ * Not `import cvModule from "@techstark/opencv-js"`: Vite can't share a
+ * chunk between a worker's build and the main build, so the main thread and
+ * the edge-detection workers would each inline their own ~13MB copy. One
+ * fixed static URL is fetched once and served from the HTTP cache after.
  *
- * Also deliberately *not* `import(OPENCV_JS_URL)` — tried first, but Vite's
- * dev server explicitly refuses to serve a `public/` file through a JS
- * `import()`: public assets are only ever meant to be referenced via a
- * plain URL (an HTML tag, or here, `fetch`), never pulled into the module
- * graph, and it throws rather than silently doing something unexpected.
- * `fetch()` + executing the response text sidesteps module resolution
- * entirely — it's just an HTTP request, so it still goes through the
- * browser's normal cache exactly like any other asset — and actually suits
- * this file better anyway: it's a plain UMD script with no ES `export`s
- * (`new Function(...)`, not `import()`, is what makes it run as an
- * ordinary global script, the environment its own UMD wrapper expects).
- * That wrapper detects `importScripts`/`window` either way and assigns the
- * result to `globalThis.cv`, which is what's actually read below.
+ * Not `import(OPENCV_JS_URL)` either: Vite's dev server refuses to serve a
+ * `public/` file through `import()`. The file is a plain UMD script, so
+ * `fetch()` + `new Function(...)` runs it as the global script it expects;
+ * its wrapper assigns the module to `globalThis.cv`, read below.
  */
 export async function loadOpenCv(): Promise<OpenCv> {
   if (!globalThis.cv) {
@@ -57,16 +40,9 @@ export async function loadOpenCv(): Promise<OpenCv> {
   if (!cvOrPromise) {
     throw new Error("Loaded /opencv.js, but it did not set the expected global `cv`.");
   }
-  // The UMD wrapper's factory() calls the Emscripten module function and
-  // assigns *its return value* to globalThis.cv — which, depending on how
-  // much of that async function ran synchronously before its first await,
-  // is either the already-ready module or a Promise of one. Both are
-  // `typeof "object"`, so this has to be checked explicitly rather than
-  // assumed away; skipping it means the `onRuntimeInitialized` branch below
-  // would set that property on a Promise instance instead of the real
-  // module object, which does nothing — confirmed empirically (an earlier
-  // version of this function, missing this check, hung forever waiting on
-  // a callback that was never actually going to fire).
+  // The UMD wrapper assigns the Emscripten factory's return value, which is
+  // either the ready module or a Promise of one. Setting
+  // onRuntimeInitialized on the Promise would never fire, so check first.
   if (cvOrPromise instanceof Promise) {
     return cvOrPromise;
   }

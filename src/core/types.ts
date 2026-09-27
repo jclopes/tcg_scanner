@@ -29,7 +29,6 @@ export interface GuideRect {
   center: Point;
   width: number;
   height: number;
-  orientation: Orientation;
 }
 
 export interface EdgeBand {

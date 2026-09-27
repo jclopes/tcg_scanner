@@ -64,11 +64,18 @@ export const EDGE_MIN_CONFIDENCE = 0.25;
  * segments (sorted outward → inward) for them to count as one edge. */
 export const EDGE_OUTWARD_GAP_TOLERANCE_FRACTION = 0.1;
 
-/** Frames attempted per burst after the preview frame is accepted. Starting guess. */
-export const CAPTURE_BURST_FRAME_COUNT = 10;
-
 /** Accepted burst frames to collect before selecting the best one. Starting guess. */
 export const CAPTURE_BURST_MIN_USABLE_FRAMES = 5;
+
+/** Largest edit distance between the OCR'd collector number and a set's
+ * card ID that still counts as a confident identification; anything worse
+ * (or no OCR text at all) restarts detection. */
+export const MAX_CONFIDENT_MATCH_DISTANCE = 2;
+
+/** Largest edit distance between the OCR'd set code and the selected set's
+ * printed code (both ignoring whitespace) that still counts as the same set;
+ * anything worse shows a warning. Starting guess. */
+export const MAX_SET_PRINT_DISTANCE = 2;
 
 /** Max frames attempted across all bursts; after that the best of whatever
  * was accepted is used. Starting guess. */

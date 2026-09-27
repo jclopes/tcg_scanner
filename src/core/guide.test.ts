@@ -15,7 +15,6 @@ describe("computeGuideGeometry", () => {
     const squareFrame = computeGuideGeometry("portrait", { width: 1000, height: 1000 });
 
     for (const guide of [wideFrame, tallFrame, squareFrame]) {
-      expect(guide.orientation).toBe("portrait");
       expect(guide.height).toBeGreaterThan(guide.width);
     }
   });
@@ -26,7 +25,6 @@ describe("computeGuideGeometry", () => {
     const squareFrame = computeGuideGeometry("landscape", { width: 1000, height: 1000 });
 
     for (const guide of [wideFrame, tallFrame, squareFrame]) {
-      expect(guide.orientation).toBe("landscape");
       expect(guide.width).toBeGreaterThan(guide.height);
     }
   });

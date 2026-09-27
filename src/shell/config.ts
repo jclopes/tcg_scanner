@@ -20,11 +20,6 @@ import type { Size, ToleranceConfig } from "../core";
  *   more than a loose one risks false accepts — a non-card object happening
  *   to match a ~0.72 aspect ratio within 10% against a generic background is
  *   unlikely.
- *
- * expectedEdgeBands' own band-sizing tolerances used to live here too
- * (`positionTolerance`, `zoomTolerance`) — replaced by fixed pixel margins,
- * EDGE_BAND_HALF_THICKNESS_PX / EDGE_BAND_LENGTH_OVERHANG_PX in
- * src/core/constants.ts.
  */
 export const DEFAULT_TOLERANCE_CONFIG: ToleranceConfig = {
   rotationToleranceDegrees: 8,
@@ -46,18 +41,18 @@ export const CAMERA_RESOLUTION_OPTIONS: readonly { label: string; size: Size }[]
   { label: "3840 × 2160 (4K)", size: { width: 3840, height: 2160 } },
 ];
 
+/** Tags offered as one-click suggestions next to the session-tags input. */
+export const SUGGESTED_SESSION_TAGS: readonly string[] = ["#box-01", "#booster-01"];
+
 /** The resolution pre-selected when the app first loads — the minimum this
  * app supports (see CAMERA_RESOLUTION_OPTIONS' doc comment). */
 export const DEFAULT_CAMERA_RESOLUTION: Size = CAMERA_RESOLUTION_OPTIONS[0]!.size;
 
 /**
- * Narrows CAMERA_RESOLUTION_OPTIONS down to the ones a specific camera can
- * actually deliver, given its probed max width/height (see
- * listFullHdCameras in cameraDevices.ts) — per the requirement that the
- * resolution dropdown's choices depend on the selected camera, while the
- * Full HD floor still always applies (every CAMERA_RESOLUTION_OPTIONS entry
- * already meets it, and every camera offered by listFullHdCameras already
- * meets it too, so this can never return an empty list).
+ * The CAMERA_RESOLUTION_OPTIONS a camera with this probed max width/height
+ * can deliver (see listFullHdCameras in cameraDevices.ts). Throws if there
+ * are none: every camera listFullHdCameras offers meets the Full HD floor,
+ * so an empty result means a camera slipped past that check.
  */
 export function resolutionOptionsForCamera(
   maxWidth: number,
@@ -66,5 +61,8 @@ export function resolutionOptionsForCamera(
   const supported = CAMERA_RESOLUTION_OPTIONS.filter(
     (option) => option.size.width <= maxWidth && option.size.height <= maxHeight,
   );
-  return supported.length > 0 ? supported : [CAMERA_RESOLUTION_OPTIONS[0]!];
+  if (supported.length === 0) {
+    throw new Error(`No supported resolution for a camera with max ${maxWidth}×${maxHeight}.`);
+  }
+  return supported;
 }

@@ -36,8 +36,7 @@ once (e.g. when the scan view mounts), not per frame.
 
 ```ts
 interface EdgeDetectionPool {
-  ready: Promise<void>;
-  detectEdges(bands: EdgeBandsInput): Promise<EdgeLineResults>;
+  detectEdges(bands: EdgeBandsInput, rotationToleranceDegrees: number): Promise<EdgeLineResults>;
   terminate(): void;
 }
 
@@ -61,15 +60,10 @@ here only for this doc's sake) — this module never defines its own
 band/line shapes, it just moves `src/core`'s existing ones across a
 `postMessage` boundary.
 
-#### `ready: Promise<void>`
-
-Resolves once all 4 workers have finished initializing their own OpenCV.js
-/ WASM instance. Optional to await explicitly — `detectEdges()` awaits it
-internally — but useful if the shell wants to show a "warming up" state
-before enabling the Scan button, so the *first* frame doesn't pay worker
-startup latency.
-
-Rejects if any worker fails to initialize (see Error handling below).
+Internally the pool keeps a combined `ready` promise that resolves once all
+4 workers have initialized their OpenCV.js / WASM instance, and rejects if
+any fails to (see Error handling below). It isn't part of the public API;
+`detectEdges()` awaits it.
 
 #### `detectEdges(bands: EdgeBandsInput): Promise<EdgeLineResults>`
 
@@ -146,9 +140,8 @@ scan session as a whole.
   rejects any of that slot's currently-pending `detectEdges` sub-promises.
   This covers both timings a crash can happen at:
   - **Before `ready` resolved** (crash during OpenCV.js init): the pool's
-    combined `ready` promise rejects, so both an explicit `await pool.ready`
-    and any `detectEdges()` call (which awaits `ready` internally) reject
-    with a descriptive error.
+    combined `ready` promise rejects, so any `detectEdges()` call (which
+    awaits `ready` internally) rejects with a descriptive error.
   - **After `ready` already resolved** (a worker that initialized fine and
     later dies mid-session — plausible for a WASM pipeline processing
     varied real camera frames): `ready` is a promise and can only settle
@@ -191,14 +184,18 @@ interface WorkerReadyMessage {
   type: "ready"; // sent once, after OpenCV.js finishes initializing
 }
 
-interface WorkerErrorMessage {
-  type: "error";
-  id?: number;    // absent = init failure; present = that request failed
+interface WorkerInitErrorMessage {
+  type: "init-error"; // OpenCV.js failed to initialize
   message: string;
 }
 
-type WorkerRequest = DetectEdgeRequest;
-type WorkerResponse = DetectEdgeResponse | WorkerReadyMessage | WorkerErrorMessage;
+interface WorkerErrorMessage {
+  type: "error";
+  id: number;     // the request that failed
+  message: string;
+}
+
+type WorkerResponse = DetectEdgeResponse | WorkerReadyMessage | WorkerInitErrorMessage | WorkerErrorMessage;
 ```
 
 ## Internal structure (for maintainers, not callers)

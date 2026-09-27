@@ -1,6 +1,6 @@
 import type { Size } from "../core";
 
-/** The user's remembered camera/resolution choices, persisted across
+/** The user's remembered camera/resolution/game/set/session-tags choices, persisted across
  * sessions (localStorage) so returning users don't have to re-pick them
  * every load. Best-effort only: localStorage can throw (private browsing,
  * disabled storage) or simply be unavailable, and a previously-picked
@@ -12,6 +12,10 @@ import type { Size } from "../core";
 export interface StoredPreferences {
   cameraDeviceId?: string;
   resolution?: Size;
+  gameId?: string;
+  setCode?: string;
+  /** The session-tags input's raw text. */
+  sessionTags?: string;
 }
 
 const STORAGE_KEY = "tcg-scanner:preferences";
@@ -26,19 +30,24 @@ export function loadPreferences(): StoredPreferences {
     if (typeof parsed !== "object" || parsed === null) {
       return {};
     }
-    const { cameraDeviceId, resolution } = parsed as StoredPreferences;
+    const { cameraDeviceId, resolution, gameId, setCode, sessionTags } = parsed as StoredPreferences;
     return {
       cameraDeviceId: typeof cameraDeviceId === "string" ? cameraDeviceId : undefined,
       resolution: isValidSize(resolution) ? resolution : undefined,
+      gameId: typeof gameId === "string" ? gameId : undefined,
+      setCode: typeof setCode === "string" ? setCode : undefined,
+      sessionTags: typeof sessionTags === "string" ? sessionTags : undefined,
     };
   } catch {
     return {};
   }
 }
 
-export function savePreferences(preferences: StoredPreferences): void {
+/** Merges `changes` into the stored preferences, leaving other fields as
+ * they were. */
+export function savePreferences(changes: StoredPreferences): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...loadPreferences(), ...changes }));
   } catch {
     // Best-effort — see StoredPreferences' doc comment.
   }

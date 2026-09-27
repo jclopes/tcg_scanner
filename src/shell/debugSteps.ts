@@ -1,7 +1,9 @@
 import type { EdgeBandPixels, FittedLine, Quad } from "../core";
 import { canvasToObjectURL, createCanvas, require2dContext, rotateCanvas } from "./canvasUtils";
-import type { BurstFrameDebugEntry } from "./frameBurst";
-import type { EdgeBands, EdgeLines, QuadRejectionReason } from "./frameDetection";
+import type { DetectionLoopResult } from "./detectionLoop";
+import type { BurstFrameDebugEntry, FrameBurstResult } from "./frameBurst";
+import type { AcceptedFrame, EdgeBands, EdgeLines, FrameEvaluation, QuadRejectionReason } from "./frameDetection";
+import type { RegionResult } from "./identify";
 import type { TextCropAnalysis } from "./regionExtraction";
 
 /** One labeled image in the debug trail. `variant: "edge-band"` gives the
@@ -170,20 +172,101 @@ export function buildBurstFrameSteps(entries: readonly BurstFrameDebugEntry[]): 
   );
 }
 
-/** Object URLs backing the panel's current images, revoked on the next render. */
-let activeObjectURLs: string[] = [];
-
-/** Replaces `panel`'s contents with `entries`, top to bottom. */
-export function renderDebugSteps(panel: HTMLElement, entries: readonly DebugEntry[]): void {
-  for (const url of activeObjectURLs) {
-    URL.revokeObjectURL(url);
-  }
-  activeObjectURLs = [];
-  panel.replaceChildren(...entries.map(toElement));
+/** The debug trail for one capture, top to bottom: the preview detection,
+ * every burst frame, the selected frame, the flattened card and its regions. */
+export function buildCaptureDebugTrail(
+  preview: DetectionLoopResult,
+  burst: FrameBurstResult,
+  selected: AcceptedFrame,
+  cardCanvas: HTMLCanvasElement,
+  regionResults: readonly RegionResult[],
+): DebugEntry[] {
+  return [
+    ...buildEdgeBandSteps(preview.bands, preview.lines),
+    buildQuadOverlayStep(preview.frame.frameCanvas, preview.frame.corners, "Detected quad"),
+    debugStageHeading(`Burst capture — ${burst.accepted.length}/${burst.debugFrames.length} usable`),
+    ...buildBurstFrameSteps(burst.debugFrames),
+    buildQuadOverlayStep(selected.frameCanvas, selected.corners, "Selected frame"),
+    { label: "Flattened output", canvas: cardCanvas },
+    ...regionResults.flatMap(({ crop: { region, searchCanvas, analysis, canvas }, ocr }) =>
+      analysis && ocr
+        ? [
+            buildTextBandStep(region.label, searchCanvas, analysis),
+            {
+              label: `Region: ${region.label} — OCR input${ocr.inverted ? " (inverted)" : ""} → "${ocr.text}"`,
+              canvas: ocr.canvas,
+            },
+          ]
+        : [{ label: `Region: ${region.label}`, canvas }],
+    ),
+  ];
 }
 
-function toElement(entry: DebugEntry): HTMLElement {
-  return "text" in entry ? toNoteElement(entry) : toFigure(entry);
+/** A forced debug capture's trail: `heading`, the rejection reason if any,
+ * and the 4 edge bands. */
+export function buildForcedDebugTrail(evaluation: FrameEvaluation, heading: string): DebugEntry[] {
+  return [
+    debugStageHeading(heading),
+    ...(evaluation.status === "rejected" ? [debugRejectionNote(evaluation.reason)] : []),
+    ...buildEdgeBandSteps(evaluation.bands, evaluation.lines),
+  ];
+}
+
+/** The debug panel element plus the `blob:` URLs backing its current images,
+ * which are revoked whenever its contents are replaced. */
+export class DebugPanel {
+  private objectUrls: string[] = [];
+  /** Bumped on every render/clear so a blob URL that resolves late, for an
+   * image no longer shown, is revoked instead of kept. */
+  private generation = 0;
+
+  constructor(private readonly element: HTMLElement) {}
+
+  /** Replaces the panel's contents with `entries`, top to bottom. */
+  render(entries: readonly DebugEntry[]): void {
+    this.clear();
+    this.element.replaceChildren(...entries.map((entry) => ("text" in entry ? toNoteElement(entry) : this.toFigure(entry))));
+  }
+
+  clear(): void {
+    this.generation += 1;
+    for (const url of this.objectUrls) {
+      URL.revokeObjectURL(url);
+    }
+    this.objectUrls = [];
+    this.element.replaceChildren();
+  }
+
+  /** Shows the step as an `<img>` (not a bare canvas) so the browser offers
+   * "open/save image". Starts with a synchronous `data:` URL, then swaps to a
+   * `blob:` URL, which stays openable at full resolution. */
+  private toFigure(step: DebugStep): HTMLElement {
+    const figure = document.createElement("figure");
+    if (step.variant) {
+      figure.className = `debug-step--${step.variant}`;
+    }
+    const img = document.createElement("img");
+    img.src = step.canvas.toDataURL("image/png");
+    img.width = step.canvas.width;
+    img.height = step.canvas.height;
+    img.alt = step.label;
+    const generation = this.generation;
+    canvasToObjectURL(step.canvas).then(
+      (url) => {
+        if (generation !== this.generation) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        img.src = url;
+        this.objectUrls.push(url);
+      },
+      (error: unknown) => console.error(`Could not encode debug image "${step.label}"; keeping its data: URL.`, error),
+    );
+    const figcaption = document.createElement("figcaption");
+    figcaption.textContent = step.label;
+    figure.append(img, figcaption);
+    return figure;
+  }
 }
 
 function toNoteElement(note: DebugNote): HTMLElement {
@@ -202,29 +285,6 @@ function describeRejectionReason(reason: QuadRejectionReason): string {
     case "aspect-ratio-out-of-tolerance":
       return "the quad's aspect ratio didn't match a card";
   }
-}
-
-/** Shows the step as an `<img>` (not a bare canvas) so the browser offers
- * "open/save image". Starts with a synchronous `data:` URL, then swaps to a
- * `blob:` URL, which stays openable at full resolution. */
-function toFigure(step: DebugStep): HTMLElement {
-  const figure = document.createElement("figure");
-  if (step.variant) {
-    figure.className = `debug-step--${step.variant}`;
-  }
-  const img = document.createElement("img");
-  img.src = step.canvas.toDataURL("image/png");
-  img.width = step.canvas.width;
-  img.height = step.canvas.height;
-  img.alt = step.label;
-  void canvasToObjectURL(step.canvas).then((url) => {
-    img.src = url;
-    activeObjectURLs.push(url);
-  });
-  const figcaption = document.createElement("figcaption");
-  figcaption.textContent = step.label;
-  figure.append(img, figcaption);
-  return figure;
 }
 
 function renderEdgeBand(band: EdgeBandPixels, line: FittedLine | null): HTMLCanvasElement {

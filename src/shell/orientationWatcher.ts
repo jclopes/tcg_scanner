@@ -15,29 +15,16 @@ export function videoFrameSize(video: HTMLVideoElement): Size {
   return { width: video.videoWidth, height: video.videoHeight };
 }
 
-/**
- * Calls `onChange` now (if dimensions are known) and whenever the video's
- * intrinsic frame size changes (the element's own "resize"/"loadedmetadata"
- * events, not the window's). Returns an unsubscribe function.
- */
-export function watchVideoOrientation(
-  video: HTMLVideoElement,
-  onChange: (orientation: Orientation, frameSize: Size) => void,
-): () => void {
+/** Calls `onChange` whenever the video's intrinsic frame size becomes known
+ * or changes (the element's own "loadedmetadata"/"resize" events). A size
+ * drop to 0×0 means the stream was detached (scan stopped) and is ignored. */
+export function watchVideoFrameSize(video: HTMLVideoElement, onChange: (frameSize: Size) => void): void {
   const handleChange = (): void => {
-    if (video.videoWidth === 0 || video.videoHeight === 0) {
-      return;
+    const detached = video.videoWidth === 0 || video.videoHeight === 0;
+    if (!detached) {
+      onChange(videoFrameSize(video));
     }
-    const frameSize = videoFrameSize(video);
-    onChange(orientationFromSize(frameSize), frameSize);
   };
-
   video.addEventListener("loadedmetadata", handleChange);
   video.addEventListener("resize", handleChange);
-  handleChange();
-
-  return () => {
-    video.removeEventListener("loadedmetadata", handleChange);
-    video.removeEventListener("resize", handleChange);
-  };
 }

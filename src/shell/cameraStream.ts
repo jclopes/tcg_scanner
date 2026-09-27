@@ -11,14 +11,8 @@ export const MIN_CAMERA_HEIGHT = 1080;
  * Resolves once the video's metadata has loaded (so
  * `video.videoWidth`/`videoHeight` are available) and playback has started.
  *
- * When `deviceId` is given, that exact camera is requested (see
- * listFullHdCameras in cameraDevices.ts, which is how the caller learns
- * which device ids exist and support Full HD). Otherwise `facingMode` is
- * requested as `ideal` (not `exact` — most laptop/desktop webcams have no
- * "environment" camera at all, and an `exact` constraint would make
- * `getUserMedia` reject outright on those devices instead of just falling
- * back to whatever camera is available), preferring the environment/back
- * camera since this app scans physical cards, not selfies.
+ * Requests exactly the camera `deviceId` (see listFullHdCameras in
+ * cameraDevices.ts for how the caller learns which ids support Full HD).
  *
  * `targetResolution`'s width/height are requested as `ideal` (the caller's
  * preferred size, e.g. from the resolution dropdown — see
@@ -31,14 +25,12 @@ export const MIN_CAMERA_HEIGHT = 1080;
  *
  * Throws a descriptive `Error` on permission denial, no camera, a camera
  * that can't meet the Full HD floor, camera already in use, or
- * `getUserMedia` being unsupported at all — the caller (src/shell/app.ts)
- * is responsible for surfacing this to the user rather than failing
- * silently, per the task's explicit instruction.
+ * `getUserMedia` being unsupported at all (see toCameraError).
  */
 export async function startCameraStream(
   video: HTMLVideoElement,
   targetResolution: Size,
-  deviceId?: string,
+  deviceId: string,
 ): Promise<void> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error(
@@ -49,7 +41,7 @@ export async function startCameraStream(
   const constraints: MediaStreamConstraints = {
     audio: false,
     video: {
-      ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: "environment" } }),
+      deviceId: { exact: deviceId },
       width: { min: MIN_CAMERA_WIDTH, ideal: targetResolution.width },
       height: { min: MIN_CAMERA_HEIGHT, ideal: targetResolution.height },
     },
@@ -81,7 +73,8 @@ export function stopCameraStream(video: HTMLVideoElement): void {
   video.srcObject = null;
 }
 
-function toCameraError(error: unknown): Error {
+/** A user-facing Error for a `getUserMedia` failure. */
+export function toCameraError(error: unknown): Error {
   if (error instanceof DOMException) {
     switch (error.name) {
       case "NotAllowedError":

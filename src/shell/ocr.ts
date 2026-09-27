@@ -50,6 +50,23 @@ export async function createOcrWorker(): Promise<TesseractWorker> {
   );
 }
 
+/** Creates the OCR worker on first use and keeps it (expensive to start,
+ * cheap to reuse) until `terminate()`; the next `get()` creates a new one. */
+export class LazyOcrWorker {
+  private worker: Promise<TesseractWorker> | null = null;
+
+  get(): Promise<TesseractWorker> {
+    this.worker ??= createOcrWorker();
+    return this.worker;
+  }
+
+  terminate(): void {
+    const worker = this.worker;
+    this.worker = null;
+    void worker?.then((w) => w.terminate());
+  }
+}
+
 /** The printable-ASCII range `tesseractWhitelistFor` tests `allowedCharsRegex`
  * against — every character an OCR'd card region could plausibly contain
  * (letters, digits, punctuation); deliberately not the full Unicode range,
@@ -86,8 +103,7 @@ function tesseractWhitelistFor(allowedCharsRegex: string): string {
 
 /**
  * OCRs one upright text region (already at REGION_PX_PER_MM — see
- * warpRegion) and returns Tesseract's raw text plus that text filtered to
- * `allowedCharsRegex`.
+ * warpRegion) and returns Tesseract's text filtered to `allowedCharsRegex`.
  *
  * `allowedCharsRegex` is used twice on purpose: as Tesseract's
  * `tessedit_char_whitelist`, so a misread can't land on a disallowed
@@ -103,16 +119,14 @@ function tesseractWhitelistFor(allowedCharsRegex: string): string {
 export async function recognizeRegion(
   worker: TesseractWorker,
   regionCanvas: HTMLCanvasElement,
-  allowedCharsRegex?: string,
-): Promise<{ rawText: string; filteredText: string }> {
+  allowedCharsRegex: string,
+): Promise<string> {
   await worker.setParameters({
     tessedit_pageseg_mode: PSM.SINGLE_LINE,
-    tessedit_char_whitelist: allowedCharsRegex ? tesseractWhitelistFor(allowedCharsRegex) : "",
+    tessedit_char_whitelist: tesseractWhitelistFor(allowedCharsRegex),
   });
   const {
     data: { text },
   } = await worker.recognize(regionCanvas);
-  const rawText = text.trim();
-  const filteredText = allowedCharsRegex ? filterAllowedChars(rawText, allowedCharsRegex) : rawText;
-  return { rawText, filteredText };
+  return filterAllowedChars(text.trim(), allowedCharsRegex);
 }

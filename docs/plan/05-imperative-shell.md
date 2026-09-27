@@ -92,8 +92,9 @@ requirement beyond until the page reloads").
 — derived from the frame's own dimensions, never a device/screen-orientation
 API. `videoFrameSize(video)` reads the video's intrinsic size and throws if
 it has none (frames are only read from a started stream).
-`watchVideoOrientation(video, onChange)` listens to the video element's own
-`"resize"` and `"loadedmetadata"` events. Everything that draws or detects
+`watchVideoFrameSize(video, onChange)` listens to the video element's own
+`"resize"` and `"loadedmetadata"` events (ignoring the 0×0 size of a
+detached stream). Everything that draws or detects
 re-reads the size from the video (or the frame canvas) directly rather than
 caching it.
 

@@ -1,10 +1,12 @@
 {
   "game": "cyberpunk-2077-tcg",
+  "card_formats": ["portrait", "landscape"],
+  "foil": true,
   "regions": [
     {
       "label": "collector_number",
       "type": "text",
-      "allowed_chars_regex": "[B0-9a-z]",
+      "allowed_chars_regex": "[β0-9ab]",
       "x_mm": 59.60,
       "y_mm": 97.75,
       "width_mm": 5.80,

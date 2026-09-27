@@ -4,8 +4,8 @@ import { require2dContext } from "./canvasUtils";
 
 export type EdgeColors = readonly [string, string, string, string];
 
-export const GUIDE_EDGE_NOT_FOUND_COLOR = "rgba(56, 224, 130, 0.95)";
-export const GUIDE_EDGE_FOUND_COLOR = "rgba(239, 68, 68, 0.95)";
+export const GUIDE_EDGE_NOT_FOUND_COLOR = "rgba(239, 68, 68, 0.95)";
+export const GUIDE_EDGE_FOUND_COLOR = "rgba(56, 224, 130, 0.95)";
 export const GUIDE_EDGE_ALL_FOUND_FLASH_COLOR = "rgba(255, 255, 255, 0.95)";
 
 /** How long the all-edges-found white flash stays up. */

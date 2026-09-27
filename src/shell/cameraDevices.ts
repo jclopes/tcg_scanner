@@ -1,4 +1,4 @@
-import { MIN_CAMERA_WIDTH, MIN_CAMERA_HEIGHT } from "./cameraStream";
+import { MIN_CAMERA_WIDTH, MIN_CAMERA_HEIGHT, toCameraError } from "./cameraStream";
 
 /** One camera device confirmed to support this app's Full HD floor (see
  * MIN_CAMERA_WIDTH/MIN_CAMERA_HEIGHT), with the highest resolution it
@@ -26,18 +26,15 @@ export interface CameraOption {
  * once per app load (see app.ts), not on every dropdown open.
  *
  * A device that rejects the Full HD `min` constraint (`OverconstrainedError`)
- * is left out of the returned list entirely, per the requirement that the
- * dropdown only offer cameras that actually support it. Devices that fail
- * to open for any other reason (e.g. already in use) are also left out
- * rather than failing the whole scan.
+ * or is already in use (`NotReadableError`) is left out of the returned list.
+ * Any other failure — no camera API, permission denied — throws a
+ * user-facing Error (see toCameraError).
  *
- * Requires camera permission to already be granted (or grantable via a
- * prompt) — the caller should expect this to trigger the browser's
- * permission dialog the first time it runs.
+ * Triggers the browser's permission dialog the first time it runs.
  */
 export async function listFullHdCameras(): Promise<CameraOption[]> {
   if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices?.enumerateDevices) {
-    return [];
+    throw new Error("Camera access (getUserMedia) isn't supported in this browser. Try a recent Chrome or Safari.");
   }
 
   // A generic permission probe first: until the user has granted camera
@@ -45,13 +42,14 @@ export async function listFullHdCameras(): Promise<CameraOption[]> {
   // blank labels and (in some browsers) a single anonymized entry, so
   // per-device probing below wouldn't produce usable labels or distinct
   // ids. Stopped immediately — this stream is only to unlock labels.
+  let probeStream: MediaStream;
   try {
-    const probeStream = await navigator.mediaDevices.getUserMedia({ video: true });
-    for (const track of probeStream.getTracks()) {
-      track.stop();
-    }
-  } catch {
-    return [];
+    probeStream = await navigator.mediaDevices.getUserMedia({ video: true });
+  } catch (error) {
+    throw toCameraError(error);
+  }
+  for (const track of probeStream.getTracks()) {
+    track.stop();
   }
 
   const devices = await navigator.mediaDevices.enumerateDevices();
@@ -73,6 +71,11 @@ export async function listFullHdCameras(): Promise<CameraOption[]> {
   return results;
 }
 
+/** Errors that just mean "this camera can't be offered", not a failure. */
+const SKIPPED_CAMERA_ERRORS = new Set(["OverconstrainedError", "NotReadableError"]);
+
+/** The camera's max resolution, or null if it can't meet the Full HD floor
+ * or is in use. */
 async function probeCameraCapability(deviceId: string): Promise<{ maxWidth: number; maxHeight: number } | null> {
   let stream: MediaStream;
   try {
@@ -84,19 +87,25 @@ async function probeCameraCapability(deviceId: string): Promise<{ maxWidth: numb
         height: { min: MIN_CAMERA_HEIGHT },
       },
     });
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof DOMException && SKIPPED_CAMERA_ERRORS.has(error.name)) {
+      return null;
+    }
+    throw toCameraError(error);
   }
 
   try {
     const [track] = stream.getVideoTracks();
     if (!track) {
-      return null;
+      throw new Error(`Camera ${deviceId} opened without a video track.`);
     }
     const capabilities = track.getCapabilities?.();
     const settings = track.getSettings();
-    const maxWidth = capabilities?.width?.max ?? settings.width ?? MIN_CAMERA_WIDTH;
-    const maxHeight = capabilities?.height?.max ?? settings.height ?? MIN_CAMERA_HEIGHT;
+    const maxWidth = capabilities?.width?.max ?? settings.width;
+    const maxHeight = capabilities?.height?.max ?? settings.height;
+    if (maxWidth === undefined || maxHeight === undefined) {
+      throw new Error(`Camera ${deviceId} reported no resolution.`);
+    }
     if (maxWidth < MIN_CAMERA_WIDTH || maxHeight < MIN_CAMERA_HEIGHT) {
       return null;
     }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RegionConfig } from "./identification";
+import type { ImageRegionConfig } from "./identification";
 import { applyMatrix3x3, cardSizeMm, multiplyMatrix3x3, regionOutputSize, regionWarpMatrix } from "./regionWarp";
 import type { Matrix3x3, Point } from "./types";
 
@@ -9,8 +9,8 @@ const IDENTITY: Matrix3x3 = [
   [0, 0, 1],
 ];
 
-function region(overrides: Partial<RegionConfig>): RegionConfig {
-  return { label: "r", type: "text", xMm: 0, yMm: 0, widthMm: 10, heightMm: 5, ...overrides };
+function region(overrides: Partial<ImageRegionConfig>): ImageRegionConfig {
+  return { label: "r", type: "image", xMm: 0, yMm: 0, widthMm: 10, heightMm: 5, ...overrides };
 }
 
 function expectPointClose(actual: Point, expected: Point): void {

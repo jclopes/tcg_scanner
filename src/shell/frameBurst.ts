@@ -1,6 +1,7 @@
-import { CAPTURE_BURST_FRAME_COUNT, CAPTURE_BURST_HARD_LIMIT, CAPTURE_BURST_MIN_USABLE_FRAMES } from "../core";
+import { CAPTURE_BURST_HARD_LIMIT, CAPTURE_BURST_MIN_USABLE_FRAMES, selectBestFrame, STANDARD_CARD_ASPECT_RATIO } from "../core";
+import type { FrameCandidate } from "../core";
 import type { EdgeDetectionPool } from "../workers";
-import { scheduleVideoFrame, snapshotSource } from "./canvasUtils";
+import { readQuadBoundingBoxPixels, scheduleVideoFrame, snapshotSource } from "./canvasUtils";
 import { evaluateFrameForQuad } from "./frameDetection";
 import type { AcceptedFrame, QuadRejectionReason } from "./frameDetection";
 import { FrameSampler } from "./frameSampler";
@@ -21,21 +22,27 @@ export interface FrameBurstResult {
 }
 
 /**
- * Runs quad detection on `frameCount` successive video frames and collects
- * the accepted ones. Detection only — the caller picks the best frame and
- * flattens just that one. Rejects if a frame's evaluation fails unexpectedly.
+ * Runs quad detection on successive video frames until
+ * CAPTURE_BURST_MIN_USABLE_FRAMES are accepted, CAPTURE_BURST_HARD_LIMIT
+ * frames have been attempted, or `isCancelled()` returns true. Detection only
+ * — the caller picks the best frame and flattens just that one. Rejects if a
+ * frame's evaluation fails unexpectedly.
  */
-async function captureFrameBurst(
+export async function collectBurstFrames(
   video: HTMLVideoElement,
   pool: EdgeDetectionPool,
-  frameCount: number,
   debugEnabled: boolean,
+  isCancelled: () => boolean,
 ): Promise<FrameBurstResult> {
   const sampler = new FrameSampler();
   const accepted: AcceptedFrame[] = [];
   const debugFrames: BurstFrameDebugEntry[] = [];
 
-  for (let i = 0; i < frameCount; i++) {
+  for (
+    let attempted = 0;
+    attempted < CAPTURE_BURST_HARD_LIMIT && accepted.length < CAPTURE_BURST_MIN_USABLE_FRAMES && !isCancelled();
+    attempted++
+  ) {
     await nextVideoFrame(video);
     const frameSize = videoFrameSize(video);
     const evaluation = await evaluateFrameForQuad(sampler, pool, video, frameSize);
@@ -55,34 +62,14 @@ async function captureFrameBurst(
   return { accepted, debugFrames };
 }
 
-/**
- * Runs bursts of CAPTURE_BURST_FRAME_COUNT frames until
- * CAPTURE_BURST_MIN_USABLE_FRAMES are accepted, CAPTURE_BURST_HARD_LIMIT
- * frames have been attempted, or `isCancelled()` returns true.
- */
-export async function collectBurstFrames(
-  video: HTMLVideoElement,
-  pool: EdgeDetectionPool,
-  debugEnabled: boolean,
-  isCancelled: () => boolean,
-): Promise<FrameBurstResult> {
-  const accepted: AcceptedFrame[] = [];
-  const debugFrames: BurstFrameDebugEntry[] = [];
-  let attempted = 0;
+/** The best accepted burst frame, or `fallback` if the burst accepted none. */
+export function selectFrameToFlatten(accepted: readonly AcceptedFrame[], fallback: AcceptedFrame): AcceptedFrame {
+  const candidates = accepted.length > 0 ? accepted : [fallback];
+  return selectBestFrame(candidates.map(toFrameCandidate), STANDARD_CARD_ASPECT_RATIO);
+}
 
-  while (
-    accepted.length < CAPTURE_BURST_MIN_USABLE_FRAMES &&
-    attempted < CAPTURE_BURST_HARD_LIMIT &&
-    !isCancelled()
-  ) {
-    const frameCount = Math.min(CAPTURE_BURST_FRAME_COUNT, CAPTURE_BURST_HARD_LIMIT - attempted);
-    const burst = await captureFrameBurst(video, pool, frameCount, debugEnabled);
-    accepted.push(...burst.accepted);
-    debugFrames.push(...burst.debugFrames);
-    attempted += frameCount;
-  }
-
-  return { accepted, debugFrames };
+function toFrameCandidate(frame: AcceptedFrame): AcceptedFrame & FrameCandidate {
+  return { ...frame, cardPixels: readQuadBoundingBoxPixels(frame.frameCanvas, frame.corners) };
 }
 
 function nextVideoFrame(video: HTMLVideoElement): Promise<void> {

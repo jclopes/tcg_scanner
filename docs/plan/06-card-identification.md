@@ -39,6 +39,8 @@ orientation):
 ```json
 {
   "game": "pokemon-base-set",
+  "card_formats": ["portrait"],
+  "foil": true,
   "regions": [
     {
       "label": "collector_number",
@@ -63,6 +65,11 @@ orientation):
 }
 ```
 
+- `card_formats` — the print formats the game's cards come in
+  (`"portrait"`, `"landscape"`), the first being the default. The
+  Portrait/Landscape toggle is shown only when there are both.
+- `foil` — whether the game has foil cards; shows the Foil toggle, and each
+  scanned card records whether it was foil.
 - `label` — identifies the region; also the key used to look up this
   region's recognized value in the ID dataset (see ID Validation).
 - `type` — specifies how this region should be processed. `"text"` regions
@@ -107,7 +114,7 @@ orientation):
   `regionWarpMatrix`, `src/core/regionWarp.ts`).
 - For `type: "text"` regions the box is a **search area**, not the final
   crop: see "Text-band fitting" under OCR strategy.
-- Config files live alongside the app (e.g. `src/data/games/*.json`) and
+- Config files live alongside the app (e.g. `src/data/games/<game>/regions.json`) and
   are selected by the `game` key, not auto-discovered from card content.
 
 ## ID dataset format

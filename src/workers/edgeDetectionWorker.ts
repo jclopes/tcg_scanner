@@ -28,19 +28,12 @@ import type { DetectEdgeRequest, WorkerResponse } from "./protocol";
 // (from the shared DOM lib) is still `Window & typeof globalThis`.
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
-// pool.ts spawns 4 instances of this script — each one still calls
-// loadOpenCv() independently and gets its own isolated WASM instance (see
-// docs/plan/04-worker-pool.md for why that's the accepted tradeoff; the
-// plan's explicit priority is fast/reliable detection, not minimizing
-// memory). What loadOpenCv() changes is *where the JS comes from*: all 4 of
-// these, the super-res worker, and the main thread now load the same
-// /opencv.js URL, so only the first of those 6 contexts actually triggers a
-// network fetch — the rest are served from the browser's own HTTP cache.
+// Each of the 4 instances loads its own OpenCV.js WASM instance (see
+// docs/plan/04-worker-pool.md); the script itself comes from the browser's
+// HTTP cache after the first fetch (see loadOpenCv).
 
-// Set once OpenCV.js finishes initializing; undefined until then. A request
-// that somehow arrives before that (shouldn't happen — the pool queues
-// requests behind its readiness promise) is answered with an error rather
-// than throwing.
+// Set once OpenCV.js finishes initializing. The pool only sends requests
+// after "ready", so a request before then is a bug.
 let cvInstance: OpenCv | undefined;
 
 function postResponse(message: WorkerResponse): void {
@@ -49,12 +42,7 @@ function postResponse(message: WorkerResponse): void {
 
 function handleRequest(request: DetectEdgeRequest): void {
   if (!cvInstance) {
-    postResponse({
-      type: "error",
-      id: request.id,
-      message: "Worker received a detect-edge request before OpenCV.js finished initializing.",
-    });
-    return;
+    throw new Error("Worker received a detect-edge request before OpenCV.js finished initializing.");
   }
   try {
     const line = fitEdgeLine(cvInstance, request.band, request.outwardDirection, request.rotationToleranceDegrees);
@@ -79,7 +67,7 @@ loadOpenCv()
   })
   .catch((error: unknown) => {
     postResponse({
-      type: "error",
+      type: "init-error",
       message: error instanceof Error ? error.message : String(error),
     });
   });

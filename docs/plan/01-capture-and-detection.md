@@ -193,14 +193,13 @@ mid-hold, is often sharper or better-aligned than the very first frame
 that happened to pass detection.
 
 - Each burst frame is independently run through the same quad detection
-  used for live detection (`captureFrameBurst`) — detection only, no
+  used for live detection (`collectBurstFrames`) — detection only, no
   flattening; a frame whose own detection doesn't accept a quad is simply
   skipped, not retried. Only the single selected frame is flattened.
-- Up to `CAPTURE_BURST_FRAME_COUNT` (10) frames are attempted per burst
-  round. If fewer than `CAPTURE_BURST_MIN_USABLE_FRAMES` (5) frames were
-  successfully captured, another round of up to 10 is attempted, up to a
-  hard ceiling of `CAPTURE_BURST_HARD_LIMIT` (30) total frames attempted
-  — so a run of early rejections (card briefly moved, occluded, etc.)
+- Frames are attempted one after another until
+  `CAPTURE_BURST_MIN_USABLE_FRAMES` (5) have been accepted, up to a hard
+  ceiling of `CAPTURE_BURST_HARD_LIMIT` (30) total frames attempted — so a
+  run of early rejections (card briefly moved, occluded, etc.)
   doesn't strand the user with too few candidates to choose from. If the
   hard limit is hit with at least one usable frame but fewer than 5, the
   best of whatever was captured is still used rather than failing

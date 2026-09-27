@@ -1,6 +1,6 @@
 import type { FittedLine, Point, Quad, ToleranceConfig } from "./types";
 
-function distance(a: Point, b: Point): number {
+export function distance(a: Point, b: Point): number {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
 

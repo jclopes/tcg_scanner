@@ -1,13 +1,12 @@
-import type { GameConfig, RegionType } from "../core";
-import cyberpunk2077Tcg from "../data/games/cyberpunk-2077-tcg.json";
+/// <reference types="vite/client" />
+import type { CardPrintFormat, GameConfig, RegionConfig } from "../core";
 
-/** The on-disk shape of a `src/data/games/*.json` region config — snake_case,
- * per the format documented in docs/plan/06-card-identification.md. Distinct
- * from `GameConfig`/`RegionConfig` (src/core/identification.ts), which use
- * camelCase — this module's job is exactly that translation. */
-interface RawRegionConfig {
+/** The on-disk shape of a region in `src/data/games/<game>/regions.json` —
+ * snake_case, per docs/plan/06-card-identification.md. `parseRegion`
+ * translates it into the core's camelCase `RegionConfig`. */
+export interface RawRegionConfig {
   label: string;
-  type: RegionType;
+  type: string;
   allowed_chars_regex?: string;
   x_mm: number;
   y_mm: number;
@@ -17,53 +16,151 @@ interface RawRegionConfig {
   max_gap_text_heights?: number;
 }
 
-interface RawGameConfig {
+export interface RawGameConfig {
   game: string;
+  card_formats: unknown;
+  foil: unknown;
   regions: RawRegionConfig[];
 }
 
-/**
- * Every bundled game's region config, keyed by its `game` id — a plain
- * `import` (Vite/TS both resolve `.json` imports natively, per
- * tsconfig.json's `resolveJsonModule`), not a `fetch`, since these are
- * small, build-time-known files shipped with the app rather than loaded
- * from a server. Only one game is bundled so far (see
- * docs/plan/06-card-identification.md's "Out of scope" — one config per
- * game to start); this map is exactly where a future game selector UI
- * would read its list of choices from.
- */
-const RAW_GAME_CONFIGS: Record<string, RawGameConfig> = {
-  "cyberpunk-2077-tcg": cyberpunk2077Tcg as RawGameConfig,
-};
+export interface RawSetConfig {
+  code: string;
+  name: string;
+  print: unknown;
+  collector_numbers: string[];
+}
+
+/** One set a game's cards can be scanned from, as listed in its sets.json. */
+export interface GameSet {
+  code: string;
+  name: string;
+  /** The set code as printed on its cards, e.g. "MS01 - WNC [A]". */
+  print: string;
+  /** Every card ID in the set, in print order. */
+  collectorNumbers: string[];
+}
+
+/** A bundled game: its folder name under src/data/games/, its parsed region
+ * config, its sets, the print formats its cards come in (the first is the
+ * default) and whether it has foil cards. */
+export interface GameOption {
+  id: string;
+  config: GameConfig;
+  sets: GameSet[];
+  cardFormats: CardPrintFormat[];
+  hasFoil: boolean;
+}
+
+/** Every game folder's regions.json and sets.json, keyed by folder name —
+ * gathered at build time by Vite's `import.meta.glob`. */
+const RAW_GAME_CONFIGS = byGameFolder(
+  import.meta.glob<RawGameConfig>("../data/games/*/regions.json", { eager: true, import: "default" }),
+);
+const RAW_SET_CONFIGS = byGameFolder(
+  import.meta.glob<RawSetConfig[]>("../data/games/*/sets.json", { eager: true, import: "default" }),
+);
 
 /**
- * Looks up `game`'s bundled region config and translates it from its
- * on-disk snake_case shape into the functional core's `GameConfig`.
- * Synchronous — no network/async work, since RAW_GAME_CONFIGS is already
- * resolved at build/import time.
- *
- * Throws if `game` isn't one of RAW_GAME_CONFIGS' keys — there's no
- * sensible fallback (a made-up config would silently mis-identify cards),
- * and per this project's "explicit over implicit" principle a missing
- * config should fail loudly, not degrade quietly.
+ * Every bundled game, sorted alphabetically by id, each with its sets sorted
+ * alphabetically by name. Throws if there are no games, if a game folder is
+ * missing its regions.json or sets.json, if a game has no sets, or if a
+ * region is invalid (see parseRegion).
  */
-export function loadGameConfig(game: string): GameConfig {
-  const raw = RAW_GAME_CONFIGS[game];
-  if (!raw) {
-    throw new Error(`No bundled region config for game "${game}".`);
+export function listGames(): GameOption[] {
+  const ids = [...new Set([...Object.keys(RAW_GAME_CONFIGS), ...Object.keys(RAW_SET_CONFIGS)])];
+  if (ids.length === 0) {
+    throw new Error("No games found under src/data/games/.");
+  }
+  return ids.sort((a, b) => a.localeCompare(b)).map((id) => parseGame(id, RAW_GAME_CONFIGS[id], RAW_SET_CONFIGS[id]));
+}
+
+/** Parses one game folder's files. Throws if either is missing, there are no
+ * sets, or a field is invalid. */
+export function parseGame(id: string, rawConfig: RawGameConfig | undefined, rawSets: RawSetConfig[] | undefined): GameOption {
+  if (!rawConfig || !rawSets) {
+    throw new Error(`Game folder "${id}" must contain both regions.json and sets.json.`);
+  }
+  if (rawSets.length === 0) {
+    throw new Error(`Game "${id}" has no sets in its sets.json.`);
   }
   return {
-    game: raw.game,
-    regions: raw.regions.map((region) => ({
-      label: region.label,
-      type: region.type,
-      xMm: region.x_mm,
-      yMm: region.y_mm,
-      widthMm: region.width_mm,
-      heightMm: region.height_mm,
-      rotationDeg: region.rotation_deg,
-      allowedCharsRegex: region.allowed_chars_regex,
-      maxGapTextHeights: region.max_gap_text_heights,
-    })),
+    id,
+    config: { game: rawConfig.game, regions: rawConfig.regions.map((region) => parseRegion(id, region)) },
+    sets: rawSets
+      .map((set) => parseSet(id, set))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    cardFormats: parseCardFormats(id, rawConfig.card_formats),
+    hasFoil: parseFoil(id, rawConfig.foil),
   };
+}
+
+function parseSet(gameId: string, raw: RawSetConfig): GameSet {
+  if (typeof raw.print !== "string" || raw.print === "") {
+    throw new Error(`Set "${raw.code}" of game "${gameId}" needs a "print": the set code printed on its cards.`);
+  }
+  return { code: raw.code, name: raw.name, print: raw.print, collectorNumbers: raw.collector_numbers };
+}
+
+/** `card_formats`: a non-empty list of distinct "portrait"/"landscape". */
+function parseCardFormats(gameId: string, raw: unknown): CardPrintFormat[] {
+  const valid =
+    Array.isArray(raw) &&
+    raw.length > 0 &&
+    raw.every((format) => format === "portrait" || format === "landscape") &&
+    new Set(raw).size === raw.length;
+  if (!valid) {
+    throw new Error(
+      `Game "${gameId}" needs "card_formats": a list of distinct "portrait"/"landscape", got ${JSON.stringify(raw)}.`,
+    );
+  }
+  return raw as CardPrintFormat[];
+}
+
+function parseFoil(gameId: string, raw: unknown): boolean {
+  if (typeof raw !== "boolean") {
+    throw new Error(`Game "${gameId}" needs "foil": true or false, got ${JSON.stringify(raw)}.`);
+  }
+  return raw;
+}
+
+/** Translates one raw region into a `RegionConfig`. Throws on an unknown
+ * `type` or a text region without `allowed_chars_regex`. */
+export function parseRegion(gameId: string, raw: RawRegionConfig): RegionConfig {
+  const box = {
+    label: raw.label,
+    xMm: raw.x_mm,
+    yMm: raw.y_mm,
+    widthMm: raw.width_mm,
+    heightMm: raw.height_mm,
+    rotationDeg: raw.rotation_deg,
+  };
+  switch (raw.type) {
+    case "image":
+      return { ...box, type: "image" };
+    case "text":
+      if (raw.allowed_chars_regex === undefined) {
+        throw new Error(`Text region "${raw.label}" of game "${gameId}" has no allowed_chars_regex.`);
+      }
+      return {
+        ...box,
+        type: "text",
+        allowedCharsRegex: raw.allowed_chars_regex,
+        maxGapTextHeights: raw.max_gap_text_heights,
+      };
+    default:
+      throw new Error(`Region "${raw.label}" of game "${gameId}" has unknown type "${raw.type}".`);
+  }
+}
+
+/** Re-keys a glob result from `../data/games/<game>/<file>.json` to `<game>`. */
+function byGameFolder<T>(modules: Record<string, T>): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(modules).map(([path, module]) => {
+      const folder = path.split("/").at(-2);
+      if (!folder) {
+        throw new Error(`Unexpected game data path: ${path}`);
+      }
+      return [folder, module];
+    }),
+  );
 }

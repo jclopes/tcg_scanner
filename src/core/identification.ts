@@ -11,16 +11,15 @@ import type { Size } from "./types";
  * Open Questions). */
 export type RegionType = "text" | "image";
 
-/** One named region of a game's card layout — the parsed, camelCase form of
- * a region config JSON entry (see GameConfig). `xMm`/`yMm`/`widthMm`/
- * `heightMm` are mm coordinates (origin at the top-left corner) on the
- * upright card *after* rotating the whole card clockwise by `rotationDeg`
- * into its bounding box — so a tilted element (e.g. a 45° badge) gets a
- * tight, upright box. A config author measures a rotated region's box on a
- * reference card image rotated by the same angle. See regionWarpMatrix. */
-export interface RegionConfig {
+/** The box every region has — the parsed, camelCase form of a region config
+ * JSON entry (see GameConfig). `xMm`/`yMm`/`widthMm`/`heightMm` are mm
+ * coordinates (origin at the top-left corner) on the upright card *after*
+ * rotating the whole card clockwise by `rotationDeg` into its bounding box —
+ * so a tilted element (e.g. a 45° badge) gets a tight, upright box. A config
+ * author measures a rotated region's box on a reference card image rotated
+ * by the same angle. See regionWarpMatrix. */
+interface RegionBox {
   label: string;
-  type: RegionType;
   xMm: number;
   yMm: number;
   widthMm: number;
@@ -28,17 +27,26 @@ export interface RegionConfig {
   /** Clockwise degrees the whole card is rotated by to make this region's
    * content upright; 0/omitted = already upright. */
   rotationDeg?: number;
-  /** Required in practice for `type: "text"` regions (not enforced by this
-   * type — see loadGameConfig, the imperative shell's JSON parser, for
-   * where that's validated): a regex character class (e.g. `"[0-9]"`)
-   * constraining OCR output — see `filterAllowedChars`. */
-  allowedCharsRegex?: string;
-  /** Text regions only: the largest gap between runs of characters, in text
-   * heights, still counted as the same line (see analyzeTextColumns). Tight
-   * for a single word, wider for text with spaces. Omitted =
+}
+
+export interface TextRegionConfig extends RegionBox {
+  type: "text";
+  /** A regex character class (e.g. `"[0-9]"`) constraining OCR output — see
+   * `filterAllowedChars`. */
+  allowedCharsRegex: string;
+  /** The largest gap between runs of characters, in text heights, still
+   * counted as the same line (see analyzeTextColumns). Tight for a single
+   * word, wider for text with spaces. Omitted =
    * DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS. */
   maxGapTextHeights?: number;
 }
+
+export interface ImageRegionConfig extends RegionBox {
+  type: "image";
+}
+
+/** One named region of a game's card layout. */
+export type RegionConfig = TextRegionConfig | ImageRegionConfig;
 
 export interface GameConfig {
   game: string;
@@ -65,7 +73,7 @@ export function canonicalCardSizeFor(sourcePixelSize: Size): Size {
  * `padding.yMm` above and below — turns a text region's configured box into
  * the area searched for its text. Works for rotated regions too, since their
  * box is already in the rotated frame. */
-export function padRegion(region: RegionConfig, padding: { xMm: number; yMm: number }): RegionConfig {
+export function padRegion<T extends RegionConfig>(region: T, padding: { xMm: number; yMm: number }): T {
   return {
     ...region,
     xMm: region.xMm - padding.xMm,
@@ -75,21 +83,8 @@ export function padRegion(region: RegionConfig, padding: { xMm: number; yMm: num
   };
 }
 
-/**
- * Keeps only the characters of `raw` that match `allowedCharsRegex` — a
- * single-character regex class (e.g. `"[0-9]"`, `"[A-Za-z0-9\\-\\[\\] ]"`),
- * per the plan's `allowed_chars_regex` field — discarding everything else,
- * in order. Post-processing, applied to Tesseract's already-recognized
- * text — this same regex is *also* used to constrain recognition itself,
- * as a Tesseract whitelist (see `tesseractWhitelistFor`, src/shell/ocr.ts),
- * which this function's result doesn't depend on or replace — see the
- * plan's "OCR strategy" for why both run.
- *
- * Implemented as "match every single character the pattern accepts, then
- * rejoin" rather than a `replace`-based strip, so `allowedCharsRegex` only
- * ever needs to describe what's *allowed* (a plain character class) — the
- * caller never has to also write its own negation.
- */
+/** Keeps only the characters of `raw` matching `allowedCharsRegex` (a
+ * single-character class, e.g. `"[0-9]"`), in order. */
 export function filterAllowedChars(raw: string, allowedCharsRegex: string): string {
   const matches = raw.match(new RegExp(allowedCharsRegex, "g"));
   return matches ? matches.join("") : "";

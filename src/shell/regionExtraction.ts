@@ -10,7 +10,7 @@ import {
 } from "../core";
 import type { CardPrintFormat, OpenCv, RegionConfig, TextColumnAnalysis, TextRowAnalysis } from "../core";
 import { createCanvas, require2dContext } from "./canvasUtils";
-import { warpWithMatrix } from "./capture";
+import { warpWithMatrix } from "./warp";
 import type { AcceptedFrame } from "./frameDetection";
 import { orientationFromSize } from "./orientationWatcher";
 
@@ -43,7 +43,8 @@ export interface TextCropAnalysis {
  * Narrows a text region's search area to its text: rows from
  * `analyzeTextRows` (band plus margin, kept inside nearby horizontal lines),
  * then columns from `analyzeTextColumns` within those rows (merging character
- * runs up to `maxGapTextHeights` apart), copying that rectangle 1:1. When no text is found the whole search area is used.
+ * runs up to `maxGapTextHeights` apart), copying that rectangle 1:1. When no
+ * text is found the whole search area is used.
  */
 export function fitCropToText(
   searchCanvas: HTMLCanvasElement,

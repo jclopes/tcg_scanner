@@ -1,6 +1,7 @@
 [
   {
     "code": "welcometonightcityretail",
+    "print": "MS01 - WNC [A]",
     "name": "Welcome to Night City — Retail",
     "collector_numbers": [
       "001",
@@ -159,6 +160,7 @@
   },
   {
     "code": "welcometonightcitybeta",
+    "print": "MS01 - WNC [A]",
     "name": "Welcome to Night City — Beta",
     "collector_numbers": [
       "β001",
@@ -337,6 +339,7 @@
   },
   {
     "code": "edgerunneropens1",
+    "print": "EOR01 - WNC",
     "name": "Edgerunner Open S 1",
     "collector_numbers": [
       "001",
@@ -384,6 +387,7 @@
   },
   {
     "code": "welcometonightcityretail-fr",
+    "print": "MS01 - WNC [A]",
     "name": "Welcome to Night City — Retail — FR",
     "collector_numbers": [
       "001",
@@ -542,6 +546,7 @@
   },
   {
     "code": "prereleaseretail",
+    "print": "PRR02 - WNC",
     "name": "Pre-Release Retail",
     "collector_numbers": [
       "001",
@@ -559,6 +564,7 @@
   },
   {
     "code": "prereleasebeta",
+    "print": "PRR01 - WNC",
     "name": "Pre-Release Beta",
     "collector_numbers": [
       "001",
@@ -576,6 +582,7 @@
   },
   {
     "code": "PRM01",
+    "print": "PRM01",
     "name": "Set 1 Promos",
     "collector_numbers": [
       "005",
@@ -586,6 +593,7 @@
   },
   {
     "code": "embracingpowerretailstarterdeck",
+    "print": "SD02 - EBP [A]",
     "name": "Embracing Power — Retail Starter Deck",
     "collector_numbers": [
       "001",
@@ -612,6 +620,7 @@
   },
   {
     "code": "embracingpowerbetastarterdeck",
+    "print": "SD02 - EBP [A]",
     "name": "Embracing Power — Beta Starter Deck",
     "collector_numbers": [
       "β001",
@@ -638,6 +647,7 @@
   },
   {
     "code": "arasakademodeck",
+    "print": "PRM - DD2 [A]",
     "name": "Arasaka Demo Deck",
     "collector_numbers": [
       "001",
@@ -658,6 +668,7 @@
   },
   {
     "code": "boxtoppersretail",
+    "print": "PRM - WNC [A]",
     "name": "Box Toppers — Retail",
     "collector_numbers": [
       "001",
@@ -670,6 +681,7 @@
   },
   {
     "code": "boxtoppersbeta",
+    "print": "PRM - WNC [A]",
     "name": "Box Toppers — Beta",
     "collector_numbers": [
       "β001",
@@ -682,6 +694,7 @@
   },
   {
     "code": "nightcitybrawls1",
+    "print":"NCB01 - WNC",
     "name": "Night City Brawl S 1",
     "collector_numbers": [
       "001",
@@ -725,6 +738,7 @@
   },
   {
     "code": "theheistretailstarterdeck",
+    "print": "SD01 - HEI [A]",
     "name": "The Heist — Retail Starter Deck",
     "collector_numbers": [
       "001",
@@ -751,6 +765,7 @@
   },
   {
     "code": "theheistbetastarterdeck",
+    "print": "SD01 - HEI [A]",
     "name": "The Heist — Beta Starter Deck",
     "collector_numbers": [
       "β001",
@@ -777,6 +792,7 @@
   },
   {
     "code": "mercdemodeck",
+    "print": "PRM - DD1 [A]",
     "name": "Merc Demo Deck",
     "collector_numbers": [
       "001",
@@ -798,6 +814,7 @@
   },
   {
     "code": "nightcityshowdowns1",
+    "print": "NCS01 - WNC",
     "name": "Night City Showdown S1",
     "collector_numbers": [
       "001",

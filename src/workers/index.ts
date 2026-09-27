@@ -4,5 +4,5 @@
 // internal to this module; a caller should never need to know about
 // postMessage, worker lifecycles, or message shapes.
 
-export type { EdgeBandsInput, EdgeDetectionPool, EdgeLineResults } from "./pool";
+export type { EdgeDetectionPool } from "./pool";
 export { createEdgeDetectionPool } from "./pool";

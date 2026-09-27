@@ -52,7 +52,7 @@ export function computeGuideGeometry(camera: Orientation, frameSize: Size): Guid
 
   const center: Point = { x: frameSize.width / 2, y: frameSize.height / 2 };
 
-  return { center, width, height, orientation: camera };
+  return { center, width, height };
 }
 
 /** Linear scale of `frameSize` relative to EDGE_BAND_REFERENCE_FRAME_SIZE,

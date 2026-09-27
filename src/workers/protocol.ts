@@ -1,9 +1,5 @@
-// Message protocol between the main thread and each edge-detection worker.
-//
-// Kept explicit (named request/response types) rather than left as ad-hoc
-// postMessage payload shapes, per the task's instructions — this is the one
-// contract both sides (pool.ts on the main thread, edgeDetectionWorker.ts
-// inside the worker) must agree on.
+// Message protocol between the main thread (pool.ts) and each
+// edge-detection worker (edgeDetectionWorker.ts).
 
 import type { EdgeBandPixels, FittedLine, Point } from "../core";
 
@@ -47,27 +43,24 @@ export interface DetectEdgeResponse {
 /**
  * Sent from a worker to the main thread exactly once, after the worker has
  * finished initializing OpenCV.js and is ready to accept `DetectEdgeRequest`
- * messages. The pool waits for this before resolving its `ready()` promise.
+ * messages. The pool waits for this before sending requests.
  */
 export interface WorkerReadyMessage {
   type: "ready";
 }
 
-/**
- * Sent from a worker to the main thread if it fails to initialize (OpenCV.js
- * init rejected/threw) or if handling a request throws. `id` is present only
- * for a request-handling failure (absent for an init failure, since no
- * request was in flight yet).
- */
-export interface WorkerErrorMessage {
-  type: "error";
-  id?: number;
+/** Sent from a worker to the main thread if OpenCV.js fails to initialize. */
+export interface WorkerInitErrorMessage {
+  type: "init-error";
   message: string;
 }
 
-/** Messages a worker may receive. Currently just the one request type, but
- * named as a union so the protocol stays explicit as it grows. */
-export type WorkerRequest = DetectEdgeRequest;
+/** Sent from a worker to the main thread if handling request `id` throws. */
+export interface WorkerErrorMessage {
+  type: "error";
+  id: number;
+  message: string;
+}
 
 /** Messages a worker may send. */
-export type WorkerResponse = DetectEdgeResponse | WorkerReadyMessage | WorkerErrorMessage;
+export type WorkerResponse = DetectEdgeResponse | WorkerReadyMessage | WorkerInitErrorMessage | WorkerErrorMessage;
