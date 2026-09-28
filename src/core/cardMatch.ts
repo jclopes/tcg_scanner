@@ -1,7 +1,7 @@
 // Pure fuzzy matching of OCR'd card text against a set's known card IDs.
 // See docs/plan/06-card-identification.md ("ID dataset format").
 
-import { MAX_CONFIDENT_MATCH_DISTANCE, MAX_SET_PRINT_DISTANCE } from "./constants";
+import { MAX_CONFIDENT_MATCH_DISTANCE } from "./constants";
 
 /** One candidate ID ranked against the OCR'd text: `distance` is the edit
  * distance between them (0 = exact match). */
@@ -35,12 +35,25 @@ export function isConfidentMatch(matches: readonly CardIdMatch[]): boolean {
   return best !== undefined && best.distance <= MAX_CONFIDENT_MATCH_DISTANCE;
 }
 
-/** Whether the OCR'd set code reads as the set's printed code `print`:
- * within MAX_SET_PRINT_DISTANCE edits, ignoring whitespace (OCR spacing is
- * unreliable). */
-export function matchesSetPrint(ocrText: string, print: string): boolean {
-  const withoutWhitespace = (text: string): string => text.replace(/\s+/g, "");
-  return levenshteinDistance(withoutWhitespace(ocrText), withoutWhitespace(print)) <= MAX_SET_PRINT_DISTANCE;
+/**
+ * The sets whose printed code the OCR'd set code reads closer to than the
+ * selected set's — all tied at the closest distance, in `sets` order. Empty
+ * when the selected set is (joint) closest or OCR read nothing. Distances
+ * ignore whitespace (OCR spacing is unreliable) but not case.
+ */
+export function closerSetPrints<T extends { print: string }>(ocrText: string, selected: T, sets: readonly T[]): T[] {
+  const read = withoutWhitespace(ocrText);
+  if (read === "") {
+    return [];
+  }
+  const distanceTo = (set: T): number => levenshteinDistance(read, withoutWhitespace(set.print));
+  const selectedDistance = distanceTo(selected);
+  const closest = Math.min(...sets.map(distanceTo));
+  return closest < selectedDistance ? sets.filter((set) => distanceTo(set) === closest) : [];
+}
+
+function withoutWhitespace(text: string): string {
+  return text.replace(/\s+/g, "");
 }
 
 /** The entry of `candidates` equal to the typed `query`, ignoring case and

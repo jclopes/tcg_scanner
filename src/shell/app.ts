@@ -19,7 +19,7 @@ import { identifyCard } from "./identify";
 import { ManualCardEntry } from "./manualEntry";
 import { LazyOcrWorker } from "./ocr";
 import { watchVideoFrameSize } from "./orientationWatcher";
-import { ResultImage } from "./resultView";
+import { ResultView } from "./resultView";
 import { ScannedCardList } from "./scannedCards";
 import { SettingsPanel } from "./settings";
 import { INITIAL_SCAN_STATE } from "./state";
@@ -61,19 +61,24 @@ export function initApp(cv: OpenCv): void {
     restartScanIfActive,
   );
   const guide = new GuideFeedback(requireElement("guide-overlay"), video, () => settings.cardFormat);
-  const resultImage = new ResultImage(requireElement("result-image"));
+  const resultView = new ResultView({
+    thumbnailButton: requireElement("result"),
+    thumbnail: requireElement("result-image"),
+    overlay: requireElement("card-overlay"),
+    overlayImage: requireElement("card-overlay-image"),
+  });
   const scannedCards = new ScannedCardList(
     requireElement("scanned-cards-list"),
+    requireElement("scanned-cards-count"),
     requireElement("scanned-cards-empty"),
     requireElement("scanned-cards-download"),
     requireElement("scanned-cards-clear"),
   );
   const identificationView = new IdentificationView(
-    requireElement("identification"),
-    requireElement("identification-status"),
     requireElement("identification-warning"),
-    requireElement("identification-results"),
+    requireElement("identification-matches"),
     acceptCard,
+    rescan,
   );
   new ManualCardEntry(
     {
@@ -157,10 +162,25 @@ export function initApp(cv: OpenCv): void {
       setState({ phase: "captured", message: "Fix the session tags before adding the card." });
       return;
     }
-    resultImage.clear();
+    scanNextCard(`Added ${cardId} — scanning for the next card.`);
+  }
+
+  /** Discards the capture without adding a card (none of the matches was
+   * right) and scans again. */
+  function rescan(): void {
+    scanNextCard("Scanning again.");
+  }
+
+  /** Clears the captured result and restarts detection with the camera still
+   * running. */
+  function scanNextCard(message: string): void {
+    if (cameraStatus !== "active" || !pool) {
+      throw new Error("Tried to scan the next card with no scan running.");
+    }
+    resultView.clear();
     identificationView.clear();
     debugPanel.clear();
-    beginScan(pool, ++scanRequest, `Added ${cardId} — scanning for the next card.`);
+    beginScan(pool, ++scanRequest, message);
   }
 
   /** Adds the card to the scanned list with the foil toggle's state and the
@@ -182,7 +202,7 @@ export function initApp(cv: OpenCv): void {
       throw new Error(`Scan started with the camera ${cameraStatus} and ${camera ? "a" : "no"} camera selected.`);
     }
 
-    resultImage.clear();
+    resultView.clear();
     identificationView.clear();
     debugPanel.clear();
     cameraStatus = "starting";
@@ -250,12 +270,11 @@ export function initApp(cv: OpenCv): void {
       const { cardFormat, game, set } = settings;
       const selected = selectFrameToFlatten(burst.accepted, preview.frame);
       const cardCanvas = captureFlattenedCard(cv, selected, cardFormat);
-      resultImage.show(cardCanvas).catch((error: unknown) => failScan(error, "Could not encode the captured image.", requestId));
 
-      identificationView.showPending();
+      setState({ phase: "processing", message: "Identifying…" });
       const worker = await ocrWorker.get();
-      const identification = await identifyCard(cv, worker, selected, cardFormat, game.config, set, isCancelled);
-      if (isCancelled()) {
+      const identification = await identifyCard(cv, worker, selected, cardFormat, game, set, isCancelled);
+      if (!identification || isCancelled()) {
         return;
       }
 
@@ -263,13 +282,16 @@ export function initApp(cv: OpenCv): void {
         debugPanel.render(buildCaptureDebugTrail(preview, burst, selected, cardCanvas, identification.regions));
       }
       if (!isConfidentMatch(identification.matches)) {
-        resultImage.clear();
+        resultView.clear();
         identificationView.clear();
         beginScan(activePool, ++scanRequest, "Couldn't read the card number — scanning again.");
         return;
       }
 
-      identificationView.show(game.config.game, set, identification);
+      resultView
+        .show(cardCanvas, identification.collectorNumberCrop)
+        .catch((error: unknown) => failScan(error, "Could not encode the captured image.", requestId));
+      identificationView.show(set, identification);
       guide.clear();
       setState({ phase: "captured" });
     } catch (error: unknown) {
@@ -280,7 +302,7 @@ export function initApp(cv: OpenCv): void {
   function stopScan(): void {
     releaseScanResources();
     guide.clear();
-    resultImage.clear();
+    resultView.clear();
     identificationView.clear();
     resolutionStatus.textContent = "-";
     setState({ phase: "idle" });
@@ -383,9 +405,9 @@ function statusMessage(state: ScanState): string {
     case "scanning":
       return state.message ?? "Scanning — align the card with the guide.";
     case "processing":
-      return "Card detected — hold it still…";
+      return state.message ?? "Card detected — hold it still…";
     case "captured":
-      return state.message ?? "Card captured.";
+      return state.message ?? "Tap the matching card number:";
     case "error":
       return state.message ?? "Something went wrong.";
   }

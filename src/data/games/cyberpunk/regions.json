@@ -1,7 +1,7 @@
 {
   "game": "cyberpunk-2077-tcg",
-  "card_formats": ["portrait", "landscape"],
-  "foil": true,
+  "card_formats": ["portrait"],
+  "foil": false,
   "regions": [
     {
       "label": "collector_number",

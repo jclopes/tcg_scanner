@@ -7,8 +7,8 @@
  * - "captured": the result is displayed.
  * - "error": a failure the user needs to see; `message` describes it.
  *
- * For "scanning" and "captured", `message` optionally replaces the default
- * status text (e.g. why scanning restarted).
+ * For "scanning", "processing" and "captured", `message` optionally replaces
+ * the default status text (e.g. why scanning restarted).
  */
 export type ScanPhase = "idle" | "scanning" | "processing" | "captured" | "error";
 

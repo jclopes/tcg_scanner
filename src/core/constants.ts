@@ -72,11 +72,6 @@ export const CAPTURE_BURST_MIN_USABLE_FRAMES = 5;
  * (or no OCR text at all) restarts detection. */
 export const MAX_CONFIDENT_MATCH_DISTANCE = 2;
 
-/** Largest edit distance between the OCR'd set code and the selected set's
- * printed code (both ignoring whitespace) that still counts as the same set;
- * anything worse shows a warning. Starting guess. */
-export const MAX_SET_PRINT_DISTANCE = 2;
-
 /** Max frames attempted across all bursts; after that the best of whatever
  * was accepted is used. Starting guess. */
 export const CAPTURE_BURST_HARD_LIMIT = 30;

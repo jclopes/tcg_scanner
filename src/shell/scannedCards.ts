@@ -30,6 +30,7 @@ export class ScannedCardList {
 
   constructor(
     private readonly list: HTMLOListElement,
+    private readonly count: HTMLElement,
     private readonly emptyNote: HTMLElement,
     private readonly downloadButton: HTMLButtonElement,
     private readonly clearButton: HTMLButtonElement,
@@ -66,6 +67,7 @@ export class ScannedCardList {
 
   private render(): void {
     this.list.replaceChildren(...this.cards.map((card, index) => this.row(card, index)));
+    this.count.textContent = String(this.cards.length);
     const empty = this.cards.length === 0;
     this.emptyNote.hidden = !empty;
     this.downloadButton.disabled = empty;

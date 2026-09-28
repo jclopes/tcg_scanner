@@ -127,18 +127,6 @@
         object-fit: cover;
       }
 
-      #status {
-        min-height: 1.2em;
-        margin: 0;
-        font-size: 0.9rem;
-        color: var(--text-muted);
-        text-align: center;
-      }
-
-      #status[data-kind="error"] {
-        color: var(--danger);
-      }
-
       /* Stays reachable at the bottom of the screen whenever its normal spot
          is scrolled out of view below. */
       #actions {
@@ -227,19 +215,35 @@
 
       /* ---- Capture: thumbnail + identification ----------------------------- */
 
+      /* Always on the page at a fixed size, empty or not, so the layout
+         never moves: a thumbnail slot and two text lines on top, one row of
+         buttons below. */
       #capture {
-        display: flex;
-        align-items: flex-start;
-        gap: var(--gap);
+        display: grid;
+        grid-template-columns: 8rem minmax(0, 1fr);
+        grid-template-rows: 3.5rem var(--tap);
+        gap: 0.5rem var(--gap);
       }
 
-      #capture:has(> #result[hidden]):has(> #identification[hidden]) {
-        display: none;
+      .thumb-slot {
+        border: 1px dashed var(--control-border);
+        border-radius: var(--radius-sm);
+        overflow: hidden;
+      }
+
+      .thumb-slot:has(#result:not([hidden])) {
+        border-style: solid;
       }
 
       #result {
-        flex: 0 0 auto;
+        display: block;
+        width: 100%;
+        height: 100%;
         margin: 0;
+        padding: 0;
+        border: none;
+        background: #000;
+        cursor: zoom-in;
       }
 
       #result[hidden] {
@@ -248,78 +252,91 @@
 
       #result img {
         display: block;
-        width: 8rem;
-        height: auto;
-        border-radius: var(--radius-sm);
-        background: #000;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
       }
 
-      #identification {
-        flex: 1 1 auto;
+      .capture-text {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 0.2rem;
         min-width: 0;
-        padding: 0;
-        border: none;
-        background: none;
-        gap: 0.4rem;
       }
 
-      #identification-status {
+      /* Status (scan progress, prompts, errors): up to two lines. */
+      #status {
         margin: 0;
-        font-size: 0.8rem;
-        color: var(--text-muted);
+        font-size: 0.9rem;
+        line-height: 1.25;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        overflow: hidden;
       }
 
+      #status[data-kind="error"] {
+        color: var(--danger);
+      }
+
+      /* One line; longer text is cut with an ellipsis (full text in the
+         element's title). */
       #identification-warning {
         margin: 0;
-        padding: 0.4rem 0.6rem;
-        border-radius: var(--radius-sm);
-        background: rgba(255, 196, 0, 0.12);
-        color: #ffc400;
-        font-size: 0.8rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
-      #identification-warning[hidden] {
+      #card-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
+        background: rgba(0, 0, 0, 0.88);
+        cursor: zoom-out;
+      }
+
+      #card-overlay[hidden] {
         display: none;
       }
 
-      #identification-results {
-        margin: 0;
-        display: grid;
-        grid-template-columns: auto 1fr;
-        align-items: baseline;
-        gap: 0.3rem 0.6rem;
+      #card-overlay img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        border-radius: var(--radius);
       }
 
-      #identification-results dt {
-        font-size: 0.8rem;
-        color: var(--text-muted);
+      #identification-warning {
+        color: #ffc400;
+        font-size: 0.75rem;
       }
 
-      #identification-results dd {
-        margin: 0;
-        font-size: 0.9rem;
-        font-family: ui-monospace, monospace;
-        overflow-wrap: anywhere;
+      #identification-warning::before {
+        content: "⚠ ";
       }
 
-      /* The match buttons get the full width below the OCR rows. */
-      #identification-results dd:has(.match-buttons) {
-        grid-column: 1 / -1;
-      }
-
-      #identification-results dt:has(+ dd .match-buttons) {
-        grid-column: 1 / -1;
-        margin-top: 0.2rem;
+      /* Keeps its line when there's no warning. */
+      #identification-warning[hidden] {
+        display: block;
+        visibility: hidden;
       }
 
       .match-buttons {
-        display: flex;
-        flex-wrap: wrap;
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 0.5rem;
       }
 
       .match-button {
-        flex: 1 1 6rem;
+        min-width: 0;
         min-height: var(--tap);
         padding: 0.4rem 0.7rem;
         font-family: ui-monospace, monospace;
@@ -329,6 +346,13 @@
         color: var(--text);
         border-radius: var(--radius-sm);
         cursor: pointer;
+      }
+
+      .rescan-button {
+        font-family: inherit;
+        border-color: var(--control-border);
+        background: var(--control-bg);
+        color: var(--text-muted);
       }
 
       /* ---- Settings -------------------------------------------------------- */
@@ -527,6 +551,20 @@
         display: none;
       }
 
+      .count-badge {
+        display: inline-block;
+        min-width: 1.5rem;
+        padding: 0.05rem 0.45rem;
+        margin-left: 0.25rem;
+        border-radius: 999px;
+        background: var(--control-bg);
+        border: 1px solid var(--control-border);
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-align: center;
+      }
+
       #scanned-cards-empty {
         margin: 0;
         font-size: 0.85rem;
@@ -718,7 +756,6 @@
         <canvas id="guide-overlay"></canvas>
       </div>
 
-      <p id="status" role="status" aria-live="polite">Loading OpenCV...</p>
 
       <div id="actions">
         <div class="card-options">
@@ -731,16 +768,18 @@
         <button type="button" id="scan-button">Start Scan</button>
       </div>
 
-      <div id="capture">
-        <figure id="result" hidden>
-          <img id="result-image" alt="Flattened, cropped card capture" />
-        </figure>
-        <section id="identification" class="panel" aria-label="Identification" hidden>
-          <p id="identification-status"></p>
+      <section id="capture" aria-label="Captured card">
+        <div class="thumb-slot">
+          <button type="button" id="result" aria-label="Show the full captured card" hidden>
+            <img id="result-image" alt="Collector number as captured" />
+          </button>
+        </div>
+        <div class="capture-text">
+          <p id="status" role="status" aria-live="polite">Loading OpenCV...</p>
           <p id="identification-warning" role="alert" hidden></p>
-          <dl id="identification-results"></dl>
-        </section>
-      </div>
+        </div>
+        <div id="identification-matches" class="match-buttons"></div>
+      </section>
 
       <details class="panel" open>
         <summary>Session</summary>
@@ -774,7 +813,7 @@
 
       <section id="scanned-cards" class="panel">
         <div class="scanned-cards-header">
-          <h2>Scanned cards</h2>
+          <h2>Scanned cards <span id="scanned-cards-count" class="count-badge">0</span></h2>
           <div class="scanned-cards-actions">
             <button type="button" id="scanned-cards-download" class="secondary-button" disabled>Download CSV</button>
             <button type="button" id="scanned-cards-clear" class="secondary-button" disabled>Clear</button>
@@ -827,6 +866,10 @@
         </div>
       </details>
     </main>
+
+    <div id="card-overlay" role="dialog" aria-label="Captured card — tap to close" hidden>
+      <img id="card-overlay-image" alt="Full captured card" />
+    </div>
 
     <aside id="debug-panel" hidden></aside>
 

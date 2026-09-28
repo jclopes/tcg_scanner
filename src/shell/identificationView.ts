@@ -1,59 +1,26 @@
 import type { GameSet } from "./gameConfig";
 import type { Identification } from "./identify";
 
-/** The Identification section: status line plus one row per OCR'd region
- * and a "Best matches" row of buttons, with a warning when the OCR'd set code
- * doesn't match the selected set's printed code, one per suggested card ID, closest
- * match first. Clicking one accepts that card (`onAccept`). */
+/** The identification part of the always-visible capture area (whose first
+ * line is the app's status): a warning naming
+ * the likelier set(s) when the OCR'd set code fits another set's printed code
+ * better, one button per suggested card ID, closest match first — clicking
+ * one accepts that card (`onAccept`) — and a Rescan button for when none is
+ * right (`onRescan`). */
 export class IdentificationView {
   constructor(
-    private readonly section: HTMLElement,
-    private readonly status: HTMLElement,
     private readonly warning: HTMLElement,
-    private readonly results: HTMLDListElement,
+    private readonly matches: HTMLElement,
     private readonly onAccept: (set: GameSet, cardId: string) => void,
-  ) {}
-
-  showPending(): void {
-    this.section.hidden = false;
-    this.status.textContent = "Identifying…";
-    this.showWarning(null);
-    this.results.replaceChildren();
+    private readonly onRescan: () => void,
+  ) {
+    this.clear();
   }
 
-  show(game: string, set: GameSet, identification: Identification): void {
-    this.section.hidden = false;
-    this.status.textContent = `Game: ${game} · Set: ${set.name}`;
-    const { text, matchesSet } = identification.setCode;
-    this.showWarning(
-      matchesSet ? null : `Set code reads "${text || "nothing"}", but ${set.name} prints "${set.print}". Check the Set selection.`,
-    );
-    this.results.replaceChildren();
-    for (const { crop, ocr } of identification.regions) {
-      if (ocr) {
-        this.appendRow(crop.region.label, document.createTextNode(ocr.text || "(no text recognized)"));
-      }
-    }
-    this.appendRow("Best matches", this.matchButtons(set, identification.matches));
-  }
-
-  clear(): void {
-    this.section.hidden = true;
-    this.status.textContent = "";
-    this.showWarning(null);
-    this.results.replaceChildren();
-  }
-
-  private showWarning(message: string | null): void {
-    this.warning.hidden = message === null;
-    this.warning.textContent = message ?? "";
-  }
-
-  private matchButtons(set: GameSet, matches: Identification["matches"]): HTMLElement {
-    const container = document.createElement("div");
-    container.className = "match-buttons";
-    container.append(
-      ...matches.map((match) => {
+  show(set: GameSet, identification: Identification): void {
+    this.showWarning(setWarning(identification.setCode.closerSets));
+    this.matches.replaceChildren(
+      ...identification.matches.map((match) => {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "match-button";
@@ -61,15 +28,41 @@ export class IdentificationView {
         button.addEventListener("click", () => this.onAccept(set, match.id));
         return button;
       }),
+      this.rescanButton(),
     );
-    return container;
   }
 
-  private appendRow(label: string, value: Node): void {
-    const dt = document.createElement("dt");
-    dt.textContent = label;
-    const dd = document.createElement("dd");
-    dd.append(value);
-    this.results.append(dt, dd);
+  clear(): void {
+    this.showWarning(null);
+    this.matches.replaceChildren();
   }
+
+  private rescanButton(): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "match-button rescan-button";
+    button.textContent = "Rescan";
+    button.title = "None of these — scan the card again";
+    button.addEventListener("click", () => this.onRescan());
+    return button;
+  }
+
+  /** The warning keeps its line when hidden; a message too long for it is
+   * cut off, so the full text is also its title. */
+  private showWarning(message: string | null): void {
+    this.warning.hidden = message === null;
+    this.warning.textContent = message ?? "";
+    this.warning.title = message ?? "";
+  }
+}
+
+/** E.g. "Set may be The Heist — Retail Starter Deck (SD01 - HEI [A])", or
+ * null when there's no likelier set. Sets sharing a printed code are listed
+ * together. */
+function setWarning(closerSets: readonly GameSet[]): string | null {
+  const first = closerSets[0];
+  if (!first) {
+    return null;
+  }
+  return `Set may be ${closerSets.map((set) => set.name).join(" or ")} (${first.print})`;
 }

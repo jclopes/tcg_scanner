@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findCardId, isConfidentMatch, levenshteinDistance, matchesSetPrint, rankCardIds } from "./cardMatch";
+import { closerSetPrints, findCardId, isConfidentMatch, levenshteinDistance, rankCardIds } from "./cardMatch";
 
 describe("levenshteinDistance", () => {
   it("is 0 for identical strings", () => {
@@ -76,26 +76,35 @@ describe("findCardId", () => {
   });
 });
 
-describe("matchesSetPrint", () => {
-  it("matches the printed code, ignoring spacing", () => {
-    expect(matchesSetPrint("MS01 - WNC [A]", "MS01 - WNC [A]")).toBe(true);
-    expect(matchesSetPrint("MS01-WNC[A]", "MS01 - WNC [A]")).toBe(true);
+describe("closerSetPrints", () => {
+  const heist = { name: "Heist", print: "SD01 - HEI [A]" };
+  const power = { name: "Power", print: "SD02 - EBP [A]" };
+  const retail = { name: "Retail", print: "MS01 - WNC [A]" };
+  const beta = { name: "Beta", print: "MS01 - WNC [A]" };
+  const sets = [heist, power, retail, beta];
+
+  it("is empty when the selected set's print is the closest", () => {
+    expect(closerSetPrints("SD02 - EBP [A]", power, sets)).toEqual([]);
+    expect(closerSetPrints("SDO2 - EBP [A", power, sets)).toEqual([]);
   });
 
-  it("tolerates up to 2 OCR misreads", () => {
-    expect(matchesSetPrint("MSO1 - WNC [A", "MS01 - WNC [A]")).toBe(true);
+  it("is empty when another set is only as close (a tie)", () => {
+    expect(closerSetPrints("MS01 - WNC [A]", retail, sets)).toEqual([]);
+  });
+
+  it("returns the closer set, ignoring spacing", () => {
+    expect(closerSetPrints("SD01-HEI[A]", power, sets)).toEqual([heist]);
+  });
+
+  it("returns every set sharing the closest print", () => {
+    expect(closerSetPrints("MS01 - WNC [A]", heist, sets)).toEqual([retail, beta]);
   });
 
   it("is case-sensitive", () => {
-    expect(matchesSetPrint("ms01 - wnc [a]", "MS01 - WNC [A]")).toBe(false);
+    expect(closerSetPrints("sd01 - hei [a]", heist, sets)).toEqual([]);
   });
 
-  it("rejects another set's code", () => {
-    expect(matchesSetPrint("SD01 - HEI [A]", "SD02 - EBP [A]")).toBe(false);
-    expect(matchesSetPrint("PRM - DD1 [A]", "PRM - WNC [A]")).toBe(false);
-  });
-
-  it("rejects empty OCR text", () => {
-    expect(matchesSetPrint("", "PRM01")).toBe(false);
+  it("is empty when OCR read nothing", () => {
+    expect(closerSetPrints("  ", power, sets)).toEqual([]);
   });
 });
