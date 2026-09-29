@@ -3,9 +3,10 @@ import {
   computeGuideGeometry,
   expectedEdgeBands,
   isQuadAspectRatioValid,
+  mapEdges,
   quadFromEdgeLines,
 } from "../core";
-import type { EdgeBandPixels, FittedLine, Point, Quad, Size } from "../core";
+import type { EdgeBandPixels, FittedLine, PerEdge, Point, Quad, Size } from "../core";
 import type { EdgeDetectionPool } from "../workers";
 import { DEFAULT_TOLERANCE_CONFIG } from "./config";
 import type { FrameSampler } from "./frameSampler";
@@ -13,9 +14,6 @@ import { orientationFromSize } from "./orientationWatcher";
 
 /** Why a frame's quad wasn't accepted, in the order they're checked. */
 export type QuadRejectionReason = "edge-not-found" | "parallel-edges" | "aspect-ratio-out-of-tolerance";
-
-export type EdgeBands = [EdgeBandPixels, EdgeBandPixels, EdgeBandPixels, EdgeBandPixels];
-export type EdgeLines = [FittedLine | null, FittedLine | null, FittedLine | null, FittedLine | null];
 
 /** A frame whose quad was accepted: the quad and the exact frame it was found
  * in (always flatten this canvas, never a newer video frame). */
@@ -27,11 +25,14 @@ export interface AcceptedFrame {
 /** One frame's detection result. `bands`/`lines` are always included for the
  * debug views; lines are band-local and `null` where no edge was found. */
 export type FrameEvaluation = {
-  bands: EdgeBands;
-  lines: EdgeLines;
-  /** Per edge [top, right, bottom, left]: was a line found. */
-  edgesFound: [boolean, boolean, boolean, boolean];
+  bands: PerEdge<EdgeBandPixels>;
+  lines: PerEdge<FittedLine | null>;
+  /** Per edge: was a line found. */
+  edgesFound: PerEdge<boolean>;
 } & ({ status: "accepted"; frame: AcceptedFrame } | { status: "rejected"; reason: QuadRejectionReason });
+
+/** An accepted frame's evaluation. */
+export type AcceptedEvaluation = Extract<FrameEvaluation, { status: "accepted" }>;
 
 /**
  * Runs one quad-detection pass on a frame: sample the 4 guide-edge bands, fit
@@ -48,12 +49,12 @@ export async function evaluateFrameForQuad(
   frameSize: Size,
 ): Promise<FrameEvaluation> {
   const guide = computeGuideGeometry(orientationFromSize(frameSize), frameSize);
-  const sampledBands = sampler.sampleBands(source, frameSize, expectedEdgeBands(guide, frameSize)) as EdgeBands;
+  const sampledBands = sampler.sampleBands(source, frameSize, expectedEdgeBands(guide, frameSize));
 
   // detectEdges transfers (detaches) each band's buffer, so keep a copy.
-  const bands = sampledBands.map(cloneEdgeBandPixels) as EdgeBands;
+  const bands = mapEdges(sampledBands, cloneEdgeBandPixels);
   const lines = await pool.detectEdges(sampledBands, DEFAULT_TOLERANCE_CONFIG.rotationToleranceDegrees);
-  const edgesFound = lines.map(Boolean) as [boolean, boolean, boolean, boolean];
+  const edgesFound = mapEdges(lines, (line) => line !== null);
   const base = { bands, lines, edgesFound };
 
   const [top, right, bottom, left] = lines;

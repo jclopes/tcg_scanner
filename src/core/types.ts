@@ -22,6 +22,15 @@ export interface Point {
   y: number;
 }
 
+/** One value per guide edge, in [top, right, bottom, left] order — the order
+ * `expectedEdgeBands` returns. */
+export type PerEdge<T> = readonly [T, T, T, T];
+
+/** `edges` with `fn` applied to each, keeping the per-edge tuple type. */
+export function mapEdges<T, U>(edges: PerEdge<T>, fn: (edge: T, index: number) => U): PerEdge<U> {
+  return [fn(edges[0], 0), fn(edges[1], 1), fn(edges[2], 2), fn(edges[3], 3)];
+}
+
 /** Quad corners, always ordered [topLeft, topRight, bottomRight, bottomLeft]. */
 export type Quad = readonly [Point, Point, Point, Point];
 

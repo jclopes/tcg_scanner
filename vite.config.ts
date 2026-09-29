@@ -9,18 +9,13 @@ const rootDir = dirname(fileURLToPath(import.meta.url));
 
 /**
  * Copies @techstark/opencv-js's ~13MB dist/opencv.js into public/opencv.js
- * so it's served as an ordinary static asset at one fixed URL, rather than
- * each of this app's 3 separate JS execution contexts (the main thread,
- * plus 2 independent module Web Workers) statically `import`-ing the
- * package and getting their own fully-inlined copy bundled in at build
- * time. Vite/Rolldown has no way to share a chunk between a worker's
- * isolated build and the main build, so that used to mean downloading the
- * same ~13MB library 3 times over on a production visit; see
- * src/loadOpenCv.ts (which actually loads this file, in all 3 contexts)
- * for the rest of that story. Runs on `buildStart`, so it applies to both
- * `vite`/`vite dev` and `vite build` — public/opencv.js itself is
- * generated, not committed (see .gitignore), so it always reflects
- * whatever version of the package is actually installed.
+ * so it's served as an ordinary static asset at one fixed URL: the main
+ * thread and the 4 edge-detection workers all load it from there (see
+ * src/loadOpenCv.ts), so it's downloaded once and then served from the HTTP
+ * cache. Importing the package instead would inline a separate copy into the
+ * main build and the worker build, since Vite can't share a chunk between
+ * them. Runs on `buildStart`, for both `vite` and `vite build`;
+ * public/opencv.js is generated, not committed (see .gitignore).
  */
 function copyOpenCvToPublic(): Plugin {
   return {

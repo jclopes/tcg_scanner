@@ -1,21 +1,16 @@
+import type { PerEdge } from "../core";
 import type { EdgeDetectionPool } from "../workers";
 import { scheduleVideoFrame } from "./canvasUtils";
 import { evaluateFrameForQuad } from "./frameDetection";
-import type { AcceptedFrame, EdgeBands, EdgeLines, FrameEvaluation } from "./frameDetection";
+import type { AcceptedEvaluation, FrameEvaluation } from "./frameDetection";
 import { FrameSampler } from "./frameSampler";
 import { videoFrameSize } from "./orientationWatcher";
 
-export interface DetectionLoopResult {
-  frame: AcceptedFrame;
-  bands: EdgeBands;
-  lines: EdgeLines;
-}
-
 export interface DetectionLoopCallbacks {
   /** The first accepted frame; the loop has stopped. */
-  onAccepted: (result: DetectionLoopResult) => void;
-  /** Every evaluated frame's per-edge found status ([top, right, bottom, left]). */
-  onFrameEvaluated: (edgesFound: [boolean, boolean, boolean, boolean]) => void;
+  onAccepted: (evaluation: AcceptedEvaluation) => void;
+  /** Every evaluated frame's per-edge found status. */
+  onFrameEvaluated: (edgesFound: PerEdge<boolean>) => void;
   /** An unexpected failure (e.g. a crashed worker); the loop has stopped. */
   onError: (error: unknown) => void;
 }
@@ -45,7 +40,7 @@ export class DetectionLoop {
           callbacks.onFrameEvaluated(evaluation.edgesFound);
           if (evaluation.status === "accepted") {
             this.stop();
-            callbacks.onAccepted({ frame: evaluation.frame, bands: evaluation.bands, lines: evaluation.lines });
+            callbacks.onAccepted(evaluation);
           } else {
             this.cancelScheduled = scheduleVideoFrame(this.video, step);
           }
@@ -62,8 +57,12 @@ export class DetectionLoop {
   }
 
   /** One-shot: hands the next evaluated frame (accepted or not) to `callback`,
-   * without affecting the loop. */
+   * without affecting the loop. Throws if the loop has stopped — there'd be no
+   * next frame, so the callback would silently never run. */
   requestForcedDebugCapture(callback: (evaluation: FrameEvaluation) => void): void {
+    if (this.stopped) {
+      throw new Error("The detection loop has stopped; there's no next frame to capture.");
+    }
     this.forcedDebugCallback = callback;
   }
 

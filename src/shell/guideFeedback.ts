@@ -1,4 +1,4 @@
-import type { CardOrientation } from "../core";
+import type { CardOrientation, PerEdge } from "../core";
 import {
   ALL_FOUND_FLASH_EDGE_COLORS,
   clearGuideOverlay,
@@ -10,7 +10,7 @@ import {
 import type { EdgeColors } from "./guideOverlay";
 import { orientationFromSize, videoFrameSize } from "./orientationWatcher";
 
-type EdgesFound = readonly [boolean, boolean, boolean, boolean];
+type EdgesFound = PerEdge<boolean>;
 
 /**
  * The live guide over the video: each edge colored by whether it was found in

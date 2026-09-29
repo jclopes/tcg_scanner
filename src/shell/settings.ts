@@ -1,8 +1,7 @@
-import { parseTags } from "../core";
-import type { CardOrientation, ParsedTags, Size } from "../core";
+import type { CardOrientation, Size } from "../core";
 import { listFullHdCameras } from "./cameraDevices";
 import type { CameraOption } from "./cameraDevices";
-import { DEFAULT_CAMERA_RESOLUTION, resolutionOptionsForCamera, SUGGESTED_SESSION_TAGS } from "./config";
+import { DEFAULT_CAMERA_RESOLUTION, resolutionOptionsForCamera } from "./config";
 import { optionElement, placeholderOption } from "./dom";
 import { listGames } from "./gameConfig";
 import type { GameOption, GameSet } from "./gameConfig";
@@ -19,18 +18,15 @@ export interface SettingsElements {
   /** The Foil toggle (its label) and its checkbox. */
   foilToggle: HTMLElement;
   foilCheckbox: HTMLInputElement;
-  tagsInput: HTMLInputElement;
-  tagSuggestions: HTMLElement;
-  tagsError: HTMLElement;
 }
 
 /**
- * The scan settings — game, set, camera, resolution, session tags, card
- * orientation, foil — and the current value of each. Game, set, camera,
- * resolution and tags are saved as preferences and restored when still
- * available; card orientation and foil are sticky for the session only. The
- * orientation toggle is shown only for a game with both orientations, and the foil
- * toggle only for a game with foils (see GameOption).
+ * The scan settings — game, set, camera, resolution, card orientation, foil
+ * — and the current value of each. Game, set, camera and resolution are saved
+ * as preferences and restored when still available; card orientation and
+ * foil are sticky for the session only. The orientation toggle is shown only
+ * for a game with both orientations, and the foil toggle only for a game with
+ * foils (see GameOption). Session tags are separate (see SessionTagsInput).
  */
 export class SettingsPanel {
   private readonly preferences = loadPreferences();
@@ -43,7 +39,6 @@ export class SettingsPanel {
   private selectedSet: GameSet;
   private selectedCardOrientation: CardOrientation;
   private selectedFoil = false;
-  private parsedTags: ParsedTags;
 
   /** `onCameraSettingsChanged` runs after the camera or resolution changes. */
   constructor(
@@ -56,9 +51,6 @@ export class SettingsPanel {
     this.selectedSet = this.populateSets(this.preferences.setCode);
     this.selectedCardOrientation = this.selectedGame.cardOrientations[0]!;
     this.applyGameCardOptions();
-    elements.tagsInput.value = this.preferences.sessionTags ?? "";
-    this.parsedTags = this.readTags();
-    elements.tagSuggestions.replaceChildren(...SUGGESTED_SESSION_TAGS.map((tag) => this.suggestionButton(tag)));
 
     elements.gameSelect.addEventListener("change", () => this.handleGameChange());
     elements.setSelect.addEventListener("change", () => this.handleSetChange());
@@ -74,7 +66,6 @@ export class SettingsPanel {
     elements.foilCheckbox.addEventListener("change", () => {
       this.selectedFoil = elements.foilCheckbox.checked;
     });
-    elements.tagsInput.addEventListener("input", () => this.handleTagsChange());
   }
 
   get camera(): CameraOption | null {
@@ -106,11 +97,6 @@ export class SettingsPanel {
    * without foils. */
   get foil(): boolean {
     return this.selectedFoil;
-  }
-
-  /** The session tags, plus any tokens in the input that aren't valid tags. */
-  get sessionTags(): ParsedTags {
-    return this.parsedTags;
   }
 
   /** Probes cameras for Full HD support and fills the camera dropdown,
@@ -155,38 +141,6 @@ export class SettingsPanel {
     const match = options.find((option) => resolutionOptionValue(option.size) === resolutionOptionValue(this.selectedResolution));
     this.selectedResolution = (match ?? options[options.length - 1]!).size;
     this.elements.resolutionSelect.value = resolutionOptionValue(this.selectedResolution);
-  }
-
-  /** Parses the tags input and shows which tokens aren't valid tags. */
-  private readTags(): ParsedTags {
-    const parsed = parseTags(this.elements.tagsInput.value);
-    const invalid = parsed.invalid.length > 0;
-    this.elements.tagsInput.setAttribute("aria-invalid", String(invalid));
-    this.elements.tagsError.hidden = !invalid;
-    this.elements.tagsError.textContent = invalid
-      ? `Tags must start with # and contain no spaces: ${parsed.invalid.join(" ")}`
-      : "";
-    return parsed;
-  }
-
-  private handleTagsChange(): void {
-    this.parsedTags = this.readTags();
-    savePreferences({ sessionTags: this.elements.tagsInput.value });
-  }
-
-  /** A button that appends `tag` to the tags input unless it's already there. */
-  private suggestionButton(tag: string): HTMLButtonElement {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "tag-suggestion";
-    button.textContent = tag;
-    button.addEventListener("click", () => {
-      if (!this.parsedTags.tags.includes(tag)) {
-        this.elements.tagsInput.value = `${this.elements.tagsInput.value.trim()} ${tag}`.trim();
-        this.handleTagsChange();
-      }
-    });
-    return button;
   }
 
   /** Fits the orientation and foil toggles to the selected game: keeps the

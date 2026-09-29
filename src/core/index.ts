@@ -14,6 +14,7 @@ export * from "./identification";
 export * from "./cardMatch";
 export * from "./csv";
 export * from "./tags";
+export * from "./validation";
 export * from "./textBand";
 export * from "./regionWarp";
 export * from "./textPolarity";

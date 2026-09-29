@@ -1,12 +1,12 @@
-import { computeGuideGeometry, computeOutputRotationDegrees } from "../core";
-import type { CardOrientation, Orientation, Point, Size } from "../core";
+import { computeGuideGeometry, computeOutputRotationDegrees, mapEdges } from "../core";
+import type { CardOrientation, Orientation, PerEdge, Point, Size } from "../core";
 import { require2dContext } from "./canvasUtils";
 
-export type EdgeColors = readonly [string, string, string, string];
+export type EdgeColors = PerEdge<string>;
 
-export const GUIDE_EDGE_NOT_FOUND_COLOR = "rgba(239, 68, 68, 0.95)";
-export const GUIDE_EDGE_FOUND_COLOR = "rgba(56, 224, 130, 0.95)";
-export const GUIDE_EDGE_ALL_FOUND_FLASH_COLOR = "rgba(255, 255, 255, 0.95)";
+const GUIDE_EDGE_NOT_FOUND_COLOR = "rgba(239, 68, 68, 0.95)";
+const GUIDE_EDGE_FOUND_COLOR = "rgba(56, 224, 130, 0.95)";
+const GUIDE_EDGE_ALL_FOUND_FLASH_COLOR = "rgba(255, 255, 255, 0.95)";
 
 /** How long the all-edges-found white flash stays up. */
 export const GUIDE_ALL_FOUND_FLASH_DURATION_MS = 500;
@@ -25,11 +25,9 @@ export const ALL_FOUND_FLASH_EDGE_COLORS: EdgeColors = [
   GUIDE_EDGE_ALL_FOUND_FLASH_COLOR,
 ];
 
-/** Per-edge colors ([top, right, bottom, left]) for a frame's detection result. */
-export function edgeColorsForDetection(edgesFound: readonly [boolean, boolean, boolean, boolean]): EdgeColors {
-  const color = (found: boolean): string => (found ? GUIDE_EDGE_FOUND_COLOR : GUIDE_EDGE_NOT_FOUND_COLOR);
-  const [top, right, bottom, left] = edgesFound;
-  return [color(top), color(right), color(bottom), color(left)];
+/** Per-edge colors for a frame's detection result. */
+export function edgeColorsForDetection(edgesFound: PerEdge<boolean>): EdgeColors {
+  return mapEdges(edgesFound, (found) => (found ? GUIDE_EDGE_FOUND_COLOR : GUIDE_EDGE_NOT_FOUND_COLOR));
 }
 
 /**

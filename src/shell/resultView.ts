@@ -1,7 +1,8 @@
 import { canvasToObjectURL } from "./canvasUtils";
 
 export interface ResultViewElements {
-  /** The thumbnail button; clicking it opens the overlay. */
+  /** The thumbnail button — shown only while there's a result; clicking it
+   * opens the overlay. */
   thumbnailButton: HTMLButtonElement;
   thumbnail: HTMLImageElement;
   /** Full-screen overlay showing the whole card; clicking anywhere closes it. */
@@ -36,6 +37,7 @@ export class ResultView {
   async show(card: HTMLCanvasElement, preview: HTMLCanvasElement): Promise<void> {
     this.clear();
     this.elements.thumbnail.src = preview.toDataURL("image/png");
+    this.elements.thumbnailButton.hidden = false;
     const generation = this.generation;
     const url = await canvasToObjectURL(card);
     if (generation !== this.generation) {
@@ -49,6 +51,7 @@ export class ResultView {
   clear(): void {
     this.generation += 1;
     this.setOverlayOpen(false);
+    this.elements.thumbnailButton.hidden = true;
     if (this.objectUrl) {
       URL.revokeObjectURL(this.objectUrl);
       this.objectUrl = null;

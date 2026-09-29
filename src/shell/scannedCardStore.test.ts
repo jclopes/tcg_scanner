@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GameOption } from "./gameConfig";
-import { mergeDuplicates, parseScannedCards, scannedCardsCsv } from "./scannedCards";
-import type { ScannedCard } from "./scannedCards";
+import { mergeDuplicates, parseScannedCards, scannedCardsCsv } from "./scannedCardStore";
+import type { ScannedCard } from "./scannedCardStore";
 
 function game(id: string, hasFoil: boolean, cardOrientations: GameOption["cardOrientations"]): GameOption {
   return { id, config: { game: id, regions: [] }, sets: [], cardOrientations, hasFoil };
@@ -46,17 +46,19 @@ describe("parseScannedCards", () => {
     expect(parseScannedCards("[]", noLegacyGame)).toEqual([]);
   });
 
-  it("throws for a stored value that isn't a list of cards", () => {
-    for (const json of [
-      '{"setCode":"PRM01"}',
-      '[{"setCode":"PRM01","cardId":"005"}]',
-      '[{"setCode":"PRM01","cardId":"005","scannedAt":"x","tags":"#box-01"}]',
-      '[{"setCode":"PRM01","cardId":"005","scannedAt":"x","foil":"yes"}]',
-      '[{"setCode":"PRM01","cardId":"005","scannedAt":"x","orientation":"square"}]',
-      '[{"setCode":"PRM01","cardId":"005","scannedAt":"x","quantity":0}]',
-      '[{"setCode":"PRM01","cardId":"005","scannedAt":"x","quantity":1.5}]',
-    ]) {
-      expect(() => parseScannedCards(json, noLegacyGame)).toThrow(/corrupted/);
+  it("throws, naming the entry and field, for a stored value that isn't a list of cards", () => {
+    const entry = '"gameId":"full","setCode":"PRM01","cardId":"005","scannedAt":"x"';
+    for (const [json, field] of [
+      ['{"setCode":"PRM01"}', /must be a list/],
+      ['[{"gameId":"full","setCode":"PRM01","cardId":"005"}]', /entry 1: "scannedAt"/],
+      [`[{${entry},"tags":"#box-01"}]`, /"tags"/],
+      [`[{${entry},"tags":[1]}]`, /"tags"/],
+      [`[{${entry},"foil":"yes"}]`, /"foil"/],
+      [`[{${entry},"orientation":"square"}]`, /"orientation"/],
+      [`[{${entry},"quantity":0}]`, /"quantity"/],
+      [`[{${entry}},{${entry},"quantity":1.5}]`, /entry 2: "quantity"/],
+    ] as const) {
+      expect(() => parseScannedCards(json, noLegacyGame)).toThrow(field);
     }
   });
 

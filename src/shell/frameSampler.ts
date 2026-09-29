@@ -1,5 +1,5 @@
-import { clampRegion, extractGrayscaleRegion } from "../core";
-import type { EdgeBand, EdgeBandPixels, Size } from "../core";
+import { clampRegion, extractGrayscaleRegion, mapEdges } from "../core";
+import type { EdgeBand, EdgeBandPixels, PerEdge, Size } from "../core";
 import { require2dContext, snapshotSource } from "./canvasUtils";
 
 /**
@@ -13,13 +13,13 @@ export class FrameSampler {
 
   /** One grayscale band per requested band, in the same order. `size` must
    * match `source`'s actual pixel dimensions. */
-  sampleBands(source: CanvasImageSource, size: Size, bands: readonly EdgeBand[]): EdgeBandPixels[] {
+  sampleBands(source: CanvasImageSource, size: Size, bands: PerEdge<EdgeBand>): PerEdge<EdgeBandPixels> {
     if (this.canvas.width !== size.width || this.canvas.height !== size.height) {
       this.canvas.width = size.width;
       this.canvas.height = size.height;
     }
     this.ctx.drawImage(source, 0, 0, size.width, size.height);
-    return bands.map((band) => this.readBand(band.region, size));
+    return mapEdges(bands, (band) => this.readBand(band.region, size));
   }
 
   /** A copy of the frame last drawn by `sampleBands` — valid until the next

@@ -1,4 +1,4 @@
-import type { FittedLine, Point, Quad, ToleranceConfig } from "./types";
+import type { FittedLine, PerEdge, Point, Quad, ToleranceConfig } from "./types";
 
 export function distance(a: Point, b: Point): number {
   return Math.hypot(b.x - a.x, b.y - a.y);
@@ -29,7 +29,7 @@ export function intersectLines(a: FittedLine, b: FittedLine): Point | null {
  * Reconstructs a quad's corners from its 4 edge lines ([top, right, bottom,
  * left], frame coordinates). `null` if any pair of adjacent edges is parallel.
  */
-export function quadFromEdgeLines(lines: readonly [FittedLine, FittedLine, FittedLine, FittedLine]): Quad | null {
+export function quadFromEdgeLines(lines: PerEdge<FittedLine>): Quad | null {
   const [top, right, bottom, left] = lines;
   const topLeft = intersectLines(top, left);
   const topRight = intersectLines(top, right);

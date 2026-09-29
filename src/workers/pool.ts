@@ -2,8 +2,8 @@
 // guide edge side (top/right/bottom/left), spawned once and reused across
 // every frame. See docs/plan/04-worker-pool.md.
 
-import { outwardDirectionForSide } from "../core";
-import type { EdgeBandPixels, FittedLine } from "../core";
+import { mapEdges, outwardDirectionForSide } from "../core";
+import type { EdgeBandPixels, FittedLine, PerEdge } from "../core";
 import type { DetectEdgeRequest, WorkerResponse } from "./protocol";
 
 const EDGE_SIDES = ["top", "right", "bottom", "left"] as const;
@@ -27,13 +27,6 @@ interface WorkerSlot {
   dead: boolean;
 }
 
-/** The 4 edge-band inputs for one frame, in [top, right, bottom, left] order
- * — the order src/core's `expectedEdgeBands` returns. */
-export type EdgeBandsInput = readonly [EdgeBandPixels, EdgeBandPixels, EdgeBandPixels, EdgeBandPixels];
-
-/** The 4 fitted lines, in the same order as the `EdgeBandsInput`. */
-export type EdgeLineResults = [FittedLine | null, FittedLine | null, FittedLine | null, FittedLine | null];
-
 export interface EdgeDetectionPool {
   /**
    * Runs `fitEdgeLine` for all 4 bands in parallel, one worker per side,
@@ -42,7 +35,7 @@ export interface EdgeDetectionPool {
    * Each band's `data` buffer is *transferred* to its worker, so it's
    * detached after this call and must not be reused.
    */
-  detectEdges(bands: EdgeBandsInput, rotationToleranceDegrees: number): Promise<EdgeLineResults>;
+  detectEdges(bands: PerEdge<EdgeBandPixels>, rotationToleranceDegrees: number): Promise<PerEdge<FittedLine | null>>;
 
   /** Terminates all 4 workers; in-flight `detectEdges()` calls reject. The
    * pool is unusable afterwards. */
@@ -52,15 +45,13 @@ export interface EdgeDetectionPool {
 /** Spawns the 4 workers immediately and starts their OpenCV.js
  * initialization. */
 export function createEdgeDetectionPool(): EdgeDetectionPool {
-  const slots = EDGE_SIDES.map(createWorkerSlot);
-  const ready = Promise.all(slots.map((slot) => slot.ready));
+  const slots = mapEdges(EDGE_SIDES, createWorkerSlot);
+  const ready = Promise.all(mapEdges(slots, (slot) => slot.ready));
 
   return {
     async detectEdges(bands, rotationToleranceDegrees) {
       await ready;
-      return (await Promise.all(
-        slots.map((slot, i) => sendDetectRequest(slot, bands[i]!, rotationToleranceDegrees)),
-      )) as EdgeLineResults;
+      return Promise.all(mapEdges(slots, (slot, i) => sendDetectRequest(slot, bands[i]!, rotationToleranceDegrees)));
     },
     terminate() {
       for (const slot of slots) {
@@ -69,6 +60,22 @@ export function createEdgeDetectionPool(): EdgeDetectionPool {
       }
     },
   };
+}
+
+/** Creates the pool on first use and keeps it (starting it loads OpenCV.js in
+ * each worker) until `terminate()`; the next `get()` creates a new one. */
+export class LazyEdgeDetectionPool {
+  private pool: EdgeDetectionPool | null = null;
+
+  get(): EdgeDetectionPool {
+    this.pool ??= createEdgeDetectionPool();
+    return this.pool;
+  }
+
+  terminate(): void {
+    this.pool?.terminate();
+    this.pool = null;
+  }
 }
 
 function createWorkerSlot(side: EdgeSide): WorkerSlot {

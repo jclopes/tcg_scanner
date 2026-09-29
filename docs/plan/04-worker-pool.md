@@ -28,44 +28,33 @@ sequentially on the main thread, so the live-preview loop isn't blocked by
 
 ## Public API
 
-### `createEdgeDetectionPool(): EdgeDetectionPool`
+### `LazyEdgeDetectionPool` and `createEdgeDetectionPool(): EdgeDetectionPool`
 
-Spawns 4 dedicated Web Workers immediately (one per edge side: top, right,
-bottom, left) and kicks off each one's OpenCV.js initialization. Call this
-once (e.g. when the scan view mounts), not per frame.
+`createEdgeDetectionPool` spawns 4 dedicated Web Workers immediately (one
+per edge side: top, right, bottom, left) and kicks off each one's
+OpenCV.js initialization. The shell doesn't call it directly: it holds a
+`LazyEdgeDetectionPool`, whose `get()` creates the pool on first use and
+keeps it for the page's lifetime, and whose `terminate()` (on `pagehide`)
+lets the next `get()` start a fresh one.
 
 ```ts
 interface EdgeDetectionPool {
-  detectEdges(bands: EdgeBandsInput, rotationToleranceDegrees: number): Promise<EdgeLineResults>;
+  detectEdges(bands: PerEdge<EdgeBandPixels>, rotationToleranceDegrees: number): Promise<PerEdge<FittedLine | null>>;
   terminate(): void;
 }
-
-type EdgeBandsInput = readonly [
-  EdgeBandPixels,
-  EdgeBandPixels,
-  EdgeBandPixels,
-  EdgeBandPixels,
-];
-
-type EdgeLineResults = [
-  FittedLine | null,
-  FittedLine | null,
-  FittedLine | null,
-  FittedLine | null,
-];
 ```
 
-`EdgeBandPixels` and `FittedLine` are `src/core`'s own types (re-exported
-here only for this doc's sake) — this module never defines its own
-band/line shapes, it just moves `src/core`'s existing ones across a
-`postMessage` boundary.
+`PerEdge<T>` (`readonly [T, T, T, T]`, in `[top, right, bottom, left]`
+order), `EdgeBandPixels` and `FittedLine` are `src/core`'s own types — this
+module never defines its own band/line shapes, it just moves `src/core`'s
+existing ones across a `postMessage` boundary.
 
 Internally the pool keeps a combined `ready` promise that resolves once all
 4 workers have initialized their OpenCV.js / WASM instance, and rejects if
 any fails to (see Error handling below). It isn't part of the public API;
 `detectEdges()` awaits it.
 
-#### `detectEdges(bands: EdgeBandsInput): Promise<EdgeLineResults>`
+#### `detectEdges(bands, rotationToleranceDegrees): Promise<PerEdge<FittedLine | null>>`
 
 The pool's one per-frame entry point. Call it once per evaluated frame.
 
@@ -75,7 +64,7 @@ The pool's one per-frame entry point. Call it once per evaluated frame.
   region into an `EdgeBandPixels` (grayscale, per `EdgeBandPixels`'s own
   contract in `src/core/types.ts`), and pass the resulting 4-tuple straight
   into `detectEdges`.
-- **Output order:** the resolved `EdgeLineResults` tuple is in the same
+- **Output order:** the resolved tuple is in the same
   `[top, right, bottom, left]` order — `results[0]` is top's `FittedLine |
   null`, etc. Each dedicated worker always handles the same side every
   frame (worker 0 = top, worker 1 = right, worker 2 = bottom, worker 3 =
@@ -223,8 +212,8 @@ type WorkerResponse = DetectEdgeResponse | WorkerReadyMessage | WorkerInitErrorM
   immediately instead of posting to a dead worker. `detectEdges` fans out
   one `sendDetectRequest` per slot and `Promise.all`s the 4 results back
   into the documented tuple.
-- `index.ts` — the barrel; exports only `createEdgeDetectionPool` and the
-  `EdgeDetectionPool`/`EdgeBandsInput`/`EdgeLineResults` types.
+- `index.ts` — the barrel; exports only `LazyEdgeDetectionPool` and the
+  `EdgeDetectionPool` type.
 
 ## Judgment calls
 

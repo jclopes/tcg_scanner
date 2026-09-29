@@ -5,7 +5,7 @@ import {
   GUIDE_FILL_FRACTION,
   STANDARD_CARD_ASPECT_RATIO,
 } from "./constants";
-import type { EdgeBand, GuideRect, Orientation, Point, Size } from "./types";
+import type { EdgeBand, GuideRect, Orientation, PerEdge, Point, Size } from "./types";
 
 /** Unit direction pointing away from the guide's center for an edge side
  * (e.g. top → -y). Lets `fitEdgeLine` prefer the outward-most segment. */
@@ -70,7 +70,7 @@ function edgeBandScaleFactor(frameSize: Size): number {
  * scaled from the reference frame size to `frameSize`, which must be the
  * frame `guide` was computed for.
  */
-export function expectedEdgeBands(guide: GuideRect, frameSize: Size): [EdgeBand, EdgeBand, EdgeBand, EdgeBand] {
+export function expectedEdgeBands(guide: GuideRect, frameSize: Size): PerEdge<EdgeBand> {
   const halfWidth = guide.width / 2;
   const halfHeight = guide.height / 2;
 

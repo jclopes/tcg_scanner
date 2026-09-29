@@ -10,11 +10,9 @@
  * For "scanning", "processing" and "captured", `message` optionally replaces
  * the default status text (e.g. why scanning restarted).
  */
-export type ScanPhase = "idle" | "scanning" | "processing" | "captured" | "error";
-
-export interface ScanState {
-  phase: ScanPhase;
-  message?: string;
-}
+export type ScanState =
+  | { phase: "idle" }
+  | { phase: "scanning" | "processing" | "captured"; message?: string }
+  | { phase: "error"; message: string };
 
 export const INITIAL_SCAN_STATE: ScanState = { phase: "idle" };

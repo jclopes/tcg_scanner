@@ -30,7 +30,7 @@ import { filterAllowedChars } from "../core";
  * per-`recognize()` via `setParameters` — the dictionaries are loaded
  * together with the language data itself, not reconsulted per call.
  */
-export async function createOcrWorker(): Promise<TesseractWorker> {
+async function createOcrWorker(): Promise<TesseractWorker> {
   return createWorker(
     "eng",
     undefined,

@@ -5,4 +5,4 @@
 // postMessage, worker lifecycles, or message shapes.
 
 export type { EdgeDetectionPool } from "./pool";
-export { createEdgeDetectionPool } from "./pool";
+export { LazyEdgeDetectionPool } from "./pool";

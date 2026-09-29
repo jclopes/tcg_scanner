@@ -1,15 +1,15 @@
 import { isConfidentMatch } from "../core";
 import type { OpenCv, Size } from "../core";
-import { createEdgeDetectionPool } from "../workers";
+import { LazyEdgeDetectionPool } from "../workers";
 import type { EdgeDetectionPool } from "../workers";
 import { startCameraStream, stopCameraStream } from "./cameraStream";
 import { captureFlattenedCard } from "./capture";
 import { buildCaptureDebugTrail, buildForcedDebugTrail, DebugPanel } from "./debugSteps";
 import { DetectionLoop } from "./detectionLoop";
-import type { DetectionLoopResult } from "./detectionLoop";
 import { requireElement } from "./dom";
 import { collectBurstFrames, selectFrameToFlatten } from "./frameBurst";
 import { evaluateFrameForQuad } from "./frameDetection";
+import type { AcceptedEvaluation } from "./frameDetection";
 import { FrameSampler } from "./frameSampler";
 import type { GameSet } from "./gameConfig";
 import { GuideFeedback } from "./guideFeedback";
@@ -21,6 +21,7 @@ import { LazyOcrWorker } from "./ocr";
 import { watchVideoFrameSize } from "./orientationWatcher";
 import { ResultView } from "./resultView";
 import { ScannedCardList } from "./scannedCards";
+import { SessionTagsInput } from "./sessionTags";
 import { SettingsPanel } from "./settings";
 import { INITIAL_SCAN_STATE } from "./state";
 import type { ScanState } from "./state";
@@ -37,11 +38,7 @@ export function initApp(cv: OpenCv): void {
   const cameraStage = requireElement<HTMLDivElement>("camera-stage");
   const statusEl = requireElement<HTMLParagraphElement>("status");
   const scanButton = requireElement<HTMLButtonElement>("scan-button");
-  const resultSection = requireElement<HTMLElement>("result");
   const resolutionStatus = requireElement<HTMLElement>("resolution-status");
-  const debugCheckbox = requireElement<HTMLInputElement>("debug-checkbox");
-  const debugPanelElement = requireElement<HTMLElement>("debug-panel");
-  const debugControls = requireElement<HTMLElement>("debug-controls");
   const debugForceButton = requireElement<HTMLButtonElement>("debug-force-button");
 
   const settings = new SettingsPanel(
@@ -54,12 +51,14 @@ export function initApp(cv: OpenCv): void {
       orientationRadios: { portrait: requireElement("orientation-portrait"), landscape: requireElement("orientation-landscape") },
       foilToggle: requireElement("foil-toggle"),
       foilCheckbox: requireElement("foil-checkbox"),
-      tagsInput: requireElement("tags-input"),
-      tagSuggestions: requireElement("tag-suggestions"),
-      tagsError: requireElement("tags-error"),
     },
     restartScanIfActive,
   );
+  const sessionTags = new SessionTagsInput({
+    input: requireElement("tags-input"),
+    suggestions: requireElement("tag-suggestions"),
+    error: requireElement("tags-error"),
+  });
   const guide = new GuideFeedback(requireElement("guide-overlay"), video, () => settings.cardOrientation);
   const resultView = new ResultView({
     thumbnailButton: requireElement("result"),
@@ -67,15 +66,14 @@ export function initApp(cv: OpenCv): void {
     overlay: requireElement("card-overlay"),
     overlayImage: requireElement("card-overlay-image"),
   });
-  const scannedCards = new ScannedCardList(
-    settings.allGames,
-    requireElement("scanned-cards-list"),
-    requireElement("scanned-cards-count"),
-    requireElement("scanned-cards-empty"),
-    requireElement("scanned-cards-download"),
-    requireElement("scanned-cards-merge"),
-    requireElement("scanned-cards-clear"),
-  );
+  const scannedCards = new ScannedCardList(settings.allGames, {
+    list: requireElement("scanned-cards-list"),
+    count: requireElement("scanned-cards-count"),
+    emptyNote: requireElement("scanned-cards-empty"),
+    downloadButton: requireElement("scanned-cards-download"),
+    mergeButton: requireElement("scanned-cards-merge"),
+    clearButton: requireElement("scanned-cards-clear"),
+  });
   const identificationView = new IdentificationView(
     requireElement("identification-warning"),
     requireElement("identification-matches"),
@@ -97,21 +95,22 @@ export function initApp(cv: OpenCv): void {
       return null;
     },
   );
-  const debugPanel = new DebugPanel(debugPanelElement);
+  const debugPanel = new DebugPanel({
+    panel: requireElement("debug-panel"),
+    checkbox: requireElement("debug-checkbox"),
+    controls: requireElement("debug-controls"),
+  });
   const ocrWorker = new LazyOcrWorker();
+  const edgeDetection = new LazyEdgeDetectionPool();
+  // Start the workers now so OpenCV.js loads in them while cameras are probed.
+  edgeDetection.get();
 
   let state: ScanState = INITIAL_SCAN_STATE;
   let cameraStatus: CameraStatus = "stopped";
-  /** The edge-detection workers, kept across scans (starting them loads
-   * OpenCV.js in each) and created now so they warm up while the camera is
-   * probed. Terminated on "pagehide"; recreated by startScan after a restore. */
-  let pool: EdgeDetectionPool | null = createEdgeDetectionPool();
   let detectionLoop: DetectionLoop | null = null;
   /** Incremented whenever a scan cycle ends, so async work from an older
    * cycle can tell it is stale (see isCurrentScan). */
   let scanRequest = 0;
-  /** Read when a scan starts; toggling mid-scan applies to the next scan. */
-  let debugEnabled = false;
 
   function isCurrentScan(requestId: number): boolean {
     return requestId === scanRequest && cameraStatus === "active";
@@ -126,8 +125,8 @@ export function initApp(cv: OpenCv): void {
     scanButton.disabled = cameraStatus === "starting" || !settings.camera;
     scanButton.textContent = scanButtonLabel(cameraStatus);
     settings.setCameraStarting(cameraStatus === "starting");
-    debugForceButton.disabled = cameraStatus !== "active";
-    resultSection.hidden = state.phase !== "captured";
+    // A forced capture needs a running detection loop (see handleDebugForceCapture).
+    debugForceButton.disabled = state.phase !== "scanning";
   }
 
   function setState(next: ScanState): void {
@@ -143,6 +142,8 @@ export function initApp(cv: OpenCv): void {
     }
     console.error(fallbackMessage, error);
     guide.clear();
+    resultView.clear();
+    identificationView.clear();
     setState({ phase: "error", message: describeError(error, fallbackMessage) });
   }
 
@@ -160,7 +161,7 @@ export function initApp(cv: OpenCv): void {
   /** Records the card the user picked from the best matches (see
    * addScannedCard) and starts detecting the next card. */
   function acceptCard(set: GameSet, cardId: string): void {
-    if (cameraStatus !== "active" || !pool) {
+    if (cameraStatus !== "active") {
       throw new Error("A card was accepted with no scan running.");
     }
     if (!addScannedCard(set, cardId)) {
@@ -179,13 +180,13 @@ export function initApp(cv: OpenCv): void {
   /** Clears the captured result and restarts detection with the camera still
    * running. */
   function scanNextCard(message: string): void {
-    if (cameraStatus !== "active" || !pool) {
+    if (cameraStatus !== "active") {
       throw new Error("Tried to scan the next card with no scan running.");
     }
     resultView.clear();
     identificationView.clear();
     debugPanel.clear();
-    beginScan(pool, ++scanRequest, message);
+    beginScan(++scanRequest, message);
   }
 
   /** Adds the card to the scanned list with the game, the foil and
@@ -193,7 +194,7 @@ export function initApp(cv: OpenCv): void {
    * adding nothing, while the tags input holds invalid tags — a card is never
    * saved with tags the user didn't mean. */
   function addScannedCard(set: GameSet, cardId: string): boolean {
-    const { tags, invalid } = settings.sessionTags;
+    const { tags, invalid } = sessionTags.parsed;
     if (invalid.length > 0) {
       return false;
     }
@@ -228,14 +229,14 @@ export function initApp(cv: OpenCv): void {
       return;
     }
     cameraStatus = "active";
-    pool ??= createEdgeDetectionPool();
-    beginScan(pool, ++scanRequest);
+    beginScan(++scanRequest);
   }
 
   /** Runs the detection loop; `message` replaces the default scanning status
    * (e.g. to say why scanning restarted). */
-  function beginScan(activePool: EdgeDetectionPool, requestId: number, message?: string): void {
-    const debug = debugEnabled;
+  function beginScan(requestId: number, message?: string): void {
+    const debug = debugPanel.enabled;
+    const activePool = edgeDetection.get();
     setState({ phase: "scanning", message });
     guide.start();
 
@@ -266,7 +267,7 @@ export function initApp(cv: OpenCv): void {
    */
   async function confirmAndCapture(
     activePool: EdgeDetectionPool,
-    preview: DetectionLoopResult,
+    preview: AcceptedEvaluation,
     requestId: number,
     debug: boolean,
   ): Promise<void> {
@@ -296,7 +297,7 @@ export function initApp(cv: OpenCv): void {
       if (!isConfidentMatch(identification.matches)) {
         resultView.clear();
         identificationView.clear();
-        beginScan(activePool, ++scanRequest, "Couldn't read the card number — scanning again.");
+        beginScan(++scanRequest, "Couldn't read the card number — scanning again.");
         return;
       }
 
@@ -337,7 +338,7 @@ export function initApp(cv: OpenCv): void {
    * frame the loop evaluates.
    */
   async function handleDebugForceCapture(requestId: number): Promise<void> {
-    if (!pool || !detectionLoop) {
+    if (!detectionLoop) {
       throw new Error("Debug capture requires a running scan.");
     }
 
@@ -350,22 +351,13 @@ export function initApp(cv: OpenCv): void {
     }
 
     const frameSize: Size = { width: still.width, height: still.height };
-    const evaluation = await evaluateFrameForQuad(new FrameSampler(), pool, still, frameSize);
+    const evaluation = await evaluateFrameForQuad(new FrameSampler(), edgeDetection.get(), still, frameSize);
     if (isCurrentScan(requestId)) {
       debugPanel.render(buildForcedDebugTrail(evaluation, `Hi-res still — ${frameSize.width} × ${frameSize.height}`));
     }
   }
 
   // ---- Event wiring -------------------------------------------------------
-
-  debugCheckbox.addEventListener("change", () => {
-    debugEnabled = debugCheckbox.checked;
-    debugPanelElement.hidden = !debugEnabled;
-    debugControls.hidden = !debugEnabled;
-    if (!debugEnabled) {
-      debugPanel.clear();
-    }
-  });
 
   debugForceButton.addEventListener("click", () => {
     const requestId = scanRequest;
@@ -396,8 +388,7 @@ export function initApp(cv: OpenCv): void {
     // survives; releasing (not just terminating) resources ensures a restore
     // doesn't keep a dead pool or OCR worker around.
     releaseScanResources();
-    pool?.terminate();
-    pool = null;
+    edgeDetection.terminate();
     guide.clear();
     render();
     ocrWorker.terminate();
@@ -421,7 +412,7 @@ function statusMessage(state: ScanState): string {
     case "captured":
       return state.message ?? "Tap the matching card number:";
     case "error":
-      return state.message ?? "Something went wrong.";
+      return state.message;
   }
 }
 

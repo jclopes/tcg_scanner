@@ -281,14 +281,6 @@
         color: var(--danger);
       }
 
-      /* One line; longer text is cut with an ellipsis (full text in the
-         element's title). */
-      #identification-warning {
-        margin: 0;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
 
       #card-overlay {
         position: fixed;
@@ -313,7 +305,13 @@
         border-radius: var(--radius);
       }
 
+      /* One line; longer text is cut with an ellipsis (full text in the
+         element's title). */
       #identification-warning {
+        margin: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
         color: #ffc400;
         font-size: 0.75rem;
       }
@@ -640,12 +638,9 @@
 
       .scanned-card-actions {
         display: flex;
+        align-items: center;
         gap: 0.5rem;
         padding-bottom: 0.6rem;
-      }
-
-      .scanned-card-actions {
-        align-items: center;
       }
 
       .scanned-card-actions button {

@@ -1,21 +1,20 @@
-import type { EdgeBandPixels, FittedLine, Quad } from "../core";
+import type { EdgeBandPixels, FittedLine, PerEdge, Quad } from "../core";
 import { canvasToObjectURL, createCanvas, require2dContext, rotateCanvas } from "./canvasUtils";
-import type { DetectionLoopResult } from "./detectionLoop";
 import type { BurstFrameDebugEntry, FrameBurstResult } from "./frameBurst";
-import type { AcceptedFrame, EdgeBands, EdgeLines, FrameEvaluation, QuadRejectionReason } from "./frameDetection";
+import type { AcceptedEvaluation, AcceptedFrame, FrameEvaluation, QuadRejectionReason } from "./frameDetection";
 import type { RegionResult } from "./identify";
 import type { TextCropAnalysis } from "./regionExtraction";
 
 /** One labeled image in the debug trail. `variant: "edge-band"` gives the
  * long, thin band strips their own CSS sizing. */
-export interface DebugStep {
+interface DebugStep {
   label: string;
   canvas: HTMLCanvasElement;
   variant?: "edge-band";
 }
 
 /** A text entry in the debug trail: a section heading or a rejection reason. */
-export interface DebugNote {
+interface DebugNote {
   text: string;
   kind: "heading" | "rejection";
 }
@@ -26,18 +25,18 @@ const EDGE_LABELS = ["Top edge", "Right edge", "Bottom edge", "Left edge"] as co
 
 const OVERLAY_STROKE_STYLE = "rgba(56, 224, 130, 0.95)";
 
-export function debugStageHeading(text: string): DebugNote {
+function debugStageHeading(text: string): DebugNote {
   return { text, kind: "heading" };
 }
 
-export function debugRejectionNote(reason: QuadRejectionReason): DebugNote {
+function debugRejectionNote(reason: QuadRejectionReason): DebugNote {
   return { text: `Rejected: ${describeRejectionReason(reason)}`, kind: "rejection" };
 }
 
 /** The 4 band strips ([top, right, bottom, left]) with their fitted line drawn
  * on top, or labeled "not detected". Vertical bands are rotated so every strip
  * reads horizontally. */
-export function buildEdgeBandSteps(bands: EdgeBands, lines: EdgeLines): DebugStep[] {
+function buildEdgeBandSteps(bands: PerEdge<EdgeBandPixels>, lines: PerEdge<FittedLine | null>): DebugStep[] {
   return bands.map((band, i) => {
     const line = lines[i]!;
     const label = line ? EDGE_LABELS[i]! : `${EDGE_LABELS[i]!} — not detected`;
@@ -46,7 +45,7 @@ export function buildEdgeBandSteps(bands: EdgeBands, lines: EdgeLines): DebugSte
 }
 
 /** `sourceCanvas` with the quad outlined on top. */
-export function buildQuadOverlayStep(sourceCanvas: HTMLCanvasElement, corners: Quad, label: string): DebugStep {
+function buildQuadOverlayStep(sourceCanvas: HTMLCanvasElement, corners: Quad, label: string): DebugStep {
   const canvas = createCanvas(sourceCanvas);
   const ctx = require2dContext(canvas);
   ctx.drawImage(sourceCanvas, 0, 0);
@@ -73,7 +72,7 @@ const LINE_PROFILE_STYLE = "rgba(255, 150, 40, 0.8)";
  * threshold as a marker line. The crop rectangle is drawn in green across the
  * image and plots.
  */
-export function buildTextBandStep(regionLabel: string, searchCanvas: HTMLCanvasElement, analysis: TextCropAnalysis): DebugStep {
+function buildTextBandStep(regionLabel: string, searchCanvas: HTMLCanvasElement, analysis: TextCropAnalysis): DebugStep {
   const { rows, columns } = analysis;
   const plotWidth = Math.max(40, Math.round(searchCanvas.width * 0.5));
   const plotHeight = Math.max(30, Math.round(searchCanvas.height * 0.5));
@@ -161,7 +160,7 @@ function drawColumnProfile(
 }
 
 /** One step per attempted burst frame, 1-indexed, in capture order. */
-export function buildBurstFrameSteps(entries: readonly BurstFrameDebugEntry[]): DebugStep[] {
+function buildBurstFrameSteps(entries: readonly BurstFrameDebugEntry[]): DebugStep[] {
   return entries.map((entry, i) =>
     entry.outcome === "accepted"
       ? buildQuadOverlayStep(entry.frame.frameCanvas, entry.frame.corners, `Burst frame ${i + 1}: accepted`)
@@ -175,7 +174,7 @@ export function buildBurstFrameSteps(entries: readonly BurstFrameDebugEntry[]): 
 /** The debug trail for one capture, top to bottom: the preview detection,
  * every burst frame, the selected frame, the flattened card and its regions. */
 export function buildCaptureDebugTrail(
-  preview: DetectionLoopResult,
+  preview: AcceptedEvaluation,
   burst: FrameBurstResult,
   selected: AcceptedFrame,
   cardCanvas: HTMLCanvasElement,
@@ -212,15 +211,40 @@ export function buildForcedDebugTrail(evaluation: FrameEvaluation, heading: stri
   ];
 }
 
-/** The debug panel element plus the `blob:` URLs backing its current images,
- * which are revoked whenever its contents are replaced. */
+export interface DebugPanelElements {
+  /** Where the debug trail is rendered. */
+  panel: HTMLElement;
+  /** The "Debug mode" checkbox. */
+  checkbox: HTMLInputElement;
+  /** Debug-only controls (the forced-capture button), shown with the panel. */
+  controls: HTMLElement;
+}
+
+/** The debug panel, its "Debug mode" toggle, and the `blob:` URLs backing its
+ * current images, which are revoked whenever its contents are replaced. */
 export class DebugPanel {
   private objectUrls: string[] = [];
   /** Bumped on every render/clear so a blob URL that resolves late, for an
    * image no longer shown, is revoked instead of kept. */
   private generation = 0;
+  private readonly element: HTMLElement;
 
-  constructor(private readonly element: HTMLElement) {}
+  constructor(private readonly elements: DebugPanelElements) {
+    this.element = elements.panel;
+    elements.checkbox.addEventListener("change", () => {
+      elements.panel.hidden = !this.enabled;
+      elements.controls.hidden = !this.enabled;
+      if (!this.enabled) {
+        this.clear();
+      }
+    });
+  }
+
+  /** Whether debug mode is on. Read when a scan starts; toggling mid-scan
+   * applies to the next scan. */
+  get enabled(): boolean {
+    return this.elements.checkbox.checked;
+  }
 
   /** Replaces the panel's contents with `entries`, top to bottom. */
   render(entries: readonly DebugEntry[]): void {
