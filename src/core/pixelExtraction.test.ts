@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractGrayscaleRegion, type RgbaPixelBuffer } from "./pixelExtraction";
+import { clampRegion, extractGrayscaleRegion, type RgbaPixelBuffer } from "./pixelExtraction";
 
 /** Builds a w x h RGBA buffer from a row-major list of [r,g,b,a] pixels. */
 function buildBuffer(width: number, height: number, pixels: [number, number, number, number][]): RgbaPixelBuffer {
@@ -98,5 +98,32 @@ describe("extractGrayscaleRegion", () => {
     const source = buildBuffer(3, 3, new Array(9).fill([5, 5, 5, 255]));
     const result = extractGrayscaleRegion(source, { origin: { x: 0, y: 0 }, size: { width: 3, height: 3 } });
     expect(result.data.length).toBe(result.width * result.height);
+  });
+});
+
+describe("clampRegion", () => {
+  const size = { width: 100, height: 50 };
+
+  it("rounds a region inside the source to whole pixels", () => {
+    expect(clampRegion({ origin: { x: 10.4, y: 5.6 }, size: { width: 20.2, height: 10 } }, size)).toEqual({
+      x0: 10,
+      y0: 6,
+      width: 21,
+      height: 10,
+    });
+  });
+
+  it("clamps a region crossing the source's edges", () => {
+    expect(clampRegion({ origin: { x: -5, y: 40 }, size: { width: 20, height: 30 } }, size)).toEqual({
+      x0: 0,
+      y0: 40,
+      width: 15,
+      height: 10,
+    });
+  });
+
+  it("gives zero size for a region entirely outside the source", () => {
+    const clamped = clampRegion({ origin: { x: 120, y: 10 }, size: { width: 10, height: 10 } }, size);
+    expect(clamped.width).toBe(0);
   });
 });

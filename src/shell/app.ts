@@ -50,8 +50,8 @@ export function initApp(cv: OpenCv): void {
       setSelect: requireElement("set-select"),
       cameraSelect: requireElement("camera-select"),
       resolutionSelect: requireElement("resolution-select"),
-      formatToggle: requireElement("format-toggle"),
-      formatRadios: { portrait: requireElement("format-portrait"), landscape: requireElement("format-landscape") },
+      orientationToggle: requireElement("orientation-toggle"),
+      orientationRadios: { portrait: requireElement("orientation-portrait"), landscape: requireElement("orientation-landscape") },
       foilToggle: requireElement("foil-toggle"),
       foilCheckbox: requireElement("foil-checkbox"),
       tagsInput: requireElement("tags-input"),
@@ -60,7 +60,7 @@ export function initApp(cv: OpenCv): void {
     },
     restartScanIfActive,
   );
-  const guide = new GuideFeedback(requireElement("guide-overlay"), video, () => settings.cardFormat);
+  const guide = new GuideFeedback(requireElement("guide-overlay"), video, () => settings.cardOrientation);
   const resultView = new ResultView({
     thumbnailButton: requireElement("result"),
     thumbnail: requireElement("result-image"),
@@ -68,10 +68,12 @@ export function initApp(cv: OpenCv): void {
     overlayImage: requireElement("card-overlay-image"),
   });
   const scannedCards = new ScannedCardList(
+    settings.allGames,
     requireElement("scanned-cards-list"),
     requireElement("scanned-cards-count"),
     requireElement("scanned-cards-empty"),
     requireElement("scanned-cards-download"),
+    requireElement("scanned-cards-merge"),
     requireElement("scanned-cards-clear"),
   );
   const identificationView = new IdentificationView(
@@ -100,7 +102,10 @@ export function initApp(cv: OpenCv): void {
 
   let state: ScanState = INITIAL_SCAN_STATE;
   let cameraStatus: CameraStatus = "stopped";
-  let pool: EdgeDetectionPool | null = null;
+  /** The edge-detection workers, kept across scans (starting them loads
+   * OpenCV.js in each) and created now so they warm up while the camera is
+   * probed. Terminated on "pagehide"; recreated by startScan after a restore. */
+  let pool: EdgeDetectionPool | null = createEdgeDetectionPool();
   let detectionLoop: DetectionLoop | null = null;
   /** Incremented whenever a scan cycle ends, so async work from an older
    * cycle can tell it is stale (see isCurrentScan). */
@@ -183,8 +188,8 @@ export function initApp(cv: OpenCv): void {
     beginScan(pool, ++scanRequest, message);
   }
 
-  /** Adds the card to the scanned list with the foil toggle's state and the
-   * session tags. Returns false,
+  /** Adds the card to the scanned list with the game, the foil and
+   * orientation toggles' state and the session tags. Returns false,
    * adding nothing, while the tags input holds invalid tags — a card is never
    * saved with tags the user didn't mean. */
   function addScannedCard(set: GameSet, cardId: string): boolean {
@@ -192,7 +197,14 @@ export function initApp(cv: OpenCv): void {
     if (invalid.length > 0) {
       return false;
     }
-    scannedCards.add(set.code, cardId, settings.foil, tags);
+    scannedCards.add({
+      gameId: settings.game.id,
+      setCode: set.code,
+      cardId,
+      foil: settings.foil,
+      orientation: settings.cardOrientation,
+      tags,
+    });
     return true;
   }
 
@@ -267,13 +279,13 @@ export function initApp(cv: OpenCv): void {
         return;
       }
 
-      const { cardFormat, game, set } = settings;
+      const { cardOrientation, game, set } = settings;
       const selected = selectFrameToFlatten(burst.accepted, preview.frame);
-      const cardCanvas = captureFlattenedCard(cv, selected, cardFormat);
+      const cardCanvas = captureFlattenedCard(cv, selected, cardOrientation);
 
       setState({ phase: "processing", message: "Identifying…" });
       const worker = await ocrWorker.get();
-      const identification = await identifyCard(cv, worker, selected, cardFormat, game, set, isCancelled);
+      const identification = await identifyCard(cv, worker, selected, cardOrientation, game, set, isCancelled);
       if (!identification || isCancelled()) {
         return;
       }
@@ -313,8 +325,6 @@ export function initApp(cv: OpenCv): void {
     guide.freeze();
     detectionLoop?.stop();
     detectionLoop = null;
-    pool?.terminate();
-    pool = null;
     stopCameraStream(video);
     cameraStatus = "stopped";
   }
@@ -386,6 +396,8 @@ export function initApp(cv: OpenCv): void {
     // survives; releasing (not just terminating) resources ensures a restore
     // doesn't keep a dead pool or OCR worker around.
     releaseScanResources();
+    pool?.terminate();
+    pool = null;
     guide.clear();
     render();
     ocrWorker.terminate();

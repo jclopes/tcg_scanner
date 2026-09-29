@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { CardPrintFormat, GameConfig, RegionConfig } from "../core";
+import type { CardOrientation, GameConfig, RegionConfig } from "../core";
 
 /** The on-disk shape of a region in `src/data/games/<game>/regions.json` —
  * snake_case, per docs/plan/06-card-identification.md. `parseRegion`
@@ -18,7 +18,7 @@ export interface RawRegionConfig {
 
 export interface RawGameConfig {
   game: string;
-  card_formats: unknown;
+  card_orientation: unknown;
   foil: unknown;
   regions: RawRegionConfig[];
 }
@@ -41,13 +41,13 @@ export interface GameSet {
 }
 
 /** A bundled game: its folder name under src/data/games/, its parsed region
- * config, its sets, the print formats its cards come in (the first is the
+ * config, its sets, the orientations its cards are printed in (the first is the
  * default) and whether it has foil cards. */
 export interface GameOption {
   id: string;
   config: GameConfig;
   sets: GameSet[];
-  cardFormats: CardPrintFormat[];
+  cardOrientations: CardOrientation[];
   hasFoil: boolean;
 }
 
@@ -89,7 +89,7 @@ export function parseGame(id: string, rawConfig: RawGameConfig | undefined, rawS
     sets: rawSets
       .map((set) => parseSet(id, set))
       .sort((a, b) => a.name.localeCompare(b.name)),
-    cardFormats: parseCardFormats(id, rawConfig.card_formats),
+    cardOrientations: parseCardOrientations(id, rawConfig.card_orientation),
     hasFoil: parseFoil(id, rawConfig.foil),
   };
 }
@@ -101,19 +101,19 @@ function parseSet(gameId: string, raw: RawSetConfig): GameSet {
   return { code: raw.code, name: raw.name, print: raw.print, collectorNumbers: raw.collector_numbers };
 }
 
-/** `card_formats`: a non-empty list of distinct "portrait"/"landscape". */
-function parseCardFormats(gameId: string, raw: unknown): CardPrintFormat[] {
+/** `card_orientation`: a non-empty list of distinct "portrait"/"landscape". */
+function parseCardOrientations(gameId: string, raw: unknown): CardOrientation[] {
   const valid =
     Array.isArray(raw) &&
     raw.length > 0 &&
-    raw.every((format) => format === "portrait" || format === "landscape") &&
+    raw.every((orientation) => orientation === "portrait" || orientation === "landscape") &&
     new Set(raw).size === raw.length;
   if (!valid) {
     throw new Error(
-      `Game "${gameId}" needs "card_formats": a list of distinct "portrait"/"landscape", got ${JSON.stringify(raw)}.`,
+      `Game "${gameId}" needs "card_orientation": a list of distinct "portrait"/"landscape", got ${JSON.stringify(raw)}.`,
     );
   }
-  return raw as CardPrintFormat[];
+  return raw as CardOrientation[];
 }
 
 function parseFoil(gameId: string, raw: unknown): boolean {

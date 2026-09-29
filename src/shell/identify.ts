@@ -6,7 +6,7 @@ import {
   TEXT_SEARCH_PADDING_X_MM,
   TEXT_SEARCH_PADDING_Y_MM,
 } from "../core";
-import type { CardIdMatch, CardPrintFormat, OpenCv, RegionConfig, TextRegionConfig } from "../core";
+import type { CardIdMatch, CardOrientation, OpenCv, RegionConfig, TextRegionConfig } from "../core";
 import type { Worker as TesseractWorker } from "tesseract.js";
 import type { AcceptedFrame } from "./frameDetection";
 import type { GameOption, GameSet } from "./gameConfig";
@@ -75,7 +75,7 @@ export async function identifyCard(
   cv: OpenCv,
   worker: TesseractWorker,
   frame: AcceptedFrame,
-  cardFormat: CardPrintFormat,
+  cardOrientation: CardOrientation,
   game: GameOption,
   set: GameSet,
   isCancelled: () => boolean,
@@ -86,10 +86,10 @@ export async function identifyCard(
       return null;
     }
     if (region.type === "text") {
-      const crop = extractTextRegion(cv, frame, cardFormat, region);
+      const crop = extractTextRegion(cv, frame, cardOrientation, region);
       regions.push({ crop, ocr: await recognizeCrop(cv, worker, crop.canvas, region) });
     } else {
-      const canvas = warpRegion(cv, frame, cardFormat, region);
+      const canvas = warpRegion(cv, frame, cardOrientation, region);
       regions.push({ crop: { region, searchCanvas: canvas, analysis: null, canvas }, ocr: null });
     }
   }
@@ -105,9 +105,9 @@ export async function identifyCard(
 
 /** Warps a text region's padded search area (its configured box is only
  * where to look) and narrows the crop to its text line. */
-function extractTextRegion(cv: OpenCv, frame: AcceptedFrame, cardFormat: CardPrintFormat, region: TextRegionConfig): RegionCrop {
+function extractTextRegion(cv: OpenCv, frame: AcceptedFrame, cardOrientation: CardOrientation, region: TextRegionConfig): RegionCrop {
   const searchRegion = padRegion(region, { xMm: TEXT_SEARCH_PADDING_X_MM, yMm: TEXT_SEARCH_PADDING_Y_MM });
-  const searchCanvas = warpRegion(cv, frame, cardFormat, searchRegion);
+  const searchCanvas = warpRegion(cv, frame, cardOrientation, searchRegion);
   const { canvas, analysis } = fitCropToText(
     searchCanvas,
     region.maxGapTextHeights ?? DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,

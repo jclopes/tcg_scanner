@@ -80,8 +80,8 @@ never a silent failure.
 
 ### 2. Print-format selection — `app.ts`
 
-Two toggle buttons (`#format-portrait`/`#format-landscape` in
-`index.html`) set a module-level `cardFormat: CardPrintFormat` variable in
+Two toggle buttons (`#orientation-portrait`/`#orientation-landscape` in
+`index.html`) set a module-level `cardOrientation: CardOrientation` variable in
 `app.ts`, defaulting to `"portrait"`. In-memory only — sticky for the
 session, resets on reload, exactly as the plan asks for ("no persistence
 requirement beyond until the page reloads").
@@ -100,7 +100,7 @@ caching it.
 
 ### 4. Guide overlay — `guideOverlay.ts`
 
-`drawGuideOverlay(canvas, orientation, frameSize, edgeColors, cardFormat)` sets the overlay
+`drawGuideOverlay(canvas, orientation, frameSize, edgeColors, cardOrientation)` sets the overlay
 canvas's internal pixel buffer (`canvas.width`/`height`) to exactly
 `frameSize` (the video's intrinsic size) and draws `computeGuideGeometry`'s
 rectangle directly in that same coordinate space — no scaling math needed
@@ -145,8 +145,8 @@ See Judgment calls below for why.).
 ### 6. Frame detection and the live loop — `frameDetection.ts` / `detectionLoop.ts`
 
 `evaluateFrameForQuad(sampler, pool, source, frameSize)` runs one pass:
-`computeGuideGeometry` → `expectedEdgeBands` → `FrameSampler` (one
-`getImageData`, then `extractGrayscaleRegion` per band) →
+`computeGuideGeometry` → `expectedEdgeBands` → `FrameSampler` (draws the
+frame, then one `getImageData` + `extractGrayscaleRegion` per band) →
 `pool.detectEdges` → `quadFromEdgeLines` (lines translated by each band's
 clamped origin) → `isQuadAspectRatioValid`. It returns a `FrameEvaluation`
 union: `{ status: "accepted", frame: { corners, frameCanvas } }` or
@@ -170,16 +170,16 @@ picks the best accepted frame with core's `selectBestFrame` (card-region
 sharpness + quad aspect ratio), falling back to the preview frame if no
 burst frame was accepted, and only that frame is flattened.
 
-`captureFlattenedCard(cv, frame, cardFormat)`:
+`captureFlattenedCard(cv, frame, cardOrientation)`:
 
 1. **Output size** (`flattenedOutputSize`): the quad's measured side
-   lengths × `FLATTEN_OVERSAMPLE_FACTOR`, snapped to the card's exact
+   lengths (native size — the image is for display only), snapped to the card's exact
    aspect ratio by `canonicalCardSizeFor`. Short/long sides come from the
    measured lengths, since a pre-rotation quad may be sideways.
 2. **Warp** (`warpQuad`): `computePerspectiveTransform` + `cv.warpPerspective`
    from the frame canvas the quad was detected in.
 3. **Rotate**: `computeOutputRotationDegrees(orientationFromSize(frame),
-   cardFormat)` gives `0 | 90`, applied with `rotateCanvas`.
+   cardOrientation)` gives `0 | 90`, applied with `rotateCanvas`.
 
 ### Error handling
 
@@ -216,15 +216,12 @@ this skips `"idle"`.
 - **`PREVIEW_STREAM_SIZE = 1280×720`**: a moderate preview resolution
   requested via `ideal` (never `exact`), keeping per-frame Canny/Hough
   cost bounded without failing acquisition on devices that can't hit it.
-- **Worker pool creation is lazy**, not eager at camera-start: the pool
-  (and its 4 OpenCV.js/WASM instances) is created on the *first* Scan
-  press, not when the camera starts. The plan's own worker-pool doc says
-  "call this once, e.g. when the scan view mounts" — since this app has
-  exactly one view/scan session for its whole lifetime, "mounts" was read
-  as "the user actually starts scanning," not "the page loads," so a user
-  who loads the page but never presses Scan never pays the 4x WASM
-  warm-up cost. The pool is still created once and reused across every
-  subsequent scan in the session (not recreated per scan).
+- **Worker pool lives for the page's lifetime**: the pool (and its 4
+  OpenCV.js/WASM instances) is created when the app starts, so it warms up
+  while cameras are probed, and is reused by every scan — stopping a scan or
+  changing camera/resolution doesn't terminate it. Only `pagehide`
+  terminates it; `startScan` recreates it after a back-forward-cache
+  restore.
 - **Output image size in `capture.ts`** is derived from the detected
   quad's own measured pixel dimensions on the final still, not a fixed
   constant — maximizes preserved resolution per the plan's "maximum
@@ -254,13 +251,11 @@ this skips `"idle"`.
   (`index.html` doesn't have separate "Scan" and "Scan Again" elements) —
   simpler DOM, and the task's step 8 phrasing ("a way to scan again") didn't
   require a dedicated second button.
-- **`FrameSampler` reads the whole video frame's pixels once per evaluated
-  frame** (`getImageData` over the full `videoWidth × videoHeight`) rather
-  than 4 separate smaller reads, then crops out each band from that one
-  buffer via `extractGrayscaleRegion`. Simpler to reason about than 4
-  partial `getImageData` calls, and avoids 4x the per-call browser
-  overhead; flagged as a spot to profile on a real device if the preview
-  visibly stutters (see below).
+- **`FrameSampler` reads back only the 4 edge bands** (one `getImageData`
+  per band's clamped rect) rather than the whole frame — the bands are a
+  small fraction of the frame's pixels. An accepted frame's full-resolution
+  canvas is a copy of the sampler's canvas (`snapshotFrame`), taken before
+  the sampler draws its next frame.
 - **Camera stream is never stopped on capture/error/idle transitions**,
   only on `pagehide` (page unload) — since capture reads the live
   `MediaStream`'s track for `ImageCapture` and the plan's UX implies
@@ -300,9 +295,8 @@ this skips `"idle"`.
 6. **End-to-end permission-denial and no-camera UX** — the error-message
    mapping in `cameraStream.ts` is based on documented `DOMException` names
    but was never exercised against a real browser's permission prompt.
-7. **Perf**: whether `FrameSampler`'s one full-frame `getImageData` per
-   evaluated frame plus the worker round-trip actually keeps the live
-   preview visibly smooth at `PREVIEW_STREAM_SIZE`, especially on a
+7. **Perf**: whether `FrameSampler`'s per-band reads plus the worker
+   round-trip keep the live preview visibly smooth, especially on a
    lower-end mobile device.
 
 ## Verification performed

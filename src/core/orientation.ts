@@ -1,4 +1,4 @@
-import type { CardPrintFormat, Orientation } from "./types";
+import type { CardOrientation, Orientation } from "./types";
 
 /**
  * Clockwise rotation (degrees) that makes the flattened card upright.
@@ -10,7 +10,7 @@ import type { CardPrintFormat, Orientation } from "./types";
  */
 export function computeOutputRotationDegrees(
   camera: Orientation,
-  card: CardPrintFormat,
+  card: CardOrientation,
 ): 0 | 90 {
   return camera === card ? 0 : 90;
 }

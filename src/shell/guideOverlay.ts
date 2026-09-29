@@ -1,5 +1,5 @@
 import { computeGuideGeometry, computeOutputRotationDegrees } from "../core";
-import type { CardPrintFormat, Orientation, Point, Size } from "../core";
+import type { CardOrientation, Orientation, Point, Size } from "../core";
 import { require2dContext } from "./canvasUtils";
 
 export type EdgeColors = readonly [string, string, string, string];
@@ -42,7 +42,7 @@ export function drawGuideOverlay(
   camera: Orientation,
   frameSize: Size,
   edgeColors: EdgeColors,
-  cardFormat: CardPrintFormat,
+  cardOrientation: CardOrientation,
 ): void {
   if (canvas.width !== frameSize.width || canvas.height !== frameSize.height) {
     canvas.width = frameSize.width;
@@ -78,7 +78,7 @@ export function drawGuideOverlay(
     ctx.stroke();
   });
 
-  drawCardTopIndicator(ctx, frameSize, camera, cardFormat);
+  drawCardTopIndicator(ctx, frameSize, camera, cardOrientation);
 }
 
 /** Labels the frame side the card's top edge should face: the top of the
@@ -88,11 +88,11 @@ function drawCardTopIndicator(
   ctx: CanvasRenderingContext2D,
   frameSize: Size,
   camera: Orientation,
-  cardFormat: CardPrintFormat,
+  cardOrientation: CardOrientation,
 ): void {
   const padding = frameSize.width * 0.08;
   const placement =
-    computeOutputRotationDegrees(camera, cardFormat) === 0
+    computeOutputRotationDegrees(camera, cardOrientation) === 0
       ? { x: frameSize.width / 2, y: padding, angle: 0 }
       : { x: padding, y: frameSize.height / 2, angle: -Math.PI / 2 };
 

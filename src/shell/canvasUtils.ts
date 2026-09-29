@@ -26,12 +26,6 @@ export function snapshotSource(source: CanvasImageSource, size: Size): HTMLCanva
   return canvas;
 }
 
-export function imageDataToCanvas(imageData: ImageData): HTMLCanvasElement {
-  const canvas = createCanvas(imageData);
-  require2dContext(canvas).putImageData(imageData, 0, 0);
-  return canvas;
-}
-
 /** `source` rotated clockwise by `degrees` onto a new canvas (width/height
  * swapped for 90/270). Returns `source` itself for 0. */
 export function rotateCanvas(source: HTMLCanvasElement, degrees: 0 | 90 | 180 | 270): HTMLCanvasElement {

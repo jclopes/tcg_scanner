@@ -10,7 +10,7 @@ export type OpenCv = CV;
 export type Orientation = "portrait" | "landscape";
 
 /** The physical card's print orientation, as selected by the user. */
-export type CardPrintFormat = "portrait" | "landscape";
+export type CardOrientation = "portrait" | "landscape";
 
 export interface Size {
   width: number;

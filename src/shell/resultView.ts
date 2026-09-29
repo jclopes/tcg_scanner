@@ -30,12 +30,12 @@ export class ResultView {
     });
   }
 
-  /** Shows `preview` as the thumbnail and `card` in the overlay: a `data:`
-   * URL immediately, then a `blob:` URL. Rejects if encoding fails. */
+  /** Shows `preview` (small) as the thumbnail right away, and `card` in the
+   * overlay once it's encoded — asynchronously, off the critical path; the
+   * overlay only opens on a later tap. Rejects if encoding fails. */
   async show(card: HTMLCanvasElement, preview: HTMLCanvasElement): Promise<void> {
     this.clear();
     this.elements.thumbnail.src = preview.toDataURL("image/png");
-    this.elements.overlayImage.src = card.toDataURL("image/png");
     const generation = this.generation;
     const url = await canvasToObjectURL(card);
     if (generation !== this.generation) {

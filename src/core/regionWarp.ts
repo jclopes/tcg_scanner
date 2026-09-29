@@ -1,7 +1,7 @@
 import { STANDARD_CARD_HEIGHT_MM, STANDARD_CARD_WIDTH_MM } from "./constants";
 import type { RegionConfig } from "./identification";
 import { computeOutputRotationDegrees } from "./orientation";
-import type { CardPrintFormat, Matrix3x3, Orientation, Point, Size } from "./types";
+import type { CardOrientation, Matrix3x3, Orientation, Point, Size } from "./types";
 
 /**
  * The single transform from camera-frame pixels to one region's output
@@ -17,19 +17,19 @@ import type { CardPrintFormat, Matrix3x3, Orientation, Point, Size } from "./typ
 export function regionWarpMatrix(
   frameToCardMm: Matrix3x3,
   camera: Orientation,
-  cardFormat: CardPrintFormat,
+  cardOrientation: CardOrientation,
   region: RegionConfig,
   pxPerMm: number,
 ): Matrix3x3 {
   const inFrameSize = cardSizeMm(camera);
-  const uprightSize = cardSizeMm(cardFormat);
+  const uprightSize = cardSizeMm(cardOrientation);
   const regionFrameSize = rotatedBoundingSize(uprightSize, region.rotationDeg ?? 0);
 
   return [
     scaling(pxPerMm),
     translation(-region.xMm, -region.yMm),
     rotationBetweenCenters(region.rotationDeg ?? 0, uprightSize, regionFrameSize),
-    rotationBetweenCenters(computeOutputRotationDegrees(camera, cardFormat), inFrameSize, uprightSize),
+    rotationBetweenCenters(computeOutputRotationDegrees(camera, cardOrientation), inFrameSize, uprightSize),
     frameToCardMm,
   ].reduce(multiplyMatrix3x3);
 }
@@ -44,7 +44,7 @@ export function regionOutputSize(region: RegionConfig, pxPerMm: number): Size {
 
 /** The card's size in mm when it's oriented as `orientation` (portrait = the
  * short side horizontal). */
-export function cardSizeMm(orientation: Orientation | CardPrintFormat): Size {
+export function cardSizeMm(orientation: Orientation | CardOrientation): Size {
   return orientation === "portrait"
     ? { width: STANDARD_CARD_WIDTH_MM, height: STANDARD_CARD_HEIGHT_MM }
     : { width: STANDARD_CARD_HEIGHT_MM, height: STANDARD_CARD_WIDTH_MM };

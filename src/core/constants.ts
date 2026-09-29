@@ -14,15 +14,6 @@ export const STANDARD_CARD_ASPECT_RATIO = STANDARD_CARD_WIDTH_MM / STANDARD_CARD
  * degenerate, tiny quad. */
 export const CANONICAL_CARD_MIN_PX_PER_MM = 15;
 
-/**
- * How much larger (linearly) than the quad's native size `captureFlattenedCard`
- * asks `warpPerspective` to render. Oversampling inside the warp is a single
- * interpolation from the original frame, so it preserves more detail for OCR
- * than upscaling after flattening or cropping. 5 is the density region OCR
- * needs; it runs once per capture, not per frame.
- */
-export const FLATTEN_OVERSAMPLE_FACTOR = 5;
-
 /** Fraction of the frame the guide fills, leaving room for the edge bands to
  * extend outward without being clipped. */
 export const GUIDE_FILL_FRACTION = 0.92;
@@ -65,7 +56,7 @@ export const EDGE_MIN_CONFIDENCE = 0.25;
 export const EDGE_OUTWARD_GAP_TOLERANCE_FRACTION = 0.1;
 
 /** Accepted burst frames to collect before selecting the best one. Starting guess. */
-export const CAPTURE_BURST_MIN_USABLE_FRAMES = 5;
+export const CAPTURE_BURST_MIN_USABLE_FRAMES = 2;
 
 /** Largest edit distance between the OCR'd collector number and a set's
  * card ID that still counts as a confident identification; anything worse
@@ -74,7 +65,7 @@ export const MAX_CONFIDENT_MATCH_DISTANCE = 2;
 
 /** Max frames attempted across all bursts; after that the best of whatever
  * was accepted is used. Starting guess. */
-export const CAPTURE_BURST_HARD_LIMIT = 30;
+export const CAPTURE_BURST_HARD_LIMIT = 10;
 
 /** Pixel density text/image regions are warped to — the character size
  * Tesseract's `eng` model reads best (found by sweeping real captures; both

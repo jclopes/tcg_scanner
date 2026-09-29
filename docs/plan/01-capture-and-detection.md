@@ -103,11 +103,11 @@ stalling the live preview.
 
   ```ts
   type CameraOrientation = "portrait" | "landscape";
-  type CardPrintFormat = "portrait" | "landscape";
+  type CardOrientation = "portrait" | "landscape";
 
   function computeOutputRotationDegrees(
     camera: CameraOrientation,
-    card: CardPrintFormat,
+    card: CardOrientation,
   ): 0 | 90 | 180 | 270 { /* ... */ }
   ```
 
@@ -197,13 +197,12 @@ that happened to pass detection.
   flattening; a frame whose own detection doesn't accept a quad is simply
   skipped, not retried. Only the single selected frame is flattened.
 - Frames are attempted one after another until
-  `CAPTURE_BURST_MIN_USABLE_FRAMES` (5) have been accepted, up to a hard
-  ceiling of `CAPTURE_BURST_HARD_LIMIT` (30) total frames attempted — so a
+  `CAPTURE_BURST_MIN_USABLE_FRAMES` (2) have been accepted, up to a hard
+  ceiling of `CAPTURE_BURST_HARD_LIMIT` (10) total frames attempted — so a
   run of early rejections (card briefly moved, occluded, etc.)
   doesn't strand the user with too few candidates to choose from. If the
-  hard limit is hit with at least one usable frame but fewer than 5, the
-  best of whatever was captured is still used rather than failing
-  outright; only a burst that captures *zero* usable frames falls back to
+  hard limit is hit with only one usable frame, that frame is still used
+  rather than failing outright; only a burst that captures *zero* usable frames falls back to
   the original preview-triggering frame.
 - The best candidate is picked by `selectBestFrame`
   (`src/core/frameQuality.ts`), combining two signals, each normalized
@@ -249,7 +248,7 @@ function computePerspectiveTransform(
 
 function computeOutputRotationDegrees(
   camera: CameraOrientation,
-  card: CardPrintFormat,
+  card: CardOrientation,
 ): 0 | 90 | 180 | 270 { /* ... */ }
 ```
 
@@ -274,7 +273,7 @@ function computeOutputRotationDegrees(
 
 ```ts
 type Orientation = "portrait" | "landscape";
-type CardPrintFormat = "portrait" | "landscape";
+type CardOrientation = "portrait" | "landscape";
 
 interface Size {
   width: number;

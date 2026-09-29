@@ -1,4 +1,4 @@
-import type { CardPrintFormat } from "../core";
+import type { CardOrientation } from "../core";
 import {
   ALL_FOUND_FLASH_EDGE_COLORS,
   clearGuideOverlay,
@@ -24,7 +24,7 @@ export class GuideFeedback {
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly video: HTMLVideoElement,
-    private readonly cardFormat: () => CardPrintFormat,
+    private readonly cardOrientation: () => CardOrientation,
   ) {}
 
   /** Draws the guide with no edges found yet. */
@@ -76,6 +76,6 @@ export class GuideFeedback {
 
   private draw(edgeColors: EdgeColors): void {
     const frameSize = videoFrameSize(this.video);
-    drawGuideOverlay(this.canvas, orientationFromSize(frameSize), frameSize, edgeColors, this.cardFormat());
+    drawGuideOverlay(this.canvas, orientationFromSize(frameSize), frameSize, edgeColors, this.cardOrientation());
   }
 }

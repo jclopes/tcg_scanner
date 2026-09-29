@@ -39,7 +39,7 @@ orientation):
 ```json
 {
   "game": "pokemon-base-set",
-  "card_formats": ["portrait"],
+  "card_orientation": ["portrait"],
   "foil": true,
   "regions": [
     {
@@ -65,7 +65,7 @@ orientation):
 }
 ```
 
-- `card_formats` — the print formats the game's cards come in
+- `card_orientation` — the orientations the game's cards are printed in
   (`"portrait"`, `"landscape"`), the first being the default. The
   Portrait/Landscape toggle is shown only when there are both.
 - `foil` — whether the game has foil cards; shows the Foil toggle, and each
@@ -139,16 +139,12 @@ the app can display:
 ## UX flow
 
 1. The user selects a **game** before scanning — a new sticky selector
-   alongside the existing card-format selector, following the same "set
+   alongside the existing card-orientation selector, following the same "set
    once, stays set across scans" pattern. The selected game determines
    which region config and ID dataset are loaded.
-2. Phase 1 produces a flattened, upright card image — deliberately
-   oversampled and exactly on-ratio (see `FLATTEN_OVERSAMPLE_FACTOR`'s doc
-   comment, `src/core/constants.ts`), a Phase 2 requirement Phase 1's own
-   design didn't originally have (it used to size its output to the
-   detected quad's raw measured extent — see git history), added here
-   rather than as a separate step later, per "keep the transformations to
-   a minimum."
+2. Phase 1 produces a flattened, upright, exactly on-ratio card image at
+   the card's native size in the frame — for display only; regions are
+   warped straight from the camera frame (step 3), not from this image.
 3. **Region extraction**: each configured region's mm rect is mapped to a
    pixel rect (functional core — px-per-mm scale against the flattened
    image's actual pixel dimensions, which represent the full 63mm × 88mm
@@ -305,7 +301,7 @@ interface RegionConfig {
 function regionWarpMatrix(
   frameToCardMm: Matrix3x3, // perspective transform of the detected quad, in card mm
   camera: Orientation,
-  cardFormat: CardPrintFormat,
+  cardOrientation: CardOrientation,
   region: RegionConfig,
   pxPerMm: number,
 ): Matrix3x3 { /* camera frame px -> region px */ }
@@ -394,7 +390,7 @@ implementation:
 ## Acceptance criteria
 
 - A game can be selected before/during a scan, sticky across scans like
-  the existing card-format selector.
+  the existing card-orientation selector.
 - Given a flattened Phase 1 output and a game's region config, each
   configured region is correctly cropped from the expected mm position.
 - `type: "text"` regions are OCR'd and their normalized text is

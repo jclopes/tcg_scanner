@@ -644,9 +644,23 @@
         padding-bottom: 0.6rem;
       }
 
+      .scanned-card-actions {
+        align-items: center;
+      }
+
       .scanned-card-actions button {
-        flex: 1 1 0;
+        flex: 0 0 var(--tap);
         min-height: var(--tap);
+        font-size: 1.2rem;
+        line-height: 1;
+      }
+
+      .scanned-card-quantity {
+        min-width: 2.5rem;
+        text-align: center;
+        font-family: ui-monospace, monospace;
+        font-size: 1.05rem;
+        font-weight: 600;
       }
 
       /* ---- Debug panel ----------------------------------------------------- */
@@ -759,9 +773,9 @@
 
       <div id="actions">
         <div class="card-options">
-          <div id="format-toggle" class="segmented" role="radiogroup" aria-label="Card format">
-            <label><input type="radio" name="card-format" id="format-portrait" value="portrait" /> Portrait</label>
-            <label><input type="radio" name="card-format" id="format-landscape" value="landscape" /> Landscape</label>
+          <div id="orientation-toggle" class="segmented" role="radiogroup" aria-label="Card orientation">
+            <label><input type="radio" name="card-orientation" id="orientation-portrait" value="portrait" /> Portrait</label>
+            <label><input type="radio" name="card-orientation" id="orientation-landscape" value="landscape" /> Landscape</label>
           </div>
           <label id="foil-toggle" class="foil-toggle"><input type="checkbox" id="foil-checkbox" /> Foil</label>
         </div>
@@ -815,7 +829,8 @@
         <div class="scanned-cards-header">
           <h2>Scanned cards <span id="scanned-cards-count" class="count-badge">0</span></h2>
           <div class="scanned-cards-actions">
-            <button type="button" id="scanned-cards-download" class="secondary-button" disabled>Download CSV</button>
+            <button type="button" id="scanned-cards-download" class="secondary-button" aria-label="Download CSV" title="Download CSV" disabled>CSV</button>
+            <button type="button" id="scanned-cards-merge" class="secondary-button" title="Merge duplicate entries into one, adding up their quantities" disabled>Merge</button>
             <button type="button" id="scanned-cards-clear" class="secondary-button" disabled>Clear</button>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { parseTags } from "../core";
-import type { CardPrintFormat, ParsedTags, Size } from "../core";
+import type { CardOrientation, ParsedTags, Size } from "../core";
 import { listFullHdCameras } from "./cameraDevices";
 import type { CameraOption } from "./cameraDevices";
 import { DEFAULT_CAMERA_RESOLUTION, resolutionOptionsForCamera, SUGGESTED_SESSION_TAGS } from "./config";
@@ -14,8 +14,8 @@ export interface SettingsElements {
   cameraSelect: HTMLSelectElement;
   resolutionSelect: HTMLSelectElement;
   /** The Portrait/Landscape toggle and its two radio buttons. */
-  formatToggle: HTMLElement;
-  formatRadios: Record<CardPrintFormat, HTMLInputElement>;
+  orientationToggle: HTMLElement;
+  orientationRadios: Record<CardOrientation, HTMLInputElement>;
   /** The Foil toggle (its label) and its checkbox. */
   foilToggle: HTMLElement;
   foilCheckbox: HTMLInputElement;
@@ -26,10 +26,10 @@ export interface SettingsElements {
 
 /**
  * The scan settings — game, set, camera, resolution, session tags, card
- * format, foil — and the current value of each. Game, set, camera,
+ * orientation, foil — and the current value of each. Game, set, camera,
  * resolution and tags are saved as preferences and restored when still
- * available; card format and foil are sticky for the session only. The
- * format toggle is shown only for a game with both formats, and the foil
+ * available; card orientation and foil are sticky for the session only. The
+ * orientation toggle is shown only for a game with both orientations, and the foil
  * toggle only for a game with foils (see GameOption).
  */
 export class SettingsPanel {
@@ -41,7 +41,7 @@ export class SettingsPanel {
   private selectedResolution: Size = this.preferences.resolution ?? DEFAULT_CAMERA_RESOLUTION;
   private selectedGame: GameOption;
   private selectedSet: GameSet;
-  private selectedCardFormat: CardPrintFormat;
+  private selectedCardOrientation: CardOrientation;
   private selectedFoil = false;
   private parsedTags: ParsedTags;
 
@@ -54,7 +54,7 @@ export class SettingsPanel {
     this.selectedGame = this.games.find((game) => game.id === this.preferences.gameId) ?? this.games[0]!;
     elements.gameSelect.value = this.selectedGame.id;
     this.selectedSet = this.populateSets(this.preferences.setCode);
-    this.selectedCardFormat = this.selectedGame.cardFormats[0]!;
+    this.selectedCardOrientation = this.selectedGame.cardOrientations[0]!;
     this.applyGameCardOptions();
     elements.tagsInput.value = this.preferences.sessionTags ?? "";
     this.parsedTags = this.readTags();
@@ -64,10 +64,10 @@ export class SettingsPanel {
     elements.setSelect.addEventListener("change", () => this.handleSetChange());
     elements.cameraSelect.addEventListener("change", () => this.handleCameraChange());
     elements.resolutionSelect.addEventListener("change", () => this.handleResolutionChange());
-    for (const [format, radio] of Object.entries(elements.formatRadios) as [CardPrintFormat, HTMLInputElement][]) {
+    for (const [orientation, radio] of Object.entries(elements.orientationRadios) as [CardOrientation, HTMLInputElement][]) {
       radio.addEventListener("change", () => {
         if (radio.checked) {
-          this.selectedCardFormat = format;
+          this.selectedCardOrientation = orientation;
         }
       });
     }
@@ -85,6 +85,11 @@ export class SettingsPanel {
     return this.selectedResolution;
   }
 
+  /** Every bundled game. */
+  get allGames(): readonly GameOption[] {
+    return this.games;
+  }
+
   get game(): GameOption {
     return this.selectedGame;
   }
@@ -93,8 +98,8 @@ export class SettingsPanel {
     return this.selectedSet;
   }
 
-  get cardFormat(): CardPrintFormat {
-    return this.selectedCardFormat;
+  get cardOrientation(): CardOrientation {
+    return this.selectedCardOrientation;
   }
 
   /** Whether the next accepted card is foil. Always false for a game
@@ -184,16 +189,16 @@ export class SettingsPanel {
     return button;
   }
 
-  /** Fits the format and foil toggles to the selected game: keeps the
-   * selected format if the game has it (otherwise its first), and turns foil
+  /** Fits the orientation and foil toggles to the selected game: keeps the
+   * selected orientation if the game has it (otherwise its first), and turns foil
    * off for a game without foils. */
   private applyGameCardOptions(): void {
-    const { cardFormats, hasFoil } = this.selectedGame;
-    if (!cardFormats.includes(this.selectedCardFormat)) {
-      this.selectedCardFormat = cardFormats[0]!;
+    const { cardOrientations, hasFoil } = this.selectedGame;
+    if (!cardOrientations.includes(this.selectedCardOrientation)) {
+      this.selectedCardOrientation = cardOrientations[0]!;
     }
-    this.elements.formatRadios[this.selectedCardFormat].checked = true;
-    this.elements.formatToggle.hidden = cardFormats.length < 2;
+    this.elements.orientationRadios[this.selectedCardOrientation].checked = true;
+    this.elements.orientationToggle.hidden = cardOrientations.length < 2;
 
     this.elements.foilToggle.hidden = !hasFoil;
     if (!hasFoil) {

@@ -34,7 +34,7 @@ equivalent relative path) gets all of it.
 |---|---|---|
 | `OpenCv` | `= CV` (re-exported from `@techstark/opencv-js`) | The already-initialized OpenCV.js instance type. Aliased so callers don't need to know which npm package provides it. |
 | `Orientation` | `"portrait" \| "landscape"` | Camera/guide orientation category. (The plan's snippets sometimes call this `CameraOrientation` — unified to one name, `Orientation`, matching the plan's own "Data contracts" section.) |
-| `CardPrintFormat` | `"portrait" \| "landscape"` | User-selected print format of the physical card, independent of `Orientation`. |
+| `CardOrientation` | `"portrait" \| "landscape"` | User-selected print format of the physical card, independent of `Orientation`. |
 | `Size` | `{ width: number; height: number }` | |
 | `Point` | `{ x: number; y: number }` | |
 | `GuideRect` | `{ center: Point; width: number; height: number; orientation: Orientation }` | |
@@ -81,7 +81,7 @@ aspectRatioTolerance: 0.08 }`.
 | Constant | Value | Used by |
 |---|---|---|
 | `STANDARD_CARD_WIDTH_MM` / `STANDARD_CARD_HEIGHT_MM` | `63` / `88` | Documents the physical card model. |
-| `STANDARD_CARD_ASPECT_RATIO` | `63/88 ≈ 0.7159` | `computeGuideGeometry`'s guide shape; the `targetAspectRatio` callers should pass to `isQuadAspectRatioValid` for the standard card format. |
+| `STANDARD_CARD_ASPECT_RATIO` | `63/88 ≈ 0.7159` | `computeGuideGeometry`'s guide shape; the `targetAspectRatio` callers should pass to `isQuadAspectRatioValid` for the standard card orientation. |
 | `GUIDE_FILL_FRACTION` | `0.92` | `computeGuideGeometry` — how much of the frame the guide fills. Judgment call (see file comment for reasoning). |
 | `EDGE_BAND_CORNER_INSET_FRACTION` | `0.12` | `expectedEdgeBands` — fraction trimmed off each end of a band's length to stay clear of the card's rounded corners. |
 | `EDGE_FAIL_FAST_MEAN_GRADIENT_THRESHOLD` | `20` | `fitEdgeLine`'s fail-fast check threshold (0-255 scale; see `fitEdgeLine` below for what's actually measured). |
@@ -201,7 +201,7 @@ respectively onto `outputSize`'s `(0,0)`, `(width,0)`, `(width,height)`,
 `3x3`, `CV_64F` result into a plain `Matrix3x3`; all intermediate `cv.Mat`s
 are freed before returning.
 
-### `computeOutputRotationDegrees(camera: Orientation, card: CardPrintFormat): 0 | 90`
+### `computeOutputRotationDegrees(camera: Orientation, card: CardOrientation): 0 | 90`
 
 File: `src/core/orientation.ts`
 

@@ -8,7 +8,7 @@ import {
   regionOutputSize,
   regionWarpMatrix,
 } from "../core";
-import type { CardPrintFormat, OpenCv, RegionConfig, TextColumnAnalysis, TextRowAnalysis } from "../core";
+import type { CardOrientation, OpenCv, RegionConfig, TextColumnAnalysis, TextRowAnalysis } from "../core";
 import { createCanvas, require2dContext } from "./canvasUtils";
 import { warpWithMatrix } from "./warp";
 import type { AcceptedFrame } from "./frameDetection";
@@ -23,12 +23,12 @@ import { orientationFromSize } from "./orientationWatcher";
 export function warpRegion(
   cv: OpenCv,
   frame: AcceptedFrame,
-  cardFormat: CardPrintFormat,
+  cardOrientation: CardOrientation,
   region: RegionConfig,
 ): HTMLCanvasElement {
   const camera = orientationFromSize(frame.frameCanvas);
   const frameToCardMm = computePerspectiveTransform(cv, frame.corners, cardSizeMm(camera));
-  const matrix = regionWarpMatrix(frameToCardMm, camera, cardFormat, region, REGION_PX_PER_MM);
+  const matrix = regionWarpMatrix(frameToCardMm, camera, cardOrientation, region, REGION_PX_PER_MM);
   return warpWithMatrix(cv, frame.frameCanvas, matrix, regionOutputSize(region, REGION_PX_PER_MM));
 }
 

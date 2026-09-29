@@ -7,7 +7,6 @@ import {
 } from "../core";
 import type { EdgeBandPixels, FittedLine, Point, Quad, Size } from "../core";
 import type { EdgeDetectionPool } from "../workers";
-import { imageDataToCanvas } from "./canvasUtils";
 import { DEFAULT_TOLERANCE_CONFIG } from "./config";
 import type { FrameSampler } from "./frameSampler";
 import { orientationFromSize } from "./orientationWatcher";
@@ -37,7 +36,10 @@ export type FrameEvaluation = {
 /**
  * Runs one quad-detection pass on a frame: sample the 4 guide-edge bands, fit
  * each edge in the worker pool, intersect the lines and validate the quad's
- * aspect ratio. `frameSize` must match `source`'s pixel dimensions.
+ * aspect ratio. `frameSize` must match `source`'s pixel dimensions. An
+ * accepted frame's canvas is `sampler`'s snapshot of this frame, so the
+ * caller must not sample with `sampler` again until this resolves (each
+ * detection loop and burst owns its sampler and awaits every frame).
  */
 export async function evaluateFrameForQuad(
   sampler: FrameSampler,
@@ -46,8 +48,7 @@ export async function evaluateFrameForQuad(
   frameSize: Size,
 ): Promise<FrameEvaluation> {
   const guide = computeGuideGeometry(orientationFromSize(frameSize), frameSize);
-  const sampled = sampler.sampleBands(source, frameSize, expectedEdgeBands(guide, frameSize));
-  const sampledBands = sampled.bands as EdgeBands;
+  const sampledBands = sampler.sampleBands(source, frameSize, expectedEdgeBands(guide, frameSize)) as EdgeBands;
 
   // detectEdges transfers (detaches) each band's buffer, so keep a copy.
   const bands = sampledBands.map(cloneEdgeBandPixels) as EdgeBands;
@@ -73,7 +74,7 @@ export async function evaluateFrameForQuad(
     return { ...base, status: "rejected", reason: "aspect-ratio-out-of-tolerance" };
   }
 
-  return { ...base, status: "accepted", frame: { corners, frameCanvas: imageDataToCanvas(sampled.frame) } };
+  return { ...base, status: "accepted", frame: { corners, frameCanvas: sampler.snapshotFrame() } };
 }
 
 function cloneEdgeBandPixels(band: EdgeBandPixels): EdgeBandPixels {

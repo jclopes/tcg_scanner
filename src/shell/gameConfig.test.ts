@@ -50,21 +50,21 @@ describe("parseGame", () => {
   const SETS = [{ code: "S1", name: "Set 1", print: "S1 - X", collector_numbers: ["001"] }];
   const config = (overrides: Partial<RawGameConfig>): RawGameConfig => ({
     game: "game",
-    card_formats: ["portrait", "landscape"],
+    card_orientation: ["portrait", "landscape"],
     foil: true,
     regions: [],
     ...overrides,
   });
 
-  it("reads card formats and foil support", () => {
-    const game = parseGame("g", config({ card_formats: ["landscape"], foil: false }), SETS);
-    expect(game.cardFormats).toEqual(["landscape"]);
+  it("reads card orientations and foil support", () => {
+    const game = parseGame("g", config({ card_orientation: ["landscape"], foil: false }), SETS);
+    expect(game.cardOrientations).toEqual(["landscape"]);
     expect(game.hasFoil).toBe(false);
   });
 
-  it("throws for missing, empty, unknown or repeated card formats", () => {
-    for (const card_formats of [undefined, [], ["square"], ["portrait", "portrait"]]) {
-      expect(() => parseGame("g", config({ card_formats }), SETS)).toThrow(/card_formats/);
+  it("throws for missing, empty, unknown or repeated card orientations", () => {
+    for (const card_orientation of [undefined, [], ["square"], ["portrait", "portrait"]]) {
+      expect(() => parseGame("g", config({ card_orientation }), SETS)).toThrow(/card_orientation/);
     }
   });
 

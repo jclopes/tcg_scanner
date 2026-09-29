@@ -1,6 +1,6 @@
 {
   "game": "cyberpunk-2077-tcg",
-  "card_formats": ["portrait"],
+  "card_orientation": ["portrait"],
   "foil": false,
   "regions": [
     {
