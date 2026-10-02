@@ -3,6 +3,7 @@ import {
   DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
   padRegion,
   rankCardIds,
+  regionsFor,
   TEXT_SEARCH_PADDING_X_MM,
   TEXT_SEARCH_PADDING_Y_MM,
 } from "../core";
@@ -65,7 +66,7 @@ export interface Identification {
 }
 
 /**
- * Warps every region of `game` straight out of `frame` (text regions fitted
+ * Warps every region of `game`'s `cardOrientation` layout straight out of `frame` (text regions fitted
  * to their text line), OCRs the text regions, ranks `set`'s collector
  * numbers against the OCR'd collector number and looks for sets whose
  * printed code fits the OCR'd set code better than `set`'s. Returns null if
@@ -81,7 +82,7 @@ export async function identifyCard(
   isCancelled: () => boolean,
 ): Promise<Identification | null> {
   const regions: RegionResult[] = [];
-  for (const region of game.config.regions) {
+  for (const region of regionsFor(game.config, cardOrientation)) {
     if (isCancelled()) {
       return null;
     }

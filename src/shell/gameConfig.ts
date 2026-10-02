@@ -59,8 +59,9 @@ export function listGames(): GameOption[] {
 /**
  * Parses and checks one game folder's regions.json and sets.json. Throws,
  * naming the file, entry and field, if either file is missing, a field is
- * missing or of the wrong type, there are no sets, or region labels, set
- * codes or a set's collector numbers repeat.
+ * missing or of the wrong type, "regions" doesn't have exactly one list per
+ * "card_orientation", there are no sets, or region labels (per orientation),
+ * set codes or a set's collector numbers repeat.
  */
 export function parseGame(id: string, rawConfig: unknown, rawSets: unknown): GameOption {
   if (rawConfig === undefined || rawSets === undefined) {
@@ -68,12 +69,8 @@ export function parseGame(id: string, rawConfig: unknown, rawSets: unknown): Gam
   }
   const configContext = `Game "${id}" regions.json`;
   const config = requireRecord(rawConfig, configContext);
-  const regions = requireArray(config, "regions", configContext).map((region) => parseRegion(id, region));
-  requireUnique(
-    regions.map((region) => region.label),
-    "region labels",
-    configContext,
-  );
+  const cardOrientations = parseCardOrientations(config, configContext);
+  const regions = parseRegionsByOrientation(id, config, cardOrientations, configContext);
 
   const setsContext = `Game "${id}" sets.json`;
   const sets = requireList(rawSets, setsContext).map((set) => parseSet(setsContext, set));
@@ -90,7 +87,7 @@ export function parseGame(id: string, rawConfig: unknown, rawSets: unknown): Gam
     id,
     config: { game: requireString(config, "game", configContext), regions },
     sets: sets.sort((a, b) => a.name.localeCompare(b.name)),
-    cardOrientations: parseCardOrientations(config, configContext),
+    cardOrientations,
     hasFoil: requireBoolean(config, "foil", configContext),
   };
 }
@@ -117,11 +114,39 @@ function parseCardOrientations(config: Record<string, unknown>, context: string)
   return orientations as CardOrientation[];
 }
 
+/** `regions`: an object with one list of regions per orientation in
+ * `card_orientation` — no more, no fewer — each with distinct labels. */
+function parseRegionsByOrientation(
+  gameId: string,
+  config: Record<string, unknown>,
+  cardOrientations: readonly CardOrientation[],
+  context: string,
+): Partial<Record<CardOrientation, RegionConfig[]>> {
+  const byOrientation = requireRecord(config.regions, `${context} "regions"`);
+  const extra = Object.keys(byOrientation).find((key) => !cardOrientations.includes(key as CardOrientation));
+  if (extra !== undefined) {
+    throw new Error(`${context}: "regions" has "${extra}", which isn't in "card_orientation".`);
+  }
+  return Object.fromEntries(
+    cardOrientations.map((orientation) => {
+      const regions = requireArray(byOrientation, orientation, `${context} "regions"`).map((region) =>
+        parseRegion(gameId, orientation, region),
+      );
+      requireUnique(
+        regions.map((region) => region.label),
+        `${orientation} region labels`,
+        context,
+      );
+      return [orientation, regions];
+    }),
+  );
+}
+
 /** Translates one raw region into a `RegionConfig`. Throws on a missing or
  * mistyped field, a non-positive size, an unknown `type`, or a text region
  * without a valid `allowed_chars_regex`. */
-export function parseRegion(gameId: string, raw: unknown): RegionConfig {
-  const regionsContext = `Game "${gameId}" regions.json region`;
+export function parseRegion(gameId: string, orientation: CardOrientation, raw: unknown): RegionConfig {
+  const regionsContext = `Game "${gameId}" regions.json ${orientation} region`;
   const record = requireRecord(raw, regionsContext);
   const label = requireString(record, "label", regionsContext);
   const context = `${regionsContext} "${label}"`;

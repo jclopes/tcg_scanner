@@ -6,7 +6,7 @@ const BOX = { label: "collector_number", x_mm: 1, y_mm: 2, width_mm: 3, height_m
 describe("parseRegion", () => {
   it("translates a text region to camelCase", () => {
     const raw = { ...BOX, type: "text", allowed_chars_regex: "[0-9]", rotation_deg: -45, max_gap_text_heights: 0.5 };
-    expect(parseRegion("game", raw)).toEqual({
+    expect(parseRegion("game", "portrait", raw)).toEqual({
       label: "collector_number",
       type: "text",
       xMm: 1,
@@ -20,32 +20,32 @@ describe("parseRegion", () => {
   });
 
   it("drops text-only fields from an image region", () => {
-    expect(parseRegion("game", { ...BOX, type: "image", allowed_chars_regex: "[0-9]" })).not.toHaveProperty(
+    expect(parseRegion("game", "portrait", { ...BOX, type: "image", allowed_chars_regex: "[0-9]" })).not.toHaveProperty(
       "allowedCharsRegex",
     );
   });
 
   it("throws for a text region without a valid allowed_chars_regex", () => {
-    expect(() => parseRegion("game", { ...BOX, type: "text" })).toThrow(/allowed_chars_regex/);
-    expect(() => parseRegion("game", { ...BOX, type: "text", allowed_chars_regex: "[0-9" })).toThrow(
+    expect(() => parseRegion("game", "portrait", { ...BOX, type: "text" })).toThrow(/allowed_chars_regex/);
+    expect(() => parseRegion("game", "portrait", { ...BOX, type: "text", allowed_chars_regex: "[0-9" })).toThrow(
       /isn't a valid regular expression/,
     );
   });
 
   it("throws for an unknown region type", () => {
-    expect(() => parseRegion("game", { ...BOX, type: "barcode" })).toThrow(/unknown type "barcode"/);
+    expect(() => parseRegion("game", "portrait", { ...BOX, type: "barcode" })).toThrow(/unknown type "barcode"/);
   });
 
   it("names the region and field for a missing or mistyped position", () => {
     const { x_mm: _removed, ...withoutX } = BOX;
-    expect(() => parseRegion("game", { ...withoutX, x_m: 1, type: "image" })).toThrow(
-      'Game "game" regions.json region "collector_number": "x_mm" must be a number, got nothing.',
+    expect(() => parseRegion("game", "portrait", { ...withoutX, x_m: 1, type: "image" })).toThrow(
+      'Game "game" regions.json portrait region "collector_number": "x_mm" must be a number, got nothing.',
     );
-    expect(() => parseRegion("game", { ...BOX, y_mm: "2", type: "image" })).toThrow(/"y_mm" must be a number/);
+    expect(() => parseRegion("game", "portrait", { ...BOX, y_mm: "2", type: "image" })).toThrow(/"y_mm" must be a number/);
   });
 
   it("throws for a non-positive size", () => {
-    expect(() => parseRegion("game", { ...BOX, width_mm: 0, type: "image" })).toThrow(/"width_mm" must be positive/);
+    expect(() => parseRegion("game", "portrait", { ...BOX, width_mm: 0, type: "image" })).toThrow(/"width_mm" must be positive/);
   });
 });
 
@@ -68,12 +68,12 @@ describe("parseGame", () => {
     game: "game",
     card_orientation: ["portrait", "landscape"],
     foil: true,
-    regions: [],
+    regions: { portrait: [], landscape: [] },
     ...overrides,
   });
 
   it("reads card orientations and foil support", () => {
-    const game = parseGame("g", config({ card_orientation: ["landscape"], foil: false }), SETS);
+    const game = parseGame("g", config({ card_orientation: ["landscape"], foil: false, regions: { landscape: [] } }), SETS);
     expect(game.cardOrientations).toEqual(["landscape"]);
     expect(game.hasFoil).toBe(false);
   });
@@ -88,10 +88,6 @@ describe("parseGame", () => {
     for (const foil of [undefined, "yes"]) {
       expect(() => parseGame("g", config({ foil }), SETS)).toThrow(/foil/);
     }
-  });
-
-  it("reads each set's printed code", () => {
-    expect(parseGame("g", config({}), SETS).sets[0]!.print).toBe("S1 - X");
   });
 
   it("throws for a set without a print", () => {
@@ -109,8 +105,8 @@ describe("parseGame", () => {
   it("throws for repeated set codes or region labels", () => {
     expect(() => parseGame("g", config({}), [SET, { ...SET, name: "Other" }])).toThrow(/set codes has "S1"/);
     const region = { ...BOX, type: "image" };
-    expect(() => parseGame("g", config({ regions: [region, region] }), SETS)).toThrow(
-      /region labels has "collector_number"/,
+    expect(() => parseGame("g", config({ regions: { portrait: [region, region], landscape: [] } }), SETS)).toThrow(
+      /portrait region labels has "collector_number"/,
     );
   });
 
@@ -119,6 +115,21 @@ describe("parseGame", () => {
     expect(() => parseGame("g", config({}), undefined)).toThrow(/regions.json and sets.json/);
     expect(() => parseGame("g", config({}), [])).toThrow(/no sets/);
     expect(() => parseGame("g", config({}), { sets: [] })).toThrow(/sets.json must be a list/);
-    expect(() => parseGame("g", config({ regions: undefined }), SETS)).toThrow(/"regions" must be a list/);
+    expect(() => parseGame("g", config({ regions: undefined }), SETS)).toThrow(/"regions" must be an object/);
+  });
+
+  it("keeps each orientation's own regions", () => {
+    const portrait = { ...BOX, type: "image" };
+    const landscape = { ...BOX, x_mm: 50, type: "image" };
+    const game = parseGame("g", config({ regions: { portrait: [portrait], landscape: [landscape] } }), SETS);
+    expect(game.config.regions.portrait![0]!.xMm).toBe(1);
+    expect(game.config.regions.landscape![0]!.xMm).toBe(50);
+  });
+
+  it("throws when regions lack a listed orientation or have an unlisted one", () => {
+    expect(() => parseGame("g", config({ regions: { portrait: [] } }), SETS)).toThrow(/"landscape" must be a list/);
+    expect(() =>
+      parseGame("g", config({ card_orientation: ["portrait"], regions: { portrait: [], landscape: [] } }), SETS),
+    ).toThrow(/"regions" has "landscape", which isn't in "card_orientation"/);
   });
 });

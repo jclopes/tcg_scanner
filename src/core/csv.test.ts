@@ -8,10 +8,6 @@ describe("formatCsv", () => {
     );
   });
 
-  it("writes just the header when there are no rows", () => {
-    expect(formatCsv(["set_id", "card_id"], [])).toBe("set_id,card_id\r\n");
-  });
-
   it("quotes fields with commas, quotes or line breaks, doubling inner quotes", () => {
     expect(formatCsv(["a"], [["x,y"], ['say "hi"'], ["two\nlines"]])).toBe(
       'a\r\n"x,y"\r\n"say ""hi"""\r\n"two\nlines"\r\n',

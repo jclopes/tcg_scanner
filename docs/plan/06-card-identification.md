@@ -39,35 +39,51 @@ orientation):
 ```json
 {
   "game": "pokemon-base-set",
-  "card_orientation": ["portrait"],
+  "card_orientation": ["portrait", "landscape"],
   "foil": true,
-  "regions": [
-    {
-      "label": "collector_number",
-      "type": "text", 
-      "allowed_chars_regex": "[A-Za-z0-9*\/\-]",
-      "x_mm": 5,
-      "y_mm": 80,
-      "width_mm": 15,
-      "height_mm": 5,
-      "rotation_deg": -45
-    },
-    {
-      "label": "set_symbol",
-      "type": "image",
-      "x_mm": 50,
-      "y_mm": 80,
-      "width_mm": 8,
-      "height_mm": 8,
-      "rotation_deg": 0
-    }
-  ]
+  "regions": {
+    "portrait": [
+      {
+        "label": "collector_number",
+        "type": "text",
+        "allowed_chars_regex": "[A-Za-z0-9*\/\-]",
+        "x_mm": 5,
+        "y_mm": 80,
+        "width_mm": 15,
+        "height_mm": 5,
+        "rotation_deg": -45
+      },
+      {
+        "label": "set_symbol",
+        "type": "image",
+        "x_mm": 50,
+        "y_mm": 80,
+        "width_mm": 8,
+        "height_mm": 8
+      }
+    ],
+    "landscape": [
+      {
+        "label": "collector_number",
+        "type": "text",
+        "allowed_chars_regex": "[A-Za-z0-9*\/\-]",
+        "x_mm": 75,
+        "y_mm": 55,
+        "width_mm": 10,
+        "height_mm": 4
+      }
+    ]
+  }
 }
 ```
 
 - `card_orientation` — the orientations the game's cards are printed in
   (`"portrait"`, `"landscape"`), the first being the default. The
   Portrait/Landscape toggle is shown only when there are both.
+- `regions` — one list of regions per entry in `card_orientation` (no more,
+  no fewer): a landscape card has its regions in different places than a
+  portrait one, and its mm coordinates are on the card in that orientation.
+  The list used is the one for the orientation selected when scanning.
 - `foil` — whether the game has foil cards; shows the Foil toggle, and each
   scanned card records whether it was foil.
 - `label` — identifies the region; also the key used to look up this

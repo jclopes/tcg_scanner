@@ -2,27 +2,29 @@
   "game": "cyberpunk-2077-tcg",
   "card_orientation": ["portrait"],
   "foil": false,
-  "regions": [
-    {
-      "label": "collector_number",
-      "type": "text",
-      "allowed_chars_regex": "[β0-9ab]",
-      "x_mm": 59.60,
-      "y_mm": 97.75,
-      "width_mm": 5.80,
-      "height_mm": 1.90,
-      "rotation_deg": -45,
-      "max_gap_text_heights": 0.5
-    },
-    {
-      "label": "set_code",
-      "type": "text",
-      "allowed_chars_regex": "[A-Z0-9\\-\\[\\] ]",
-      "x_mm": 73.00,
-      "y_mm": 59.50,
-      "width_mm": 13.60,
-      "height_mm": 2.80,
-      "rotation_deg": -90
-    }
-  ]
+  "regions": {
+    "portrait": [
+      {
+        "label": "collector_number",
+        "type": "text",
+        "allowed_chars_regex": "[β0-9ab]",
+        "x_mm": 59.60,
+        "y_mm": 97.75,
+        "width_mm": 5.80,
+        "height_mm": 1.90,
+        "rotation_deg": -45,
+        "max_gap_text_heights": 0.5
+      },
+      {
+        "label": "set_code",
+        "type": "text",
+        "allowed_chars_regex": "[A-Z0-9\\-\\[\\] ]",
+        "x_mm": 73.00,
+        "y_mm": 59.50,
+        "width_mm": 13.60,
+        "height_mm": 2.80,
+        "rotation_deg": -90
+      }
+    ]
+  }
 }

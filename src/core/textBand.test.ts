@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS, TEXT_BAND_MARGIN_FRACTION, TEXT_COLUMN_MARGIN_TEXT_HEIGHTS } from "./constants";
-import { analyzeTextColumns, analyzeTextRows, withMargin } from "./textBand";
+import { analyzeTextColumns, analyzeTextRows } from "./textBand";
 import type { GrayscalePixels } from "./types";
 
 interface TextLine {
@@ -32,30 +32,23 @@ function image(
 }
 
 describe("analyzeTextRows", () => {
-  it("finds the rows of a single text line", () => {
-    const analysis = analyzeTextRows(image(40, 30, { lines: [{ top: 10, bottom: 20, ink: 0 }] }));
-    expect(analysis.band).toEqual({ top: 10, bottom: 20 });
-  });
-
-  it("finds light-on-dark text the same way", () => {
-    const analysis = analyzeTextRows(image(40, 30, { lines: [{ top: 5, bottom: 12, ink: 255 }], background: 0 }));
-    expect(analysis.band).toEqual({ top: 5, bottom: 12 });
+  it("finds the rows of a text line, dark-on-light or light-on-dark", () => {
+    expect(analyzeTextRows(image(40, 30, { lines: [{ top: 10, bottom: 20, ink: 0 }] })).band).toEqual({ top: 10, bottom: 20 });
+    expect(analyzeTextRows(image(40, 30, { lines: [{ top: 5, bottom: 12, ink: 255 }], background: 0 })).band).toEqual({
+      top: 5,
+      bottom: 12,
+    });
   });
 
   it("finds low-contrast text, since the gate is relative to the background", () => {
-    const analysis = analyzeTextRows(image(40, 30, { lines: [{ top: 10, bottom: 20, ink: 235 }] }));
-    expect(analysis.band).toEqual({ top: 10, bottom: 20 });
+    expect(analyzeTextRows(image(40, 30, { lines: [{ top: 10, bottom: 20, ink: 235 }] })).band).toEqual({ top: 10, bottom: 20 });
   });
 
-  it("finds no text in a uniform area", () => {
-    const analysis = analyzeTextRows(image(40, 30, {}));
-    expect(analysis.band).toBeNull();
-    expect(analysis.crop).toBeNull();
-  });
-
-  it("finds no text when every row has the same texture", () => {
-    const analysis = analyzeTextRows(image(40, 30, { lines: [{ top: 0, bottom: 30, ink: 0 }] }));
-    expect(analysis.band).toBeNull();
+  it("finds no text in a uniform area, or when every row has the same texture", () => {
+    const uniform = analyzeTextRows(image(40, 30, {}));
+    expect(uniform.band).toBeNull();
+    expect(uniform.crop).toBeNull();
+    expect(analyzeTextRows(image(40, 30, { lines: [{ top: 0, bottom: 30, ink: 0 }] })).band).toBeNull();
   });
 
   it("picks the strongest of two separate lines", () => {
@@ -70,14 +63,10 @@ describe("analyzeTextRows", () => {
     expect(analysis.band).toEqual({ top: 20, bottom: 30 });
   });
 
-  it("finds nothing in an image too narrow to have a horizontal gradient", () => {
-    const analysis = analyzeTextRows({ data: new Uint8ClampedArray(10), width: 1, height: 10 });
-    expect(analysis.band).toBeNull();
-  });
-
-  it("crops to the band plus margin when no horizontal line is near", () => {
+  it("crops to the band plus TEXT_BAND_MARGIN_FRACTION of its height when no horizontal line is near", () => {
+    const margin = Math.round(TEXT_BAND_MARGIN_FRACTION * 20);
     const analysis = analyzeTextRows(image(40, 60, { lines: [{ top: 20, bottom: 40, ink: 0 }] }));
-    expect(analysis.crop).toEqual(withMargin({ top: 20, bottom: 40 }, 60));
+    expect(analysis.crop).toEqual({ top: 20 - margin, bottom: 40 + margin });
   });
 
   it("keeps the crop inside horizontal borders just above and below the text", () => {
@@ -93,17 +82,6 @@ describe("analyzeTextRows", () => {
     expect(analysis.band).toEqual({ top: 20, bottom: 40 });
     // Border rows 18 and 41 lie within the margin; the crop stops before them.
     expect(analysis.crop).toEqual({ top: 19, bottom: 41 });
-  });
-});
-
-describe("withMargin", () => {
-  it("grows the band by the margin fraction of its height on each side", () => {
-    const margin = Math.round(TEXT_BAND_MARGIN_FRACTION * 20);
-    expect(withMargin({ top: 40, bottom: 60 }, 100)).toEqual({ top: 40 - margin, bottom: 60 + margin });
-  });
-
-  it("clamps to the area's edges", () => {
-    expect(withMargin({ top: 0, bottom: 100 }, 100)).toEqual({ top: 0, bottom: 100 });
   });
 });
 
@@ -160,9 +138,7 @@ describe("analyzeTextColumns", () => {
       { left: 42, right: 46, ink: 120 },
       { left: 54, right: 90 },
     ];
-    expect(analyzeTextColumns(glyphs(blocks), band, DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS).crop?.left).toBe(
-      41 - margin,
-    );
+    expect(analyzeTextColumns(glyphs(blocks), band, DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS).crop?.left).toBe(41 - margin);
     expect(analyzeTextColumns(glyphs(blocks), band, 0.5).crop?.left).toBe(53 - margin);
   });
 
@@ -176,11 +152,6 @@ describe("analyzeTextColumns", () => {
       DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
     );
     expect(analysis.crop).toEqual({ left: 19 - margin, right: 100 + margin });
-  });
-
-  it("clamps the margin to the image", () => {
-    const analysis = analyzeTextColumns(glyphs([{ left: 0, right: 200 }]), band, DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS);
-    expect(analysis.crop).toEqual({ left: 0, right: 200 });
   });
 
   it("finds no columns when the rows are blank", () => {

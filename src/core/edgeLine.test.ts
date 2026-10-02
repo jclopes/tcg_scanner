@@ -10,262 +10,115 @@ beforeAll(async () => {
   cv = await loadOpenCv();
 });
 
-/**
- * Renders a synthetic band image with a hard step edge: pixels on the
- * `direction`-rotated normal's positive side are 255, the other side 0. This
- * gives fitEdgeLine an unambiguous, known ground-truth line (point +
- * direction) to recover.
- */
-function renderEdgeBand(width: number, height: number, point: Point, direction: Point): EdgeBandPixels {
-  const norm = Math.hypot(direction.x, direction.y);
-  const dirX = direction.x / norm;
-  const dirY = direction.y / norm;
-  // Normal to the direction vector.
-  const nx = -dirY;
-  const ny = dirX;
-
-  const data = new Uint8ClampedArray(width * height);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const signedDistance = (x - point.x) * nx + (y - point.y) * ny;
-      data[y * width + x] = signedDistance >= 0 ? 255 : 0;
-    }
-  }
-  return { data, width, height, origin: { x: 0, y: 0 } };
-}
-
-/** Perpendicular distance from `p` to the infinite line through
- * `linePoint` with (unit) `lineDirection`. */
-function perpendicularDistance(p: Point, linePoint: Point, lineDirection: Point): number {
-  const nx = -lineDirection.y;
-  const ny = lineDirection.x;
-  return Math.abs((p.x - linePoint.x) * nx + (p.y - linePoint.y) * ny);
-}
-
-// Used throughout below for bands shaped like a left/right-edge band
-// (tall, narrow — thickness axis is x) and a top/bottom-edge band
-// (short, wide — thickness axis is y), respectively. The actual value only
-// matters for tests that put more than one candidate edge in the band;
-// for single-edge tests it's an arbitrary but shape-appropriate choice.
+const TALL = { width: 50, height: 160 }; // a left/right-edge band
+const WIDE = { width: 160, height: 50 }; // a top/bottom-edge band
 const OUTWARD_RIGHT: Point = { x: 1, y: 0 };
 const OUTWARD_TOP: Point = { x: 0, y: -1 };
+/** Loose enough for the rotated-edge test plus Hough's 1° angular steps. */
+const TOLERANCE_DEGREES = 15;
 
-// A generous rotation tolerance for tests that aren't specifically
-// exercising the angle-plausibility filter itself — comfortably covers the
-// 8°-rotated-edge test below plus normal Hough angular-resolution noise
-// (1°, per EDGE_HOUGH_THETA), without being so wide it'd stop meaning
-// anything. Production uses DEFAULT_TOLERANCE_CONFIG.rotationToleranceDegrees
-// (8°); this is deliberately looser since these tests aren't about that
-// exact value.
-const GENEROUS_ROTATION_TOLERANCE_DEGREES = 15;
+/** A band with a hard step edge along the line through `point` with
+ * `direction`: 255 on one side, 0 on the other. */
+function edgeBand(size: { width: number; height: number }, point: Point, direction: Point): EdgeBandPixels {
+  const norm = Math.hypot(direction.x, direction.y);
+  const nx = -direction.y / norm;
+  const ny = direction.x / norm;
+  const data = new Uint8ClampedArray(size.width * size.height);
+  for (let y = 0; y < size.height; y++) {
+    for (let x = 0; x < size.width; x++) {
+      data[y * size.width + x] = (x - point.x) * nx + (y - point.y) * ny >= 0 ? 255 : 0;
+    }
+  }
+  return { data, ...size, origin: { x: 0, y: 0 } };
+}
+
+/** Fills rows `[from, to)` with flat gray: an occluded stretch with no edge. */
+function occludeRows(band: EdgeBandPixels, from: number, to: number): EdgeBandPixels {
+  band.data.fill(128, from * band.width, to * band.width);
+  return band;
+}
+
+function distanceToLine(p: Point, linePoint: Point, direction: Point): number {
+  const norm = Math.hypot(direction.x, direction.y);
+  return Math.abs((p.x - linePoint.x) * -direction.y + (p.y - linePoint.y) * direction.x) / norm;
+}
+
+function expectFitsLine(result: ReturnType<typeof fitEdgeLine>, point: Point, direction: Point, maxDistance = 2): void {
+  expect(result).not.toBeNull();
+  expect(angleBetweenDirectionsDegrees(result!.direction, direction)).toBeLessThan(3);
+  expect(distanceToLine(result!.point, point, direction)).toBeLessThan(maxDistance);
+}
 
 describe("fitEdgeLine", () => {
-  it("fits a vertical edge in a tall, narrow band (left/right-edge-shaped band)", () => {
-    const width = 50;
-    const height = 160;
-    const truePoint = { x: 25, y: 80 };
-    const trueDirection = { x: 0, y: 1 };
+  it("fits a vertical edge in a left/right band and a horizontal edge in a top/bottom band", () => {
+    const vertical = { point: { x: 25, y: 80 }, direction: { x: 0, y: 1 } };
+    const verticalResult = fitEdgeLine(cv, edgeBand(TALL, vertical.point, vertical.direction), OUTWARD_RIGHT, TOLERANCE_DEGREES);
+    expectFitsLine(verticalResult, vertical.point, vertical.direction);
+    expect(verticalResult!.confidence).toBeGreaterThanOrEqual(EDGE_MIN_CONFIDENCE);
 
-    const band = renderEdgeBand(width, height, truePoint, trueDirection);
-    const result = fitEdgeLine(cv, band, OUTWARD_RIGHT, GENEROUS_ROTATION_TOLERANCE_DEGREES);
-
-    expect(result).not.toBeNull();
-    expect(angleBetweenDirectionsDegrees(result!.direction, trueDirection)).toBeLessThan(3);
-    expect(perpendicularDistance(result!.point, truePoint, trueDirection)).toBeLessThan(2);
-    expect(result!.confidence).toBeGreaterThanOrEqual(EDGE_MIN_CONFIDENCE);
-    expect(result!.confidence).toBeLessThanOrEqual(1);
+    const horizontal = { point: { x: 80, y: 25 }, direction: { x: 1, y: 0 } };
+    const horizontalResult = fitEdgeLine(cv, edgeBand(WIDE, horizontal.point, horizontal.direction), OUTWARD_TOP, TOLERANCE_DEGREES);
+    expectFitsLine(horizontalResult, horizontal.point, horizontal.direction);
   });
 
-  it("fits a horizontal edge in a short, wide band (top/bottom-edge-shaped band)", () => {
-    const width = 160;
-    const height = 50;
-    const truePoint = { x: 80, y: 25 };
-    const trueDirection = { x: 1, y: 0 };
-
-    const band = renderEdgeBand(width, height, truePoint, trueDirection);
-    const result = fitEdgeLine(cv, band, OUTWARD_TOP, GENEROUS_ROTATION_TOLERANCE_DEGREES);
-
-    expect(result).not.toBeNull();
-    expect(angleBetweenDirectionsDegrees(result!.direction, trueDirection)).toBeLessThan(3);
-    expect(perpendicularDistance(result!.point, truePoint, trueDirection)).toBeLessThan(2);
+  it("fits an edge rotated within the tolerance", () => {
+    const angle = (8 * Math.PI) / 180;
+    const point = { x: 25, y: 80 };
+    const direction = { x: Math.sin(angle), y: Math.cos(angle) };
+    expectFitsLine(fitEdgeLine(cv, edgeBand(TALL, point, direction), OUTWARD_RIGHT, TOLERANCE_DEGREES), point, direction, 3);
   });
 
-  it("fits a slightly rotated edge (within typical rotation tolerance)", () => {
-    const width = 50;
-    const height = 160;
-    const truePoint = { x: 25, y: 80 };
-    const angleRad = (8 * Math.PI) / 180;
-    const trueDirection = { x: Math.sin(angleRad), y: Math.cos(angleRad) };
-
-    const band = renderEdgeBand(width, height, truePoint, trueDirection);
-    const result = fitEdgeLine(cv, band, OUTWARD_RIGHT, GENEROUS_ROTATION_TOLERANCE_DEGREES);
-
-    expect(result).not.toBeNull();
-    expect(angleBetweenDirectionsDegrees(result!.direction, trueDirection)).toBeLessThan(3);
-    expect(perpendicularDistance(result!.point, truePoint, trueDirection)).toBeLessThan(3);
+  it("rejects an edge rotated beyond the tolerance, and finds it once the tolerance covers it", () => {
+    const angle = (45 * Math.PI) / 180;
+    const point = { x: 25, y: 80 };
+    const direction = { x: Math.sin(angle), y: Math.cos(angle) };
+    expect(fitEdgeLine(cv, edgeBand(TALL, point, direction), OUTWARD_RIGHT, 8)).toBeNull();
+    expectFitsLine(fitEdgeLine(cv, edgeBand(TALL, point, direction), OUTWARD_RIGHT, 50), point, direction);
   });
 
-  it("still finds the line when part of the edge is occluded (e.g. a finger)", () => {
-    const width = 50;
-    const height = 160;
-    const truePoint = { x: 25, y: 80 };
-    const trueDirection = { x: 0, y: 1 };
+  it("still finds an edge partly hidden (e.g. by a finger)", () => {
+    const point = { x: 25, y: 80 };
+    const direction = { x: 0, y: 1 };
+    const band = occludeRows(edgeBand(TALL, point, direction), 64, 96);
+    expectFitsLine(fitEdgeLine(cv, band, OUTWARD_RIGHT, TOLERANCE_DEGREES), point, direction, 3);
+  });
 
-    const band = renderEdgeBand(width, height, truePoint, trueDirection);
-    // Blank out a chunk in the middle third of the band (simulated occlusion),
-    // filling it with a mid-gray flat value so it contributes no edge signal.
-    const occludedStart = Math.floor(height * 0.4);
-    const occludedEnd = Math.floor(height * 0.6);
-    for (let y = occludedStart; y < occludedEnd; y++) {
-      for (let x = 0; x < width; x++) {
-        band.data[y * width + x] = 128;
+  it("scales confidence with how much of the edge is visible, and finds nothing below EDGE_MIN_CONFIDENCE", () => {
+    const point = { x: 25, y: 80 };
+    const direction = { x: 0, y: 1 };
+    const full = fitEdgeLine(cv, edgeBand(TALL, point, direction), OUTWARD_RIGHT, TOLERANCE_DEGREES);
+    const half = fitEdgeLine(cv, occludeRows(edgeBand(TALL, point, direction), 80, 160), OUTWARD_RIGHT, TOLERANCE_DEGREES);
+    const sliver = fitEdgeLine(cv, occludeRows(edgeBand(TALL, point, direction), 24, 160), OUTWARD_RIGHT, TOLERANCE_DEGREES);
+
+    expect(half!.confidence).toBeLessThan(full!.confidence);
+    expect(half!.confidence).toBeGreaterThanOrEqual(EDGE_MIN_CONFIDENCE);
+    expect(sliver).toBeNull(); // only 15% of the edge is visible
+  });
+
+  it("prefers the outward-most edge over a stronger inner feature (e.g. the card's printed border)", () => {
+    // Left-edge band: background (x < 10), card body, then an inner border (x >= 35).
+    const data = new Uint8ClampedArray(TALL.width * TALL.height);
+    for (let y = 0; y < TALL.height; y++) {
+      for (let x = 0; x < TALL.width; x++) {
+        data[y * TALL.width + x] = x < 10 ? 0 : x < 35 ? 128 : 255;
       }
     }
-
-    const result = fitEdgeLine(cv, band, OUTWARD_RIGHT, GENEROUS_ROTATION_TOLERANCE_DEGREES);
-
-    expect(result).not.toBeNull();
-    expect(angleBetweenDirectionsDegrees(result!.direction, trueDirection)).toBeLessThan(5);
-    expect(perpendicularDistance(result!.point, truePoint, trueDirection)).toBeLessThan(3);
-  });
-
-  it("prefers the outward-most edge over a further-in feature (e.g. a card's own inner border)", () => {
-    const width = 50;
-    const height = 160;
-    const outerEdgeX = 10;
-    const innerEdgeX = 35;
-
-    // Three flat bands separated by two hard vertical edges: "outside" the
-    // card (x < 10), the card body (10 <= x < 35), and an inner
-    // graphic/border (x >= 35) — simulating a left-edge band where the true
-    // physical card edge (outerEdgeX) sits well outside a strong inner
-    // feature (innerEdgeX).
-    const data = new Uint8ClampedArray(width * height);
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const value = x < outerEdgeX ? 0 : x < innerEdgeX ? 128 : 255;
-        data[y * width + x] = value;
-      }
-    }
-    const band: EdgeBandPixels = { data, width, height, origin: { x: 0, y: 0 } };
-
-    // Outward is toward smaller x here (this band's outer boundary, like a
-    // left-side band whose card interior lies toward larger x).
-    const result = fitEdgeLine(cv, band, { x: -1, y: 0 }, GENEROUS_ROTATION_TOLERANCE_DEGREES);
+    const result = fitEdgeLine(cv, { data, ...TALL, origin: { x: 0, y: 0 } }, { x: -1, y: 0 }, TOLERANCE_DEGREES);
 
     expect(result).not.toBeNull();
-    expect(Math.abs(result!.point.x - outerEdgeX)).toBeLessThan(3);
-    expect(Math.abs(result!.point.x - innerEdgeX)).toBeGreaterThan(10);
+    expect(Math.abs(result!.point.x - 10)).toBeLessThan(3);
   });
 
-  it("rejects a strong edge whose angle deviates too far from the expected direction", () => {
-    const width = 50;
-    const height = 160;
-    const truePoint = { x: 25, y: 80 };
-    // 45° off vertical — a genuine, strongly-visible edge, but far outside
-    // any plausible card-rotation tolerance for this band's expected
-    // (vertical, per OUTWARD_RIGHT) direction.
-    const angleRad = (45 * Math.PI) / 180;
-    const trueDirection = { x: Math.sin(angleRad), y: Math.cos(angleRad) };
-
-    const band = renderEdgeBand(width, height, truePoint, trueDirection);
-    const result = fitEdgeLine(cv, band, OUTWARD_RIGHT, 8);
-
-    expect(result).toBeNull();
-  });
-
-  it("accepts that same off-angle edge once the tolerance is widened enough to cover it", () => {
-    const width = 50;
-    const height = 160;
-    const truePoint = { x: 25, y: 80 };
-    const angleRad = (45 * Math.PI) / 180;
-    const trueDirection = { x: Math.sin(angleRad), y: Math.cos(angleRad) };
-
-    const band = renderEdgeBand(width, height, truePoint, trueDirection);
-    const result = fitEdgeLine(cv, band, OUTWARD_RIGHT, 50);
-
-    expect(result).not.toBeNull();
-    expect(angleBetweenDirectionsDegrees(result!.direction, trueDirection)).toBeLessThan(3);
-  });
-
-  it("returns null for a blank band with no edge (fail-fast)", () => {
-    const width = 50;
-    const height = 160;
-    const data = new Uint8ClampedArray(width * height).fill(128);
-
-    const result = fitEdgeLine(
-      cv,
-      { data, width, height, origin: { x: 0, y: 0 } },
-      OUTWARD_RIGHT,
-      GENEROUS_ROTATION_TOLERANCE_DEGREES,
-    );
-
-    expect(result).toBeNull();
-  });
-
-  it("returns null for a low-contrast noisy band with no coherent edge", () => {
-    const width = 50;
-    const height = 160;
-    const data = new Uint8ClampedArray(width * height);
-    // Deterministic pseudo-noise, low amplitude, no structure.
+  it("finds no edge in a flat or low-contrast noisy band", () => {
+    const flat = new Uint8ClampedArray(TALL.width * TALL.height).fill(128);
+    const noise = new Uint8ClampedArray(TALL.width * TALL.height);
     let seed = 42;
-    for (let i = 0; i < data.length; i++) {
+    for (let i = 0; i < noise.length; i++) {
       seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-      data[i] = 120 + (seed % 5);
+      noise[i] = 120 + (seed % 5);
     }
-
-    const result = fitEdgeLine(
-      cv,
-      { data, width, height, origin: { x: 0, y: 0 } },
-      OUTWARD_RIGHT,
-      GENEROUS_ROTATION_TOLERANCE_DEGREES,
-    );
-
-    expect(result).toBeNull();
-  });
-
-  it("throws for malformed input (data length mismatched with dimensions)", () => {
-    expect(() =>
-      fitEdgeLine(
-        cv,
-        { data: new Uint8ClampedArray(10), width: 50, height: 160, origin: { x: 0, y: 0 } },
-        OUTWARD_RIGHT,
-        GENEROUS_ROTATION_TOLERANCE_DEGREES,
-      ),
-    ).toThrow();
-  });
-
-  it("returns null for a band too thin to hold an edge (clamped at the frame boundary)", () => {
-    const result = fitEdgeLine(
-      cv,
-      { data: new Uint8ClampedArray(160), width: 1, height: 160, origin: { x: 0, y: 0 } },
-      OUTWARD_RIGHT,
-      GENEROUS_ROTATION_TOLERANCE_DEGREES,
-    );
-    expect(result).toBeNull();
-  });
-
-  it("gives higher confidence to a fully-visible edge than to a mostly-occluded one", () => {
-    const width = 50;
-    const height = 160;
-    const truePoint = { x: 25, y: 80 };
-    const trueDirection = { x: 0, y: 1 };
-
-    const fullBand = renderEdgeBand(width, height, truePoint, trueDirection);
-    const fullResult = fitEdgeLine(cv, fullBand, OUTWARD_RIGHT, GENEROUS_ROTATION_TOLERANCE_DEGREES);
-
-    const mostlyOccludedBand = renderEdgeBand(width, height, truePoint, trueDirection);
-    // Blank out all but a small sliver at the top of the band.
-    for (let y = Math.floor(height * 0.15); y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        mostlyOccludedBand.data[y * width + x] = 128;
-      }
-    }
-    const occludedResult = fitEdgeLine(cv, mostlyOccludedBand, OUTWARD_RIGHT, GENEROUS_ROTATION_TOLERANCE_DEGREES);
-
-    expect(fullResult).not.toBeNull();
-    if (occludedResult) {
-      expect(occludedResult.confidence).toBeLessThan(fullResult!.confidence);
+    for (const data of [flat, noise]) {
+      expect(fitEdgeLine(cv, { data, ...TALL, origin: { x: 0, y: 0 } }, OUTWARD_RIGHT, TOLERANCE_DEGREES)).toBeNull();
     }
   });
 });

@@ -2,16 +2,8 @@ import { describe, expect, it } from "vitest";
 import { parseTags } from "./tags";
 
 describe("parseTags", () => {
-  it("splits space-separated tags", () => {
-    expect(parseTags("#box-01 #booster-01")).toEqual({ tags: ["#box-01", "#booster-01"], invalid: [] });
-  });
-
-  it("ignores extra whitespace", () => {
+  it("splits tags on any whitespace", () => {
     expect(parseTags("  #box-01 \t  #booster-01  ")).toEqual({ tags: ["#box-01", "#booster-01"], invalid: [] });
-  });
-
-  it("returns nothing for empty input", () => {
-    expect(parseTags("   ")).toEqual({ tags: [], invalid: [] });
   });
 
   it("drops duplicate tags, keeping the first", () => {

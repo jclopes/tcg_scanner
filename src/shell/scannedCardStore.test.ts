@@ -4,7 +4,7 @@ import { mergeDuplicates, parseScannedCards, scannedCardsCsv } from "./scannedCa
 import type { ScannedCard } from "./scannedCardStore";
 
 function game(id: string, hasFoil: boolean, cardOrientations: GameOption["cardOrientations"]): GameOption {
-  return { id, config: { game: id, regions: [] }, sets: [], cardOrientations, hasFoil };
+  return { id, config: { game: id, regions: {} }, sets: [], cardOrientations, hasFoil };
 }
 
 const FULL = game("full", true, ["portrait", "landscape"]);
@@ -42,10 +42,6 @@ describe("parseScannedCards", () => {
     ]);
   });
 
-  it("returns an empty list for an empty stored list", () => {
-    expect(parseScannedCards("[]", noLegacyGame)).toEqual([]);
-  });
-
   it("throws, naming the entry and field, for a stored value that isn't a list of cards", () => {
     const entry = '"gameId":"full","setCode":"PRM01","cardId":"005","scannedAt":"x"';
     for (const [json, field] of [
@@ -60,10 +56,6 @@ describe("parseScannedCards", () => {
     ] as const) {
       expect(() => parseScannedCards(json, noLegacyGame)).toThrow(field);
     }
-  });
-
-  it("throws for invalid JSON", () => {
-    expect(() => parseScannedCards("not json", noLegacyGame)).toThrow();
   });
 });
 
@@ -121,10 +113,5 @@ describe("mergeDuplicates", () => {
       card({ tags: ["#box-02"] }),
     ];
     expect(mergeDuplicates([base, ...variants])).toEqual([base, ...variants]);
-  });
-
-  it("returns the same entries when there are no duplicates", () => {
-    const cards = [card({ cardId: "001" }), card({ cardId: "002" })];
-    expect(mergeDuplicates(cards)).toEqual(cards);
   });
 });

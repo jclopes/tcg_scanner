@@ -132,7 +132,7 @@ export function analyzeTextColumns(
 
 /** `band` grown by TEXT_BAND_MARGIN_FRACTION of its height on each side,
  * clamped to `[0, areaHeight]`. */
-export function withMargin(band: RowBand, areaHeight: number): RowBand {
+function withMargin(band: RowBand, areaHeight: number): RowBand {
   const margin = Math.round(TEXT_BAND_MARGIN_FRACTION * (band.bottom - band.top));
   return {
     top: Math.max(0, band.top - margin),

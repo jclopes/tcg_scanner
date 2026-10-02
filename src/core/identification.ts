@@ -4,7 +4,7 @@
 // spec these implement.
 
 import { CANONICAL_CARD_MIN_PX_PER_MM, STANDARD_CARD_HEIGHT_MM, STANDARD_CARD_WIDTH_MM } from "./constants";
-import type { Size } from "./types";
+import type { CardOrientation, Size } from "./types";
 
 /** `"text"` regions are OCR'd and matched against a game's ID dataset;
  * `"image"` regions are extracted but not OCR'd this phase (see the plan's
@@ -50,7 +50,19 @@ export type RegionConfig = TextRegionConfig | ImageRegionConfig;
 
 export interface GameConfig {
   game: string;
-  regions: RegionConfig[];
+  /** The card layout per orientation the game's cards are printed in — a
+   * landscape card has its regions in different places than a portrait one. */
+  regions: Partial<Record<CardOrientation, RegionConfig[]>>;
+}
+
+/** `config`'s regions for cards printed in `orientation`. Throws if the game
+ * has no such orientation. */
+export function regionsFor(config: GameConfig, orientation: CardOrientation): RegionConfig[] {
+  const regions = config.regions[orientation];
+  if (!regions) {
+    throw new Error(`Game "${config.game}" has no regions for ${orientation} cards.`);
+  }
+  return regions;
 }
 
 /**
