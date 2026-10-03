@@ -119,8 +119,9 @@ stalling the live preview.
   small, independent pixel bands (one per guide edge) rather than the
   whole frame.
 - **Per-edge line fitting, not corner detection.** Within each band, find
-  the dominant straight line (OpenCV.js: gradient/Canny response +
-  `HoughLinesP` or an equivalent robust line fit over edge points). This
+  the dominant straight line (gradient peaks per scanline voted into
+  lines within the rotation tolerance, then a robust least-squares fit —
+  see `fitEdgeLine` in [03-functional-core.md](./03-functional-core.md)). This
   is deliberately edge-based rather than corner- or full-contour-based,
   for two reasons:
   - Real card corners are rounded, so fitting a 4-point polygon to the
@@ -132,20 +133,11 @@ stalling the live preview.
 - **Corner reconstruction.** The 4 corners are the pairwise intersections
   of the 4 fitted lines (adjacent pairs) — never sampled directly from
   the image.
-- **Parallel per-edge detection.** The 4 edge bands are independent of
-  each other, so they're detected **in parallel across 4 Web Workers**
-  (one per edge, or a small worker pool reused across frames) rather than
-  sequentially on the main thread. Each worker receives just its band's
-  pixel data and runs `fitEdgeLine` in isolation; the main thread collects
-  all 4 results before running `intersectLines`/`validateQuad`. This is a
-  Phase 1 requirement, not a later optimization — fast, reliable edge
-  detection is the priority this phase is judged on.
-- **Fail-fast within each worker.** Run cheap early-exit checks (e.g. "is
-  there any meaningful gradient in this band at all") before the more
-  expensive line fit — most frames will be discarded, and the loop needs
-  to keep up with the camera's frame rate.
-- **Quad validation** (main thread, after collecting all 4 workers'
-  results). Reject the frame immediately if any edge line couldn't be fit
+- **Per-edge detection on the main thread.** The 4 edge bands were first
+  fitted in parallel in 4 Web Workers, when fitting used OpenCV.js. The
+  pure-TypeScript fit takes ~0.5 ms per band at 1080p, so all 4 now run in
+  turn on the main thread, with no worker start-up or messaging.
+- **Quad validation** (after fitting all 4 edges). Reject the frame immediately if any edge line couldn't be fit
   confidently, or if the resulting quad's side-length ratio falls outside
   the tolerance band around the target aspect ratio.
 - **Live per-edge feedback (implemented).** Each evaluated frame's
@@ -260,12 +252,6 @@ function computeOutputRotationDegrees(
 - The frame-sampling loop (`requestVideoFrameCallback` or
   `requestAnimationFrame`), calling into the functional core per frame
   and stopping on the first accepted quad.
-- The worker pool: spawning/reusing the 4 edge-detection Web Workers,
-  dispatching each frame's 4 band crops to them, and collecting their
-  `FittedLine | null` results before running the (main-thread) quad
-  validation. `fitEdgeLine` itself stays a pure function in the
-  functional core, imported by each worker — the shell only owns the
-  message-passing.
 - Multi-frame burst capture and selection after acceptance, and the
   final canvas draw/export.
 
@@ -334,11 +320,8 @@ implementation:
    aspect-ratio tolerance band) are left as tunable parameters in
    `ToleranceConfig`, not fixed numbers — they need empirical tuning
    once a first build exists, not upfront guessing.
-4. **Worker pool sizing/lifecycle.** 4 workers matches 4 edges, but
-   whether to spawn exactly 4 fixed workers reused across frames, or a
-   pool sized to `navigator.hardwareConcurrency`, is an implementation
-   detail to settle once real device profiling is possible (thread
-   spin-up cost vs. availability on low-core devices).
+4. **Worker pool sizing/lifecycle.** Resolved: no workers (see
+   "Per-edge detection on the main thread").
 
 ## Acceptance criteria
 

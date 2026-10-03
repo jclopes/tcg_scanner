@@ -8,7 +8,7 @@ import type { CardOrientation, Matrix3x3, Orientation, Point, Size } from "./typ
  * pixels, so the region can be warped straight from the camera frame with one
  * interpolation. Applied right to left:
  * 1. `frameToCardMm`: camera frame → the card as it lies in the frame, in mm
- *    (`computePerspectiveTransform(cv, corners, cardSizeMm(camera))`).
+ *    (`computePerspectiveTransform(corners, cardSizeMm(camera))`).
  * 2. Rotate upright (`computeOutputRotationDegrees`).
  * 3. Rotate the whole card by `region.rotationDeg` into its bounding box — the
  *    frame the region's mm box is measured in (see RegionConfig).
@@ -51,13 +51,28 @@ export function cardSizeMm(orientation: Orientation | CardOrientation): Size {
 }
 
 /** `a · b` — the transform that applies `b` first, then `a`. */
-export function multiplyMatrix3x3(a: Matrix3x3, b: Matrix3x3): Matrix3x3 {
+function multiplyMatrix3x3(a: Matrix3x3, b: Matrix3x3): Matrix3x3 {
   const cell = (row: number, col: number): number =>
     a[row]![0]! * b[0]![col]! + a[row]![1]! * b[1]![col]! + a[row]![2]! * b[2]![col]!;
   return [
     [cell(0, 0), cell(0, 1), cell(0, 2)],
     [cell(1, 0), cell(1, 1), cell(1, 2)],
     [cell(2, 0), cell(2, 1), cell(2, 2)],
+  ];
+}
+
+/** The inverse of `m`: the transform that undoes it. Throws if `m` is
+ * singular. */
+export function invertMatrix3x3(m: Matrix3x3): Matrix3x3 {
+  const [[a, b, c], [d, e, f], [g, h, i]] = m;
+  const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+  if (Math.abs(det) < 1e-12) {
+    throw new Error("The transform is singular and can't be inverted.");
+  }
+  return [
+    [(e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det],
+    [(f * g - d * i) / det, (a * i - c * g) / det, (c * d - a * f) / det],
+    [(d * h - e * g) / det, (b * g - a * h) / det, (a * e - b * d) / det],
   ];
 }
 

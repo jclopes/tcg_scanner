@@ -240,8 +240,6 @@ the app can display:
     number, and an automatic density chosen from the text height didn't
     beat bilateral;
   - Otsu/adaptive binarization and unsharp-mask sharpening read worst.
-
-  Non-local-means denoising isn't in the bundled OpenCV.js build.
 - **Text-band fitting.** A text region's configured box is padded by
   `TEXT_SEARCH_PADDING_Y_MM` above and below and `TEXT_SEARCH_PADDING_X_MM`
   left and right (`padRegion`, `src/core/identification.ts`) and warped as a
@@ -283,9 +281,8 @@ the app can display:
   profiles and their thresholds. All `TEXT_*`/`HORIZONTAL_LINE_*` constants
   are starting guesses.
 
-  Next option if this proves insufficient: OpenCV morphology
-  (morphological gradient + horizontal closing + contours) for classic
-  text localization.
+  Next option if this proves insufficient: morphological text localization
+  (morphological gradient + horizontal closing + connected components).
 
 ## ID validation
 
@@ -342,9 +339,7 @@ function matchIdentifier(
 - Warping each region straight out of the selected camera frame with
   `regionWarpMatrix`'s matrix (`warpRegion`), upright and at OCR density.
 - The Tesseract.js worker wrapper: dispatching each region's cropped
-  image for OCR and collecting recognized text, analogous to how
-  `src/workers/pool.ts` dispatches edge-band crops to the Phase 1 edge
-  workers.
+  image for OCR and collecting recognized text.
 - Wiring the game selector into the existing UI state machine, and
   displaying the match result (or "no match" with a retry affordance).
 

@@ -1,4 +1,4 @@
-import type { Quad, RgbaPixelBuffer, Size } from "../core";
+import type { GrayscalePixels, RgbaPixelBuffer, Size } from "../core";
 
 /** The canvas's 2D context. Throws if the browser can't provide one. */
 export function require2dContext(
@@ -26,6 +26,31 @@ export function snapshotSource(source: CanvasImageSource, size: Size): HTMLCanva
   return canvas;
 }
 
+/** A new canvas showing `pixels`. */
+export function pixelsToCanvas(pixels: RgbaPixelBuffer): HTMLCanvasElement {
+  const canvas = createCanvas(pixels);
+  require2dContext(canvas).putImageData(new ImageData(pixels.data, pixels.width, pixels.height), 0, 0);
+  return canvas;
+}
+
+/** A new canvas showing the grayscale `pixels`. */
+export function grayscaleToCanvas(pixels: GrayscalePixels): HTMLCanvasElement {
+  const rgba = new Uint8ClampedArray(pixels.width * pixels.height * 4);
+  for (let i = 0; i < pixels.data.length; i++) {
+    const value = pixels.data[i]!;
+    rgba[i * 4] = value;
+    rgba[i * 4 + 1] = value;
+    rgba[i * 4 + 2] = value;
+    rgba[i * 4 + 3] = 255;
+  }
+  return pixelsToCanvas({ data: rgba, width: pixels.width, height: pixels.height });
+}
+
+/** The canvas's pixels. */
+export function canvasPixels(canvas: HTMLCanvasElement): ImageData {
+  return require2dContext(canvas).getImageData(0, 0, canvas.width, canvas.height);
+}
+
 /** `source` rotated clockwise by `degrees` onto a new canvas (width/height
  * swapped for 90/270). Returns `source` itself for 0. */
 export function rotateCanvas(source: HTMLCanvasElement, degrees: 0 | 90 | 180 | 270): HTMLCanvasElement {
@@ -41,20 +66,6 @@ export function rotateCanvas(source: HTMLCanvasElement, degrees: 0 | 90 | 180 | 
   ctx.rotate((degrees * Math.PI) / 180);
   ctx.drawImage(source, -source.width / 2, -source.height / 2);
   return output;
-}
-
-/** The pixels inside `corners`' axis-aligned bounding box (clamped to the
- * canvas) — the card as it appears in the raw frame. */
-export function readQuadBoundingBoxPixels(canvas: HTMLCanvasElement, corners: Quad): RgbaPixelBuffer {
-  const xs = corners.map((corner) => corner.x);
-  const ys = corners.map((corner) => corner.y);
-  const left = Math.max(0, Math.floor(Math.min(...xs)));
-  const top = Math.max(0, Math.floor(Math.min(...ys)));
-  const right = Math.min(canvas.width, Math.ceil(Math.max(...xs)));
-  const bottom = Math.min(canvas.height, Math.ceil(Math.max(...ys)));
-
-  const imageData = require2dContext(canvas).getImageData(left, top, right - left, bottom - top);
-  return { data: imageData.data, width: imageData.width, height: imageData.height };
 }
 
 /**

@@ -7,9 +7,8 @@ import { filterAllowedChars } from "../core";
  * worker script, WASM core, and English trained-data from this app's own
  * origin (public/tesseract/ — see vite.config.ts's copyTesseractToPublic
  * plugin) instead of Tesseract.js's own default of fetching each from the
- * jsdelivr CDN at runtime. Consistent with this app's client-only, no-
- * external-network-call constraint (see docs/plan/00-overview.md) and the
- * same reasoning src/loadOpenCv.ts already applies to OpenCV.js.
+ * jsdelivr CDN at runtime, consistent with this app's client-only, no-
+ * external-network-call constraint (see docs/plan/00-overview.md).
  *
  * Tesseract.js manages its own dedicated Web Worker internally (spawned
  * from `workerPath`) — this call resolves once that worker has loaded the

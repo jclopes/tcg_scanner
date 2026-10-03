@@ -1,5 +1,10 @@
 # Project Structure & Tooling
 
+> **Historical record of the initial scaffold (September 2026).** Since
+> then, OpenCV.js and `src/workers/` were removed (October 2026): image
+> processing is plain TypeScript in `src/core`, and edge detection runs on
+> the main thread. See the [README](../../README.md) for the current layout.
+
 This document is the reference for how the project is wired up. It exists
 so later stages can build on top of the scaffolding without needing the
 conversation that created it. Nothing here implements any detection,
@@ -28,7 +33,8 @@ camera, or UI logic — see
   - `vite.config.ts` sets `test.passWithNoTests: true` because `src/core`
     is currently empty — remove that flag once real tests exist, so an
     accidentally-empty suite starts failing loudly again.
-- **Computer vision: `@techstark/opencv-js` (npm).** The plan calls for
+- **Computer vision: `@techstark/opencv-js` (npm) — removed in October
+  2026, see the note at the top.** The plan calls for
   OpenCV.js (WASM) but doesn't specify how to bring it into a TS/Vite
   project. Judgment call: used the `@techstark/opencv-js` npm package
   (Apache-2.0, actively maintained, mirrors the official

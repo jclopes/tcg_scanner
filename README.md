@@ -15,6 +15,8 @@ Requirements: Node.js 20+, and a browser with camera access (Chrome, Edge or Saf
 npm install
 npm run dev     # https://localhost:5173, also reachable on the LAN
 npm test        # unit tests (add -- --watch for watch mode)
+npm run clean   # delete generated files (dist/, public/tesseract/, Vite's cache)
+npm run clean:all  # also delete node_modules (run npm install afterwards)
 ```
 
 The dev server uses a self-signed certificate because browsers only allow camera access over HTTPS. To scan from a phone, open the LAN URL that Vite prints and accept the certificate warning.
@@ -26,14 +28,13 @@ npm run build   # type-check, then build the static site into dist/
 npm run preview # optional: serve dist/ locally to check the build
 ```
 
-`dist/` is a static site: upload it to any static host. It must be served over **HTTPS** (for camera access), and `.wasm` files must be served as `application/wasm` (most hosts do this by default). The build's large-chunk warning comes from OpenCV.js and is expected.
+`dist/` is a static site: upload it to any static host. It must be served over **HTTPS** (for camera access).
 
 ## Project layout
 
 ```
 src/core/         Pure logic (geometry, edge detection, OCR text analysis, matching). Unit-tested.
 src/shell/        Browser code: camera, UI, detection loop, OCR, scanned-card list.
-src/workers/      Web Workers that run edge detection in parallel.
 src/data/games/   Per-game data, validated at startup.
 index.html        Markup and CSS.
 docs/plan/        Design notes.

@@ -1,9 +1,9 @@
 import type { EdgeBandPixels, Point, Size } from "./types";
 
 /** RGBA pixels, row-major, 4 bytes/pixel — `ImageData`'s shape without the
- * DOM dependency. */
+ * DOM dependency (and so convertible to one without copying). */
 export interface RgbaPixelBuffer {
-  data: Uint8ClampedArray;
+  data: Uint8ClampedArray<ArrayBuffer>;
   width: number;
   height: number;
 }
@@ -51,4 +51,16 @@ export function extractGrayscaleRegion(
   }
 
   return { data, width, height, origin: { x: x0, y: y0 } };
+}
+
+/** The RGBA pixels of `region` (rounded and clamped to `source`, see
+ * clampRegion), copied out of `source`. */
+export function cropRgba(source: RgbaPixelBuffer, region: { origin: Point; size: Size }): RgbaPixelBuffer {
+  const { x0, y0, width, height } = clampRegion(region, source);
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    const start = ((y0 + y) * source.width + x0) * 4;
+    data.set(source.data.subarray(start, start + width * 4), y * width * 4);
+  }
+  return { data, width, height };
 }

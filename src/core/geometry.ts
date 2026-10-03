@@ -1,4 +1,4 @@
-import type { FittedLine, PerEdge, Point, Quad, ToleranceConfig } from "./types";
+import type { FittedLine, PerEdge, Point, Quad, Size, ToleranceConfig } from "./types";
 
 export function distance(a: Point, b: Point): number {
   return Math.hypot(b.x - a.x, b.y - a.y);
@@ -62,4 +62,12 @@ export function quadAspectRatio(corners: Quad): number {
 export function isQuadAspectRatioValid(corners: Quad, targetAspectRatio: number, tolerance: ToleranceConfig): boolean {
   const relativeDeviation = Math.abs(quadAspectRatio(corners) - targetAspectRatio) / targetAspectRatio;
   return relativeDeviation <= tolerance.aspectRatioTolerance;
+}
+
+/** The axis-aligned box around a quad's corners. */
+export function quadBoundingBox(corners: Quad): { origin: Point; size: Size } {
+  const xs = corners.map((corner) => corner.x);
+  const ys = corners.map((corner) => corner.y);
+  const origin = { x: Math.min(...xs), y: Math.min(...ys) };
+  return { origin, size: { width: Math.max(...xs) - origin.x, height: Math.max(...ys) - origin.y } };
 }

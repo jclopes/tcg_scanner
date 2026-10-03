@@ -1,7 +1,13 @@
-import { CAPTURE_BURST_HARD_LIMIT, CAPTURE_BURST_MIN_USABLE_FRAMES, selectBestFrame, STANDARD_CARD_ASPECT_RATIO } from "../core";
+import {
+  CAPTURE_BURST_HARD_LIMIT,
+  CAPTURE_BURST_MIN_USABLE_FRAMES,
+  cropRgba,
+  quadBoundingBox,
+  selectBestFrame,
+  STANDARD_CARD_ASPECT_RATIO,
+} from "../core";
 import type { FrameCandidate } from "../core";
-import type { EdgeDetectionPool } from "../workers";
-import { readQuadBoundingBoxPixels, scheduleVideoFrame, snapshotSource } from "./canvasUtils";
+import { scheduleVideoFrame, snapshotSource } from "./canvasUtils";
 import { evaluateFrameForQuad } from "./frameDetection";
 import type { AcceptedFrame, QuadRejectionReason } from "./frameDetection";
 import { FrameSampler } from "./frameSampler";
@@ -30,7 +36,6 @@ export interface FrameBurstResult {
  */
 export async function collectBurstFrames(
   video: HTMLVideoElement,
-  pool: EdgeDetectionPool,
   debugEnabled: boolean,
   isCancelled: () => boolean,
 ): Promise<FrameBurstResult> {
@@ -45,7 +50,7 @@ export async function collectBurstFrames(
   ) {
     await nextVideoFrame(video);
     const frameSize = videoFrameSize(video);
-    const evaluation = await evaluateFrameForQuad(sampler, pool, video, frameSize);
+    const evaluation = evaluateFrameForQuad(sampler, video, frameSize);
 
     if (evaluation.status === "accepted") {
       accepted.push(evaluation.frame);
@@ -69,7 +74,7 @@ export function selectFrameToFlatten(accepted: readonly AcceptedFrame[], fallbac
 }
 
 function toFrameCandidate(frame: AcceptedFrame): AcceptedFrame & FrameCandidate {
-  return { ...frame, cardPixels: readQuadBoundingBoxPixels(frame.frameCanvas, frame.corners) };
+  return { ...frame, cardPixels: cropRgba(frame.pixels, quadBoundingBox(frame.corners)) };
 }
 
 function nextVideoFrame(video: HTMLVideoElement): Promise<void> {

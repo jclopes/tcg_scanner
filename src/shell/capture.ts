@@ -1,26 +1,20 @@
-import {
-  canonicalCardSizeFor,
-  computeOutputRotationDegrees,
-  computePerspectiveTransform,
-  distance,
-} from "../core";
-import type { CardOrientation, OpenCv, Quad, Size } from "../core";
+import { canonicalCardSizeFor, computeOutputRotationDegrees, computePerspectiveTransform, distance } from "../core";
+import type { CardOrientation, Quad, Size } from "../core";
 import { rotateCanvas } from "./canvasUtils";
-import { warpWithMatrix } from "./warp";
 import type { AcceptedFrame } from "./frameDetection";
 import { orientationFromSize } from "./orientationWatcher";
+import { warpToCanvas } from "./warp";
 
 /**
  * Produces the card image for display and debug: perspective-warps `frame`'s
  * quad into an exactly card-proportioned canvas at the card's native size in
- * the frame, then rotates it upright. OCR doesn't use it — regions are warped
- * straight from the frame (see warpRegion).
+ * the frame (bilinear: it's never read by OCR), then rotates it upright. OCR
+ * regions are warped straight from the frame instead (see warpRegion).
  */
-export function captureFlattenedCard(cv: OpenCv, frame: AcceptedFrame, cardOrientation: CardOrientation): HTMLCanvasElement {
+export function captureFlattenedCard(frame: AcceptedFrame, cardOrientation: CardOrientation): HTMLCanvasElement {
   const outputSize = flattenedOutputSize(frame.corners);
-  const flat = warpQuad(cv, frame.frameCanvas, frame.corners, outputSize);
-  const camera = orientationFromSize({ width: frame.frameCanvas.width, height: frame.frameCanvas.height });
-  return rotateCanvas(flat, computeOutputRotationDegrees(camera, cardOrientation));
+  const flat = warpToCanvas(frame.pixels, computePerspectiveTransform(frame.corners, outputSize), outputSize, "bilinear");
+  return rotateCanvas(flat, computeOutputRotationDegrees(orientationFromSize(frame.pixels), cardOrientation));
 }
 
 /**
@@ -40,10 +34,4 @@ function flattenedOutputSize(corners: Quad): Size {
     height: Math.max(nativeWidth, nativeHeight),
   });
   return widthIsShortSide ? canonical : { width: canonical.height, height: canonical.width };
-}
-
-/** `cv.warpPerspective` of `corners` in `source` onto a new `outputSize`
- * canvas. */
-function warpQuad(cv: OpenCv, source: HTMLCanvasElement, corners: Quad, outputSize: Size): HTMLCanvasElement {
-  return warpWithMatrix(cv, source, computePerspectiveTransform(cv, corners, outputSize), outputSize);
 }

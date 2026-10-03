@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ImageRegionConfig } from "./identification";
-import { applyMatrix3x3, regionWarpMatrix } from "./regionWarp";
+import { applyMatrix3x3, invertMatrix3x3, regionWarpMatrix } from "./regionWarp";
 import type { Matrix3x3, Point } from "./types";
 
 const IDENTITY: Matrix3x3 = [
@@ -55,5 +55,17 @@ describe("regionWarpMatrix", () => {
     const boundingSize = (63 + 88) * Math.SQRT1_2;
 
     expectMapsTo(m, { x: 31.5, y: 44 }, { x: boundingSize / 2, y: boundingSize / 2 });
+  });
+});
+
+describe("invertMatrix3x3", () => {
+  it("undoes a perspective transform", () => {
+    const m: Matrix3x3 = [
+      [1.2, 0.1, 30],
+      [-0.05, 0.9, 12],
+      [0.0004, -0.0002, 1],
+    ];
+    const point = { x: 140, y: 75 };
+    expectMapsTo(invertMatrix3x3(m), applyMatrix3x3(m, point), point);
   });
 });

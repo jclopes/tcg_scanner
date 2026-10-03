@@ -32,28 +32,22 @@ export const EDGE_BAND_HALF_THICKNESS_PX = 30;
  * corners. Starting guess. */
 export const EDGE_BAND_LENGTH_OVERHANG_PX = 15;
 
-/** `fitEdgeLine` fail-fast threshold (0-255) on its per-scanline max gradient
- * score: separates sensor noise from a real card edge. */
-export const EDGE_FAIL_FAST_MEAN_GRADIENT_THRESHOLD = 20;
+/** `fitEdgeLine`: the smallest Sobel gradient across a scanline that counts
+ * as an edge point — the high threshold the Canny detector used before. A
+ * clean step of d gray levels scores 4·d, so this is a step of ~38; sensor
+ * noise and faint background texture score lower. */
+export const EDGE_POINT_MIN_GRADIENT = 150;
 
-/** Canny thresholds used by `fitEdgeLine`. */
-export const EDGE_CANNY_LOW_THRESHOLD = 50;
-export const EDGE_CANNY_HIGH_THRESHOLD = 150;
+/** `fitEdgeLine`: a candidate line must have edge points on at least this
+ * fraction of the scanlines where it lies inside the band. Starting guess. */
+export const EDGE_LINE_MIN_SUPPORT_FRACTION = 0.3;
 
-/** HoughLinesP parameters used by `fitEdgeLine`. Line length/gap are fractions
- * of the band's long axis. */
-export const EDGE_HOUGH_RHO = 1;
-export const EDGE_HOUGH_THETA = Math.PI / 180;
-export const EDGE_HOUGH_VOTE_THRESHOLD = 20;
-export const EDGE_HOUGH_MIN_LINE_LENGTH_FRACTION = 0.3;
-export const EDGE_HOUGH_MAX_LINE_GAP_FRACTION = 0.05;
+/** `fitEdgeLine`: edge points within this distance of the chosen line are
+ * fitted. Starting guess. */
+export const EDGE_INLIER_DISTANCE_PX = 1.5;
 
 /** `fitEdgeLine` confidence below which a fit counts as "not found". */
 export const EDGE_MIN_CONFIDENCE = 0.25;
-
-/** Max per-step gap, as a fraction of band thickness, between consecutive
- * segments (sorted outward → inward) for them to count as one edge. */
-export const EDGE_OUTWARD_GAP_TOLERANCE_FRACTION = 0.1;
 
 /** Accepted burst frames to collect before selecting the best one. Starting guess. */
 export const CAPTURE_BURST_MIN_USABLE_FRAMES = 2;
@@ -66,6 +60,15 @@ export const MAX_CONFIDENT_MATCH_DISTANCE = 2;
 /** Max frames attempted across all bursts; after that the best of whatever
  * was accepted is used. Starting guess. */
 export const CAPTURE_BURST_HARD_LIMIT = 10;
+
+/** Bilateral denoise applied to text crops before OCR: a 5×5 neighborhood
+ * (radius 2) with color and space sigma 50. Edge-preserving smoothing that, in
+ * testing against real captures, read as well as a 1.5× denser warp at a
+ * fraction of the cost (binarization, sharpening, median and higher densities
+ * were compared and dropped). */
+export const OCR_DENOISE_RADIUS_PX = 2;
+export const OCR_DENOISE_SIGMA_COLOR = 50;
+export const OCR_DENOISE_SIGMA_SPACE = 50;
 
 /** Pixel density text/image regions are warped to — the character size
  * Tesseract's `eng` model reads best (found by sweeping real captures; both

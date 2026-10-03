@@ -1,200 +1,248 @@
-import {
-  EDGE_CANNY_HIGH_THRESHOLD,
-  EDGE_CANNY_LOW_THRESHOLD,
-  EDGE_FAIL_FAST_MEAN_GRADIENT_THRESHOLD,
-  EDGE_HOUGH_MAX_LINE_GAP_FRACTION,
-  EDGE_HOUGH_MIN_LINE_LENGTH_FRACTION,
-  EDGE_HOUGH_RHO,
-  EDGE_HOUGH_THETA,
-  EDGE_HOUGH_VOTE_THRESHOLD,
-  EDGE_MIN_CONFIDENCE,
-  EDGE_OUTWARD_GAP_TOLERANCE_FRACTION,
-} from "./constants";
-import type { EdgeBandPixels, FittedLine, OpenCv, Point } from "./types";
+import { EDGE_INLIER_DISTANCE_PX, EDGE_LINE_MIN_SUPPORT_FRACTION, EDGE_MIN_CONFIDENCE, EDGE_POINT_MIN_GRADIENT } from "./constants";
+import type { EdgeBandPixels, FittedLine, Point } from "./types";
 
-interface Segment {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
+/**
+ * A band seen as scanlines across its edge: `along` indexes the scanline
+ * (along the edge), `across` the position within it. For a left/right band
+ * the scanlines are rows; for a top/bottom band, columns.
+ */
+interface ScanGeometry {
+  /** Number of scanlines. */
   length: number;
+  /** Pixels per scanline. */
+  thickness: number;
+  /** Index step in the band's data between scanlines, and within one. */
+  alongStride: number;
+  acrossStride: number;
+}
+
+/** A strong transition on a scanline: `across` is its sub-pixel position,
+ * `weight` its gradient strength. */
+interface EdgePoint {
+  along: number;
+  across: number;
+  weight: number;
+}
+
+/** A line in scan coordinates: across = offset + slope · (along − center). */
+interface ScanLine {
+  offset: number;
+  slope: number;
 }
 
 /**
- * Fits the dominant straight edge in a band (band-local coordinates), or
+ * Fits the card edge running through a band (band-local coordinates), or
  * `null` if there is none:
- * 1. Fail fast when no scanline crosses a strong transition (`edgeScore`).
- * 2. Canny + HoughLinesP → line segments.
- * 3. Keep segments within `rotationToleranceDegrees` of the band's expected
- *    edge direction (perpendicular to `outwardDirection`).
- * 4. Keep only the outward-most cluster, so an inner parallel feature (e.g.
- *    the card's printed border) doesn't pull the fit inward.
- * 5. Length-weighted total-least-squares line through the kept segments;
- *    below EDGE_MIN_CONFIDENCE counts as not found.
+ * 1. On each scanline across the band, find the strong gradient peaks (edge
+ *    points, see edgePoints).
+ * 2. Vote the points into lines within `rotationToleranceDegrees` of the
+ *    band's direction (perpendicular to the axis-aligned `outwardDirection`)
+ *    and keep the outward-most well-supported line, so an inner parallel
+ *    feature (e.g. the card's printed border) can't pull the fit inward.
+ * 3. Weighted least-squares fit through that line's inlier points.
+ *    Confidence is its linearity × the fraction of scanlines it covers; below
+ *    EDGE_MIN_CONFIDENCE counts as not found.
  *
- * A band under 2px in either dimension (clamped at the frame edge) has no
+ * A band under 3px in either dimension (clamped at the frame edge) has no
  * edge. `samples.data` must hold exactly width * height bytes.
  */
-export function fitEdgeLine(
-  cv: OpenCv,
-  samples: EdgeBandPixels,
-  outwardDirection: Point,
-  rotationToleranceDegrees: number,
-): FittedLine | null {
+export function fitEdgeLine(samples: EdgeBandPixels, outwardDirection: Point, rotationToleranceDegrees: number): FittedLine | null {
   const { data, width, height } = samples;
   if (data.length !== width * height) {
     throw new Error(`fitEdgeLine: expected ${width * height} bytes of band data, got ${data.length}.`);
   }
-  if (width < 2 || height < 2) {
-    return null;
-  }
-  if (edgeScore(data, width, height) < EDGE_FAIL_FAST_MEAN_GRADIENT_THRESHOLD) {
+  if (width < 3 || height < 3) {
     return null;
   }
 
-  const plausible = filterByAngle(houghSegments(cv, samples), outwardDirection, rotationToleranceDegrees);
-  if (plausible.length === 0) {
+  const edgeRunsVertically = outwardDirection.x !== 0;
+  const scan: ScanGeometry = edgeRunsVertically
+    ? { length: height, thickness: width, alongStride: width, acrossStride: 1 }
+    : { length: width, thickness: height, alongStride: 1, acrossStride: width };
+  const outwardSign = edgeRunsVertically ? outwardDirection.x : outwardDirection.y;
+
+  const points = edgePoints(data, scan);
+  const line = outwardMostLine(points, scan, outwardSign, rotationToleranceDegrees);
+  if (!line) {
     return null;
   }
-
-  const cluster = outwardMostCluster(plausible, outwardDirection, Math.min(width, height));
-  const line = fitWeightedLine(cluster, Math.max(width, height));
-  return line && line.confidence >= EDGE_MIN_CONFIDENCE ? line : null;
-}
-
-/** Absolute angle between two directions in degrees, treating a direction and
- * its negation as the same (lines have no forward). */
-export function angleBetweenDirectionsDegrees(a: Point, b: Point): number {
-  const dot = (a.x * b.x + a.y * b.y) / (Math.hypot(a.x, a.y) * Math.hypot(b.x, b.y));
-  const clamped = Math.max(-1, Math.min(1, Math.abs(dot)));
-  return (Math.acos(clamped) * 180) / Math.PI;
+  const inliers = inliersOf(points, line, scan.length);
+  const fitted = fitWeightedLine(
+    inliers.map((p) => (edgeRunsVertically ? { x: p.across, y: p.along, weight: p.weight } : { x: p.along, y: p.across, weight: p.weight })),
+    inliers.length / scan.length,
+  );
+  return fitted && fitted.confidence >= EDGE_MIN_CONFIDENCE ? fitted : null;
 }
 
 /**
- * Average over scanlines of each scanline's strongest pixel-to-pixel
- * transition, taking the better of rows and columns. A real edge crosses most
- * scanlines, so this stays high even though most individual pixel pairs are
- * flat (a whole-band mean gradient would be diluted to noise level).
+ * Every scanline's local maxima of the Sobel gradient across the band (a
+ * central difference smoothed 1-2-1 over the neighboring scanlines) of at
+ * least EDGE_POINT_MIN_GRADIENT, placed with sub-pixel precision (parabola
+ * through the peak and its neighbors). The threshold keeps sensor noise and
+ * faint background texture out, as Canny's high threshold did.
  */
-function edgeScore(data: Uint8ClampedArray, width: number, height: number): number {
-  let rowMaxSum = 0;
-  for (let y = 0; y < height; y++) {
-    let rowMax = 0;
-    for (let x = 0; x < width - 1; x++) {
-      rowMax = Math.max(rowMax, Math.abs(data[y * width + x + 1]! - data[y * width + x]!));
+function edgePoints(data: Uint8ClampedArray, scan: ScanGeometry): EdgePoint[] {
+  const { length, thickness, alongStride, acrossStride } = scan;
+  const minGradient = EDGE_POINT_MIN_GRADIENT;
+  // The scanline smoothed 1-2-1 with its neighbors, then its central difference.
+  const smoothed = new Int32Array(thickness);
+  const gradient = new Int32Array(thickness);
+  const points: EdgePoint[] = [];
+  for (let along = 0; along < length; along++) {
+    const prev = Math.max(along - 1, 0) * alongStride;
+    const here = along * alongStride;
+    const next = Math.min(along + 1, length - 1) * alongStride;
+    for (let p = 0, o = 0; p < thickness; p++, o += acrossStride) {
+      smoothed[p] = data[prev + o]! + 2 * data[here + o]! + data[next + o]!;
     }
-    rowMaxSum += rowMax;
-  }
-
-  let colMaxSum = 0;
-  for (let x = 0; x < width; x++) {
-    let colMax = 0;
-    for (let y = 0; y < height - 1; y++) {
-      colMax = Math.max(colMax, Math.abs(data[(y + 1) * width + x]! - data[y * width + x]!));
+    for (let p = 1; p < thickness - 1; p++) {
+      gradient[p] = Math.abs(smoothed[p + 1]! - smoothed[p - 1]!);
     }
-    colMaxSum += colMax;
+    for (let p = 1; p < thickness - 1; p++) {
+      const g = gradient[p]!;
+      const before = gradient[p - 1]!;
+      const after = gradient[p + 1]!;
+      if (g < minGradient || g < before || g <= after) {
+        continue;
+      }
+      const curvature = before - 2 * g + after;
+      const shift = curvature === 0 ? 0 : Math.max(-0.5, Math.min(0.5, (0.5 * (before - after)) / curvature));
+      points.push({ along, across: p + shift, weight: g });
+    }
   }
-
-  return Math.max(rowMaxSum / height, colMaxSum / width);
+  return points;
 }
 
-/** Canny + HoughLinesP over the band, returning non-degenerate segments.
- * Frees every Mat it allocates. */
-function houghSegments(cv: OpenCv, samples: EdgeBandPixels): Segment[] {
-  const { data, width, height } = samples;
-  const longAxis = Math.max(width, height);
+/**
+ * The outward-most line through the points whose angle is within
+ * `rotationToleranceDegrees`, or null if none is well supported. Each point
+ * votes, for every candidate slope, for the 1-px offset bin it falls in; a
+ * line's support is its bin plus the two neighbors (points within ~1.5 px).
+ * A line qualifies when its support covers at least
+ * EDGE_LINE_MIN_SUPPORT_FRACTION of the scanlines where it lies inside the
+ * band, and enough of all scanlines to possibly reach EDGE_MIN_CONFIDENCE.
+ * Of the qualifying lines within 2 px of the outward-most, the best supported
+ * wins.
+ */
+function outwardMostLine(points: readonly EdgePoint[], scan: ScanGeometry, outwardSign: number, rotationToleranceDegrees: number): ScanLine | null {
+  const { length, thickness } = scan;
+  const center = (length - 1) / 2;
+  const maxSlope = Math.tan((rotationToleranceDegrees * Math.PI) / 180);
+  // Adjacent candidate slopes differ by at most 2 px at the band's ends, so a
+  // point on a true line lies within ~1 px of some candidate; the final fit
+  // (inliersOf, fitWeightedLine) recovers the exact line.
+  const slopeSteps = Math.ceil((maxSlope * center) / 2);
+  const slopes = Float64Array.from({ length: 2 * slopeSteps + 1 }, (_, k) =>
+    slopeSteps === 0 ? 0 : ((k - slopeSteps) / slopeSteps) * maxSlope,
+  );
+  const minOffset = -maxSlope * center;
+  const binCount = Math.ceil(thickness + 2 * maxSlope * center) + 1;
 
-  const src = cv.matFromArray(height, width, cv.CV_8UC1, data);
-  const edges = new cv.Mat();
-  const lines = new cv.Mat();
-  try {
-    cv.Canny(src, edges, EDGE_CANNY_LOW_THRESHOLD, EDGE_CANNY_HIGH_THRESHOLD);
-    cv.HoughLinesP(
-      edges,
-      lines,
-      EDGE_HOUGH_RHO,
-      EDGE_HOUGH_THETA,
-      EDGE_HOUGH_VOTE_THRESHOLD,
-      longAxis * EDGE_HOUGH_MIN_LINE_LENGTH_FRACTION,
-      longAxis * EDGE_HOUGH_MAX_LINE_GAP_FRACTION,
-    );
-
-    // 4 int32s (x1,y1,x2,y2) per segment. This OpenCV.js build returns a
-    // 1-row Mat, so the segment count is `total()`, not `rows`.
-    const segments: Segment[] = [];
-    for (let i = 0; i < lines.total(); i++) {
-      const x1 = lines.data32S[i * 4]!;
-      const y1 = lines.data32S[i * 4 + 1]!;
-      const x2 = lines.data32S[i * 4 + 2]!;
-      const y2 = lines.data32S[i * 4 + 3]!;
-      const length = Math.hypot(x2 - x1, y2 - y1);
-      if (length > 0) {
-        segments.push({ x1, y1, x2, y2, length });
+  const votes = new Int32Array(slopes.length * binCount);
+  for (const point of points) {
+    const fromCenter = point.along - center;
+    const shifted = point.across - minOffset;
+    for (let k = 0; k < slopes.length; k++) {
+      const bin = Math.floor(shifted - slopes[k]! * fromCenter);
+      if (bin >= 0 && bin < binCount) {
+        votes[k * binCount + bin]! += 1;
       }
     }
-    return segments;
-  } finally {
-    src.delete();
-    edges.delete();
-    lines.delete();
   }
-}
 
-/** Segments within `toleranceDegrees` of the edge direction (perpendicular to
- * the axis-aligned `outwardDirection`). */
-function filterByAngle(segments: readonly Segment[], outwardDirection: Point, toleranceDegrees: number): Segment[] {
-  const alongEdge: Point = { x: -outwardDirection.y, y: outwardDirection.x };
-  return segments.filter(
-    (segment) =>
-      angleBetweenDirectionsDegrees({ x: segment.x2 - segment.x1, y: segment.y2 - segment.y1 }, alongEdge) <=
-      toleranceDegrees,
-  );
-}
-
-/**
- * Walks segments from the outward-most inward (by midpoint projection onto
- * `outwardDirection`) and stops at the first step gap larger than
- * EDGE_OUTWARD_GAP_TOLERANCE_FRACTION of the band's thickness. Per-step, not
- * total, so one rotated edge spread across the band stays in one cluster.
- * `segments` must be non-empty.
- */
-function outwardMostCluster(segments: readonly Segment[], outwardDirection: Point, bandThickness: number): Segment[] {
-  const projection = (segment: Segment): number =>
-    ((segment.x1 + segment.x2) / 2) * outwardDirection.x + ((segment.y1 + segment.y2) / 2) * outwardDirection.y;
-
-  const sorted = [...segments].sort((a, b) => projection(b) - projection(a));
-  const gapTolerance = bandThickness * EDGE_OUTWARD_GAP_TOLERANCE_FRACTION;
-
-  const cluster = [sorted[0]!];
-  for (const segment of sorted.slice(1)) {
-    if (projection(cluster[cluster.length - 1]!) - projection(segment) > gapTolerance) {
-      break;
+  const minSupport = EDGE_MIN_CONFIDENCE * length;
+  const offsetOf = (bin: number): number => minOffset + bin + 0.5;
+  /** The support of the line at (slope k, bin), or 0 if it doesn't qualify. */
+  const qualifyingSupport = (k: number, bin: number): number => {
+    const at = k * binCount + bin;
+    const support = votes[at]! + (bin > 0 ? votes[at - 1]! : 0) + (bin < binCount - 1 ? votes[at + 1]! : 0);
+    if (support < minSupport) {
+      return 0;
     }
-    cluster.push(segment);
+    const inside = scanlinesInsideBand({ offset: offsetOf(bin), slope: slopes[k]! }, scan);
+    return support >= EDGE_LINE_MIN_SUPPORT_FRACTION * inside ? support : 0;
+  };
+
+  let outwardBin = -1;
+  for (let k = 0; k < slopes.length; k++) {
+    for (let bin = 0; bin < binCount; bin++) {
+      if ((outwardBin < 0 || (bin - outwardBin) * outwardSign > 0) && qualifyingSupport(k, bin) > 0) {
+        outwardBin = bin;
+      }
+    }
   }
-  return cluster;
+  if (outwardBin < 0) {
+    return null;
+  }
+
+  let best: ScanLine | null = null;
+  let bestSupport = 0;
+  for (let k = 0; k < slopes.length; k++) {
+    for (let bin = Math.max(0, outwardBin - 2); bin <= Math.min(binCount - 1, outwardBin + 2); bin++) {
+      const support = qualifyingSupport(k, bin);
+      if (support > bestSupport) {
+        best = { offset: offsetOf(bin), slope: slopes[k]! };
+        bestSupport = support;
+      }
+    }
+  }
+  return best;
+}
+
+/** How many scanlines `line` crosses within the band's thickness. */
+function scanlinesInsideBand({ offset, slope }: ScanLine, scan: ScanGeometry): number {
+  const center = (scan.length - 1) / 2;
+  const last = scan.thickness - 1;
+  if (slope === 0) {
+    return offset >= 0 && offset <= last ? scan.length : 0;
+  }
+  const a = center + (0 - offset) / slope;
+  const b = center + (last - offset) / slope;
+  const from = Math.max(0, Math.min(a, b));
+  const to = Math.min(scan.length - 1, Math.max(a, b));
+  return to >= from ? Math.floor(to) - Math.ceil(from) + 1 : 0;
+}
+
+/** The points within EDGE_INLIER_DISTANCE_PX of `line`, at most one per
+ * scanline (the closest). */
+function inliersOf(points: readonly EdgePoint[], line: ScanLine, length: number): EdgePoint[] {
+  const center = (length - 1) / 2;
+  const closest = new Array<EdgePoint | undefined>(length);
+  const closestDistance = new Float64Array(length).fill(Infinity);
+  for (const point of points) {
+    const distance = Math.abs(point.across - (line.offset + line.slope * (point.along - center)));
+    if (distance <= EDGE_INLIER_DISTANCE_PX && distance < closestDistance[point.along]!) {
+      closest[point.along] = point;
+      closestDistance[point.along] = distance;
+    }
+  }
+  return closest.filter((point): point is EdgePoint => point !== undefined);
 }
 
 /**
- * Length-weighted total-least-squares line through the segments' endpoints:
- * direction is the principal eigenvector of the weighted covariance.
- * confidence = linearity ((λ1-λ2)/(λ1+λ2)) × coverage (total segment length /
- * `expectedLength`, capped at 1). `null` for a degenerate direction.
+ * Weighted total-least-squares line through `points`: direction is the
+ * principal eigenvector of the weighted covariance. Confidence = linearity
+ * ((λ1 − λ2) / (λ1 + λ2)) × `coverage`. `null` for a degenerate direction.
  */
-function fitWeightedLine(segments: readonly Segment[], expectedLength: number): FittedLine | null {
-  const endpoints = segments.flatMap((segment) => [
-    { x: segment.x1, y: segment.y1, weight: segment.length / 2 },
-    { x: segment.x2, y: segment.y2, weight: segment.length / 2 },
-  ]);
-
-  const totalWeight = endpoints.reduce((sum, p) => sum + p.weight, 0);
-  const meanX = endpoints.reduce((sum, p) => sum + p.weight * p.x, 0) / totalWeight;
-  const meanY = endpoints.reduce((sum, p) => sum + p.weight * p.y, 0) / totalWeight;
+function fitWeightedLine(points: readonly { x: number; y: number; weight: number }[], coverage: number): FittedLine | null {
+  let totalWeight = 0;
+  let sumX = 0;
+  let sumY = 0;
+  for (const p of points) {
+    totalWeight += p.weight;
+    sumX += p.weight * p.x;
+    sumY += p.weight * p.y;
+  }
+  if (totalWeight === 0) {
+    return null;
+  }
+  const meanX = sumX / totalWeight;
+  const meanY = sumY / totalWeight;
 
   let sxx = 0;
   let syy = 0;
   let sxy = 0;
-  for (const p of endpoints) {
+  for (const p of points) {
     const dx = p.x - meanX;
     const dy = p.y - meanY;
     sxx += p.weight * dx * dx;
@@ -204,7 +252,7 @@ function fitWeightedLine(segments: readonly Segment[], expectedLength: number): 
 
   const trace = sxx + syy;
   const det = sxx * syy - sxy * sxy;
-  const sqrtDiscriminant = Math.sqrt(Math.max(trace * trace / 4 - det, 0));
+  const sqrtDiscriminant = Math.sqrt(Math.max((trace * trace) / 4 - det, 0));
   const lambda1 = trace / 2 + sqrtDiscriminant;
   const lambda2 = trace / 2 - sqrtDiscriminant;
 
@@ -215,12 +263,9 @@ function fitWeightedLine(segments: readonly Segment[], expectedLength: number): 
   }
 
   const linearity = lambda1 + lambda2 > 1e-9 ? (lambda1 - lambda2) / (lambda1 + lambda2) : 0;
-  // totalWeight is the sum of all segment lengths.
-  const coverage = Math.min(totalWeight / expectedLength, 1);
-
   return {
     point: { x: meanX, y: meanY },
     direction: { x: rawX / norm, y: rawY / norm },
-    confidence: Math.max(0, Math.min(1, linearity * coverage)),
+    confidence: Math.max(0, Math.min(1, linearity * Math.min(coverage, 1))),
   };
 }

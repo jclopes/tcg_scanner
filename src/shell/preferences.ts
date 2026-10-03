@@ -1,8 +1,8 @@
 import type { Size } from "../core";
 
-/** The user's remembered camera/resolution/game/set/session-tags choices, persisted across
- * sessions (localStorage) so returning users don't have to re-pick them
- * every load. Best-effort only: localStorage can throw (private browsing,
+/** The user's remembered camera, resolution, game, set and session-tags
+ * choices, persisted across sessions (localStorage) so returning users don't
+ * have to re-pick them every load. Best-effort only: localStorage can throw (private browsing,
  * disabled storage) or simply be unavailable, and a previously-picked
  * camera/resolution can vanish (device unplugged, browser no longer
  * reports it) — callers must treat every field as optional and fall back

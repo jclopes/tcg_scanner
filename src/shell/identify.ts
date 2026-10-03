@@ -7,7 +7,7 @@ import {
   TEXT_SEARCH_PADDING_X_MM,
   TEXT_SEARCH_PADDING_Y_MM,
 } from "../core";
-import type { CardIdMatch, CardOrientation, OpenCv, RegionConfig, TextRegionConfig } from "../core";
+import type { CardIdMatch, CardOrientation, RegionConfig, TextRegionConfig } from "../core";
 import type { Worker as TesseractWorker } from "tesseract.js";
 import type { AcceptedFrame } from "./frameDetection";
 import type { GameOption, GameSet } from "./gameConfig";
@@ -66,14 +66,14 @@ export interface Identification {
 }
 
 /**
- * Warps every region of `game`'s `cardOrientation` layout straight out of `frame` (text regions fitted
- * to their text line), OCRs the text regions, ranks `set`'s collector
- * numbers against the OCR'd collector number and looks for sets whose
- * printed code fits the OCR'd set code better than `set`'s. Returns null if
+ * Warps every region of `game`'s `cardOrientation` layout straight out of
+ * `frame` (text regions fitted to their text line), OCRs the text regions,
+ * ranks `set`'s collector numbers against the OCR'd collector number and
+ * looks for sets whose printed code fits the OCR'd set code better than
+ * `set`'s. Returns null if
  * `isCancelled()` becomes true, checked between regions.
  */
 export async function identifyCard(
-  cv: OpenCv,
   worker: TesseractWorker,
   frame: AcceptedFrame,
   cardOrientation: CardOrientation,
@@ -87,10 +87,10 @@ export async function identifyCard(
       return null;
     }
     if (region.type === "text") {
-      const crop = extractTextRegion(cv, frame, cardOrientation, region);
-      regions.push({ crop, ocr: await recognizeCrop(cv, worker, crop.canvas, region) });
+      const crop = extractTextRegion(frame, cardOrientation, region);
+      regions.push({ crop, ocr: await recognizeCrop(worker, crop.canvas, region) });
     } else {
-      const canvas = warpRegion(cv, frame, cardOrientation, region);
+      const canvas = warpRegion(frame, cardOrientation, region);
       regions.push({ crop: { region, searchCanvas: canvas, analysis: null, canvas }, ocr: null });
     }
   }
@@ -106,9 +106,9 @@ export async function identifyCard(
 
 /** Warps a text region's padded search area (its configured box is only
  * where to look) and narrows the crop to its text line. */
-function extractTextRegion(cv: OpenCv, frame: AcceptedFrame, cardOrientation: CardOrientation, region: TextRegionConfig): RegionCrop {
+function extractTextRegion(frame: AcceptedFrame, cardOrientation: CardOrientation, region: TextRegionConfig): RegionCrop {
   const searchRegion = padRegion(region, { xMm: TEXT_SEARCH_PADDING_X_MM, yMm: TEXT_SEARCH_PADDING_Y_MM });
-  const searchCanvas = warpRegion(cv, frame, cardOrientation, searchRegion);
+  const searchCanvas = warpRegion(frame, cardOrientation, searchRegion);
   const { canvas, analysis } = fitCropToText(
     searchCanvas,
     region.maxGapTextHeights ?? DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
@@ -118,12 +118,11 @@ function extractTextRegion(cv: OpenCv, frame: AcceptedFrame, cardOrientation: Ca
 
 /** Preprocesses a text crop (prepareForOcr) and OCRs it. */
 async function recognizeCrop(
-  cv: OpenCv,
   worker: TesseractWorker,
   canvas: HTMLCanvasElement,
   region: TextRegionConfig,
 ): Promise<RegionOcr> {
-  const prepared = prepareForOcr(cv, canvas);
+  const prepared = prepareForOcr(canvas);
   const text = await recognizeRegion(worker, prepared.canvas, region.allowedCharsRegex);
   return { canvas: prepared.canvas, inverted: prepared.inverted, text };
 }

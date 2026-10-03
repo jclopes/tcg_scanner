@@ -6,7 +6,7 @@ exported from `src/core`. It supersedes the sketch-level signatures in
 core" / "Data contracts") wherever the two disagree — those sections were a
 plan, this is what actually got built, including a few deliberate
 refinements the plan left open. Later stages (the imperative shell in
-`src/shell`, the worker pool in `src/workers`) should treat this file, not
+`src/shell`) should treat this file, not
 the original plan doc, as ground truth for `src/core`'s public API.
 
 Everything below is exported from `src/core/index.ts` (a barrel re-exporting
@@ -17,11 +17,11 @@ equivalent relative path) gets all of it.
 
 - **Pure, browser-free, side-effect-free.** No DOM, no camera, no module-level
   mutable state. Every function's output depends only on its inputs.
-- **OpenCV.js is dependency-injected, never imported.** The two functions that
-  need OpenCV.js primitives (`fitEdgeLine`, `computePerspectiveTransform`)
-  take an already-initialized instance as an explicit `cv: OpenCv` parameter.
-  No file in `src/core` (other than `types.ts`, for the type-only alias) ever
-  imports `@techstark/opencv-js` itself.
+- **No image-processing library.** Edge fitting, the homography, perspective
+  warps and OCR preprocessing are plain TypeScript over typed arrays.
+  OpenCV.js was used until October 2026 and removed to avoid its 13 MB
+  download; the pure versions measured as fast or faster on this app's
+  workloads (per edge band: ~0.5 ms vs ~1.7 ms for Canny + Hough).
 - **Corner order convention.** A `Quad` is always
   **[topLeft, topRight, bottomRight, bottomLeft]**, clockwise
   (`quadFromEdgeLines` produces it from `[top, right, bottom, left]` lines).
@@ -32,7 +32,6 @@ equivalent relative path) gets all of it.
 
 | Type | Shape | Notes |
 |---|---|---|
-| `OpenCv` | `= CV` (re-exported from `@techstark/opencv-js`) | The already-initialized OpenCV.js instance type. Aliased so callers don't need to know which npm package provides it. |
 | `Orientation` | `"portrait" \| "landscape"` | Camera/guide orientation category. (The plan's snippets sometimes call this `CameraOrientation` — unified to one name, `Orientation`, matching the plan's own "Data contracts" section.) |
 | `CardOrientation` | `"portrait" \| "landscape"` | User-selected print format of the physical card, independent of `Orientation`. |
 | `Size` | `{ width: number; height: number }` | |
@@ -42,8 +41,8 @@ equivalent relative path) gets all of it.
 | `FittedLine` | `{ point: Point; direction: Point; confidence: number }` | `direction` is unit-length; sign is arbitrary. `confidence` is in `[0, 1]`. `point`/`direction` are in whatever coordinate space the input was in (band-local for `fitEdgeLine`'s output — see below). |
 | `Quad` | `readonly [Point, Point, Point, Point]` | Quad corners in the order above. |
 | `ToleranceConfig` | see below | New/refined beyond the plan — the plan named this type but didn't specify its fields. |
-| `EdgeBandPixels` | `{ data: Uint8ClampedArray; width: number; height: number }` | New — not in the plan's original contract list, but required to make `fitEdgeLine`'s `samples` parameter concrete. Single-channel grayscale, row-major, one byte per pixel. `data.length` must equal `width * height`. Deliberately a flat, transferable-friendly shape (one `Uint8ClampedArray`/`ArrayBuffer` + two numbers) since this is what a future Web Worker will receive via `postMessage`. |
-| `Matrix3x3` | `readonly [readonly [n,n,n], readonly [n,n,n], readonly [n,n,n]]` | New — the plan left `computePerspectiveTransform`'s return type open ("a 3x3 matrix type ... your call"). Chose a plain row-major nested-array value over returning OpenCV.js's own `cv.Mat`, so callers get ordinary, inspectable, structured-clone-able data with no `cv.Mat.delete()` lifecycle to manage — `computePerspectiveTransform` allocates and frees all intermediate `cv.Mat`s internally. |
+| `EdgeBandPixels` | `{ data: Uint8ClampedArray; width: number; height: number }` | New — not in the plan's original contract list, but required to make `fitEdgeLine`'s `samples` parameter concrete. Single-channel grayscale, row-major, one byte per pixel. `data.length` must equal `width * height`. A flat shape: one `Uint8ClampedArray` plus its size. |
+| `Matrix3x3` | `readonly [readonly [n,n,n], readonly [n,n,n], readonly [n,n,n]]` | New — the plan left `computePerspectiveTransform`'s return type open ("a 3x3 matrix type ... your call"). A plain row-major nested-array value: ordinary, inspectable data. |
 
 ### `ToleranceConfig` (new/refined type — full definition)
 
@@ -84,11 +83,9 @@ aspectRatioTolerance: 0.08 }`.
 | `STANDARD_CARD_ASPECT_RATIO` | `63/88 ≈ 0.7159` | `computeGuideGeometry`'s guide shape; the `targetAspectRatio` callers should pass to `isQuadAspectRatioValid` for the standard card orientation. |
 | `GUIDE_FILL_FRACTION` | `0.92` | `computeGuideGeometry` — how much of the frame the guide fills. Judgment call (see file comment for reasoning). |
 | `EDGE_BAND_CORNER_INSET_FRACTION` | `0.12` | `expectedEdgeBands` — fraction trimmed off each end of a band's length to stay clear of the card's rounded corners. |
-| `EDGE_FAIL_FAST_MEAN_GRADIENT_THRESHOLD` | `20` | `fitEdgeLine`'s fail-fast check threshold (0-255 scale; see `fitEdgeLine` below for what's actually measured). |
-| `EDGE_CANNY_LOW_THRESHOLD` / `EDGE_CANNY_HIGH_THRESHOLD` | `50` / `150` | `fitEdgeLine`'s `cv.Canny` call. |
-| `EDGE_HOUGH_RHO` / `EDGE_HOUGH_THETA` | `1` / `π/180` | `fitEdgeLine`'s `cv.HoughLinesP` accumulator resolution. |
-| `EDGE_HOUGH_VOTE_THRESHOLD` | `20` | `fitEdgeLine`'s `cv.HoughLinesP` vote threshold. |
-| `EDGE_HOUGH_MIN_LINE_LENGTH_FRACTION` / `EDGE_HOUGH_MAX_LINE_GAP_FRACTION` | `0.3` / `0.05` | Fractions of the band's long-axis dimension, used as `cv.HoughLinesP`'s `minLineLength`/`maxLineGap`. |
+| `EDGE_POINT_MIN_GRADIENT` | `150` | `fitEdgeLine` — smallest Sobel gradient across a scanline that counts as an edge point (a clean step of ~38 gray levels; the old Canny high threshold). |
+| `EDGE_LINE_MIN_SUPPORT_FRACTION` | `0.3` | `fitEdgeLine` — a candidate line needs edge points on this fraction of the scanlines where it lies inside the band. |
+| `EDGE_INLIER_DISTANCE_PX` | `1.5` | `fitEdgeLine` — edge points within this distance of the chosen line are fitted. |
 | `EDGE_MIN_CONFIDENCE` | `0.25` | `fitEdgeLine` — below this, a fit is treated as not-found (returns `null`) rather than a usable weak line. |
 
 All of the above are tuning knobs, deliberately grouped in one file so
@@ -127,29 +124,28 @@ rotated edge exhibits at the ends of its (inset) length, given
 `rotationToleranceDegrees`. Opposite bands are symmetric around the guide's
 center.
 
-### `fitEdgeLine(cv: OpenCv, samples: EdgeBandPixels, outwardDirection: Point, rotationToleranceDegrees: number): FittedLine | null`
+### `fitEdgeLine(samples: EdgeBandPixels, outwardDirection: Point, rotationToleranceDegrees: number): FittedLine | null`
 
 File: `src/core/edgeLine.ts`
 
-`cv` is dependency-injected (not imported). Throws if `samples.data.length
-!== width * height` (a caller bug); returns `null` ("edge not found") for a
-band under 2px in either dimension (clamped at the frame boundary) and for
-every step below that finds nothing. The steps are small private helpers:
+Throws if `samples.data.length !== width * height` (a caller bug); returns
+`null` ("edge not found") for a band under 3px in either dimension (clamped
+at the frame boundary) and whenever no line qualifies. The band is read as
+scanlines across its edge (rows for a left/right band, columns for
+top/bottom). The steps are small private helpers:
 
-1. `edgeScore` — fail fast unless scanlines cross a strong transition
-   (average of per-scanline max gradients, better of rows/columns;
-   threshold `EDGE_FAIL_FAST_MEAN_GRADIENT_THRESHOLD`).
-2. `houghSegments` — `cv.Canny` + `cv.HoughLinesP` (length/gap scale with the
-   band's long axis). This OpenCV.js build returns a 1-row Mat, so the
-   segment count is `lines.total()`. All Mats are freed in a `finally`.
-3. `filterByAngle` — drop segments more than `rotationToleranceDegrees` off
-   the edge direction (perpendicular to the axis-aligned `outwardDirection`).
-4. `outwardMostCluster` — walk segments outward → inward and stop at the
-   first per-step gap above `EDGE_OUTWARD_GAP_TOLERANCE_FRACTION` of the band
-   thickness, so an inner parallel feature (the card's printed border)
-   doesn't pull the fit inward.
-5. `fitWeightedLine` — length-weighted total-least-squares line through the
-   kept segments' endpoints; confidence = linearity × coverage. Below
+1. `edgePoints` — on each scanline, the local maxima of the Sobel gradient
+   across the band (central difference, smoothed 1-2-1 over neighboring
+   scanlines) of at least `EDGE_POINT_MIN_GRADIENT`, at sub-pixel precision.
+2. `outwardMostLine` — every point votes for the lines through it whose
+   angle is within `rotationToleranceDegrees` of the band's direction
+   (a Hough transform restricted to plausible angles). Lines with enough
+   support (see `EDGE_LINE_MIN_SUPPORT_FRACTION` and `EDGE_MIN_CONFIDENCE`)
+   qualify; the outward-most one wins, so an inner parallel feature (the
+   card's printed border) can't pull the fit inward.
+3. `inliersOf` + `fitWeightedLine` — weighted total-least-squares line
+   through the points within `EDGE_INLIER_DISTANCE_PX` of it; confidence =
+   linearity × the fraction of scanlines covered. Below
    `EDGE_MIN_CONFIDENCE` counts as not found.
 
 `point`/`direction` are in band-local coordinates; callers translate by the
@@ -188,18 +184,31 @@ Whether `quadAspectRatio(corners)` is within
 `targetAspectRatio`. A degenerate quad is invalid. Missing edges are the
 caller's concern — it never sees an incomplete quad.
 
-### `computePerspectiveTransform(cv: OpenCv, corners: [Point,Point,Point,Point], outputSize: Size): Matrix3x3`
+### `computePerspectiveTransform(corners: Quad, outputSize: Size): Matrix3x3`
 
 File: `src/core/perspective.ts`
 
-**Signature differs from the plan's sketch** for the same DI reason as
-`fitEdgeLine` — `cv` added as the first parameter.
+`corners` (`[topLeft, topRight, bottomRight, bottomLeft]`) map respectively
+onto `outputSize`'s `(0,0)`, `(width,0)`, `(width,height)`, `(0,height)`.
+Solves the 8×8 linear system for the homography (Gaussian elimination with
+partial pivoting); throws for a degenerate quad.
 
-`corners` (assumed `[topLeft, topRight, bottomRight, bottomLeft]`) map
-respectively onto `outputSize`'s `(0,0)`, `(width,0)`, `(width,height)`,
-`(0,height)`. Internally calls `cv.getPerspectiveTransform` and reads its
-`3x3`, `CV_64F` result into a plain `Matrix3x3`; all intermediate `cv.Mat`s
-are freed before returning.
+### `warpPerspective(source, sourceToOutput, outputSize, interpolation): RgbaPixelBuffer`
+
+File: `src/core/warp.ts`
+
+Warps an RGBA image by a homography, sampling the inverse-mapped position of
+each output pixel (`invertMatrix3x3`, `src/core/regionWarp.ts`): bilinear
+(the flattened card, display only) or bicubic with OpenCV's INTER_CUBIC
+kernel (OCR regions). Positions outside the source are transparent.
+
+### `prepareTextForOcr(rgba): { gray, inverted }` / `bilateralFilter(...)`
+
+File: `src/core/ocrImage.ts`
+
+A text crop for Tesseract: grayscale, inverted to dark-on-light when the
+text is light on dark (`isLightTextOnDark`), then an edge-preserving
+bilateral filter (`OCR_DENOISE_*` constants).
 
 ### `computeOutputRotationDegrees(camera: Orientation, card: CardOrientation): 0 | 90`
 
@@ -267,55 +276,13 @@ npm run test -- --watch  # watch mode
 npx vitest run src/core/edgeLine.test.ts   # a single test file
 ```
 
-No special setup is required beyond `npm install` — OpenCV.js is
-initialized once per test *file* (not globally) via
-`src/core/testSupport/openCv.ts`'s `loadOpenCv()`, called in a `beforeAll`
-in `edgeLine.test.ts` and `perspective.test.ts` (the two suites that need a
-real `cv` instance). That helper is test-only, not exported from `src/core`'s
-public API, and loads `@techstark/opencv-js` via Node's `createRequire`
-rather than a normal `import` — a static/dynamic ESM import of that package
-crashes under Vitest's Node-side SSR transform specifically (`TypeError:
-Method Promise.prototype.then called on incompatible receiver [object
-Module]`; confirmed via an isolated repro — the package's export can itself
-be a `Promise`, and Vitest's ESM-interop for that shape trips over it). This
-doesn't affect `src/main.ts`, which imports the package normally and runs
-fine under Vite's browser dev-server/build pipeline (per
-[02-project-structure.md](./02-project-structure.md)) — it's specific to
-Vitest's Node-side transform.
+No special setup is required beyond `npm install`.
 
 ## Test coverage summary
 
-- `orientation.test.ts` — full branch coverage of
-  `computeOutputRotationDegrees` (all 4 enum combinations), an explicit check
-  that both mismatch directions produce the same rotation, and an empirical
-  regression test that actually rotates a synthetic pixel grid (representing
-  the raw-capture-convention left edge) by the returned degrees and confirms
-  it lands on the top edge — i.e. upright — not just asserting the numeric
-  `90`.
-- `geometry.test.ts` — `intersectLines`: perpendicular lines, non-unit
-  direction vectors, sign-flipped directions, arbitrary angled lines,
-  parallel and near-parallel lines (`null`). `quadFromEdgeLines`: rectangle
-  reconstruction and parallel-edge `null`. `isQuadAspectRatioValid`: exact
-  match, both guide orientations, small in-tolerance perturbation, two
-  out-of-tolerance shapes, a degenerate (coincident-corner) quad, and a
-  widened-tolerance acceptance case.
-- `guide.test.ts` — `computeGuideGeometry`: orientation-shape invariant
-  across wide/tall/square frames, exact aspect-ratio match, centering,
-  fill-fraction behavior, and the "other dimension binds" fallback case.
-  `expectedEdgeBands`: band/side order and labeling, band centered on the
-  guide edge, corner inset (band shorter than the guide side), thickness
-  grows with tolerance, and left-right/top-bottom symmetry around center.
-- `edgeLine.test.ts` — `fitEdgeLine` against synthetic rendered bands with a
-  known ground-truth point+direction: a vertical edge (tall/narrow band), a
-  horizontal edge (short/wide band), a slightly rotated edge, an edge with a
-  simulated occlusion gap (still recovered), a blank band (`null`), a
-  low-contrast noisy band (`null`), too-thin band (`null`), malformed input (throws), and a relative
-  check that full-visibility confidence exceeds mostly-occluded confidence.
-  Uses the real OpenCV.js WASM build (via `loadOpenCv()`), not a mock.
-- `perspective.test.ts` — `computePerspectiveTransform` against the real
-  OpenCV.js build: an axis-aligned rectangle maps to the expected pure-scale
-  transform, a skewed/perspective quad's corners map exactly onto the output
-  rectangle's corners (round-tripped through the returned `Matrix3x3`), and a
-  basic 3x3 shape check.
-
-40 tests total, all passing (`npm test`).
+Tests cover the business logic and the complex parts, not every function
+(see each `*.test.ts` next to its module): edge fitting against synthetic
+bands (vertical/horizontal, rotation tolerance, occlusion, confidence vs.
+visible fraction, outward-most edge, noise), region warping, the homography,
+the perspective warp, text-band analysis, OCR preparation, best-frame
+selection, guide and band geometry, quad validation, and card matching.

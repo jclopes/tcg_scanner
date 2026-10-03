@@ -42,11 +42,6 @@ export function requireString(record: Record<string, unknown>, key: string, cont
   return value;
 }
 
-/** `record[key]` as a non-empty string, or undefined when absent. */
-export function optionalString(record: Record<string, unknown>, key: string, context: string): string | undefined {
-  return record[key] === undefined ? undefined : requireString(record, key, context);
-}
-
 /** `record[key]` as a boolean. */
 export function requireBoolean(record: Record<string, unknown>, key: string, context: string): boolean {
   const value = record[key];

@@ -1,5 +1,5 @@
 import type { EdgeBandPixels, FittedLine, PerEdge, Quad } from "../core";
-import { canvasToObjectURL, createCanvas, require2dContext, rotateCanvas } from "./canvasUtils";
+import { canvasToObjectURL, createCanvas, pixelsToCanvas, require2dContext, rotateCanvas } from "./canvasUtils";
 import type { BurstFrameDebugEntry, FrameBurstResult } from "./frameBurst";
 import type { AcceptedEvaluation, AcceptedFrame, FrameEvaluation, QuadRejectionReason } from "./frameDetection";
 import type { RegionResult } from "./identify";
@@ -44,14 +44,14 @@ function buildEdgeBandSteps(bands: PerEdge<EdgeBandPixels>, lines: PerEdge<Fitte
   });
 }
 
-/** `sourceCanvas` with the quad outlined on top. */
-function buildQuadOverlayStep(sourceCanvas: HTMLCanvasElement, corners: Quad, label: string): DebugStep {
-  const canvas = createCanvas(sourceCanvas);
+/** The accepted frame with its quad outlined on top. */
+function buildQuadOverlayStep(frame: AcceptedFrame, label: string): DebugStep {
+  const { corners } = frame;
+  const canvas = pixelsToCanvas(frame.pixels);
   const ctx = require2dContext(canvas);
-  ctx.drawImage(sourceCanvas, 0, 0);
 
   ctx.strokeStyle = OVERLAY_STROKE_STYLE;
-  ctx.lineWidth = Math.max(2, sourceCanvas.width * 0.004);
+  ctx.lineWidth = Math.max(2, canvas.width * 0.004);
   ctx.beginPath();
   for (const corner of corners) {
     ctx.lineTo(corner.x, corner.y);
@@ -163,7 +163,7 @@ function drawColumnProfile(
 function buildBurstFrameSteps(entries: readonly BurstFrameDebugEntry[]): DebugStep[] {
   return entries.map((entry, i) =>
     entry.outcome === "accepted"
-      ? buildQuadOverlayStep(entry.frame.frameCanvas, entry.frame.corners, `Burst frame ${i + 1}: accepted`)
+      ? buildQuadOverlayStep(entry.frame, `Burst frame ${i + 1}: accepted`)
       : {
           label: `Burst frame ${i + 1}: rejected — ${describeRejectionReason(entry.outcome)}`,
           canvas: entry.canvas,
@@ -182,10 +182,10 @@ export function buildCaptureDebugTrail(
 ): DebugEntry[] {
   return [
     ...buildEdgeBandSteps(preview.bands, preview.lines),
-    buildQuadOverlayStep(preview.frame.frameCanvas, preview.frame.corners, "Detected quad"),
+    buildQuadOverlayStep(preview.frame, "Detected quad"),
     debugStageHeading(`Burst capture — ${burst.accepted.length}/${burst.debugFrames.length} usable`),
     ...buildBurstFrameSteps(burst.debugFrames),
-    buildQuadOverlayStep(selected.frameCanvas, selected.corners, "Selected frame"),
+    buildQuadOverlayStep(selected, "Selected frame"),
     { label: "Flattened output", canvas: cardCanvas },
     ...regionResults.flatMap(({ crop: { region, searchCanvas, analysis, canvas }, ocr }) =>
       analysis && ocr
@@ -227,10 +227,8 @@ export class DebugPanel {
   /** Bumped on every render/clear so a blob URL that resolves late, for an
    * image no longer shown, is revoked instead of kept. */
   private generation = 0;
-  private readonly element: HTMLElement;
 
   constructor(private readonly elements: DebugPanelElements) {
-    this.element = elements.panel;
     elements.checkbox.addEventListener("change", () => {
       elements.panel.hidden = !this.enabled;
       elements.controls.hidden = !this.enabled;
@@ -249,7 +247,7 @@ export class DebugPanel {
   /** Replaces the panel's contents with `entries`, top to bottom. */
   render(entries: readonly DebugEntry[]): void {
     this.clear();
-    this.element.replaceChildren(...entries.map((entry) => ("text" in entry ? toNoteElement(entry) : this.toFigure(entry))));
+    this.elements.panel.replaceChildren(...entries.map((entry) => ("text" in entry ? toNoteElement(entry) : this.toFigure(entry))));
   }
 
   clear(): void {
@@ -258,7 +256,7 @@ export class DebugPanel {
       URL.revokeObjectURL(url);
     }
     this.objectUrls = [];
-    this.element.replaceChildren();
+    this.elements.panel.replaceChildren();
   }
 
   /** Shows the step as an `<img>` (not a bare canvas) so the browser offers

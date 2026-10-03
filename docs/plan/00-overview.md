@@ -38,8 +38,10 @@ agreed. Phase 1 is detailed enough to hand to an implementing agent now.
 - **Target devices/browsers:** mobile phone browsers (Chrome/Safari,
   `getUserMedia`) and laptop/desktop browsers with a webcam.
 - **Stack:** TypeScript, no UI framework (vanilla DOM/Canvas/WebGL APIs).
-- **CV primitives:** OpenCV.js (WASM) for edge detection, line fitting,
-  and geometric transforms, rather than hand-rolled image processing.
+- **CV primitives:** small pure-TypeScript functions in `src/core` for edge
+  detection, line fitting and geometric transforms. (OpenCV.js was used at
+  first and removed in October 2026 to avoid its 13 MB download — see
+  [03-functional-core.md](./03-functional-core.md).)
 - The previous Python/OpenCV CLI prototype in this repo (`src/`,
   `debug/`) is superseded by this plan and not reused; it was a throwaway
   test of the detection idea, not a foundation to build on.

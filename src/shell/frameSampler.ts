@@ -1,6 +1,6 @@
 import { clampRegion, extractGrayscaleRegion, mapEdges } from "../core";
 import type { EdgeBand, EdgeBandPixels, PerEdge, Size } from "../core";
-import { require2dContext, snapshotSource } from "./canvasUtils";
+import { require2dContext } from "./canvasUtils";
 
 /**
  * Draws a frame off an image source (video, canvas, bitmap) into one reused
@@ -22,10 +22,10 @@ export class FrameSampler {
     return mapEdges(bands, (band) => this.readBand(band.region, size));
   }
 
-  /** A copy of the frame last drawn by `sampleBands` — valid until the next
-   * `sampleBands` call, so a caller must take it before sampling again. */
-  snapshotFrame(): HTMLCanvasElement {
-    return snapshotSource(this.canvas, { width: this.canvas.width, height: this.canvas.height });
+  /** The pixels of the frame last drawn by `sampleBands` — valid until the
+   * next `sampleBands` call, so a caller must take them before sampling again. */
+  snapshotFrame(): ImageData {
+    return this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
   }
 
   /** The band's pixels, clamped to the frame. A band entirely outside the

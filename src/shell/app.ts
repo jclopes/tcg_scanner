@@ -1,7 +1,5 @@
 import { isConfidentMatch } from "../core";
-import type { OpenCv, Size } from "../core";
-import { LazyEdgeDetectionPool } from "../workers";
-import type { EdgeDetectionPool } from "../workers";
+import type { Size } from "../core";
 import { startCameraStream, stopCameraStream } from "./cameraStream";
 import { captureFlattenedCard } from "./capture";
 import { buildCaptureDebugTrail, buildForcedDebugTrail, DebugPanel } from "./debugSteps";
@@ -31,9 +29,9 @@ type CameraStatus = "stopped" | "starting" | "active";
 /**
  * Wires the shell modules to the page and runs the scan lifecycle:
  * start camera → detect → burst → flatten → identify → stop. Called once from
- * src/main.ts after OpenCV.js loads.
+ * src/main.ts.
  */
-export function initApp(cv: OpenCv): void {
+export function initApp(): void {
   const video = requireElement<HTMLVideoElement>("camera-video");
   const cameraStage = requireElement<HTMLDivElement>("camera-stage");
   const statusEl = requireElement<HTMLParagraphElement>("status");
@@ -101,9 +99,6 @@ export function initApp(cv: OpenCv): void {
     controls: requireElement("debug-controls"),
   });
   const ocrWorker = new LazyOcrWorker();
-  const edgeDetection = new LazyEdgeDetectionPool();
-  // Start the workers now so OpenCV.js loads in them while cameras are probed.
-  edgeDetection.get();
 
   let state: ScanState = INITIAL_SCAN_STATE;
   let cameraStatus: CameraStatus = "stopped";
@@ -154,8 +149,16 @@ export function initApp(cv: OpenCv): void {
   function restartScanIfActive(): void {
     if (cameraStatus === "active") {
       stopScan();
-      void startScan();
+      runStartScan();
     }
+  }
+
+  /** Starts a scan, showing any failure in the status line. */
+  function runStartScan(): void {
+    startScan().catch((error: unknown) => {
+      console.error("Could not start the scan.", error);
+      setState({ phase: "error", message: describeError(error, "Could not start the scan.") });
+    });
   }
 
   /** Records the card the user picked from the best matches (see
@@ -236,11 +239,10 @@ export function initApp(cv: OpenCv): void {
    * (e.g. to say why scanning restarted). */
   function beginScan(requestId: number, message?: string): void {
     const debug = debugPanel.enabled;
-    const activePool = edgeDetection.get();
     setState({ phase: "scanning", message });
     guide.start();
 
-    detectionLoop = new DetectionLoop(video, activePool);
+    detectionLoop = new DetectionLoop(video);
     detectionLoop.start({
       onAccepted: (result) => {
         if (!isCurrentScan(requestId)) {
@@ -248,7 +250,7 @@ export function initApp(cv: OpenCv): void {
         }
         // The guide stays visible through "processing"; a running flash still
         // ends and returns to the per-edge colors.
-        void confirmAndCapture(activePool, result, requestId, debug);
+        void confirmAndCapture(result, requestId, debug);
       },
       onFrameEvaluated: (edgesFound) => {
         if (isCurrentScan(requestId)) {
@@ -266,7 +268,6 @@ export function initApp(cv: OpenCv): void {
    * match (see isConfidentMatch), detection restarts instead.
    */
   async function confirmAndCapture(
-    activePool: EdgeDetectionPool,
     preview: AcceptedEvaluation,
     requestId: number,
     debug: boolean,
@@ -275,18 +276,18 @@ export function initApp(cv: OpenCv): void {
     try {
       setState({ phase: "processing" });
 
-      const burst = await collectBurstFrames(video, activePool, debug, isCancelled);
+      const burst = await collectBurstFrames(video, debug, isCancelled);
       if (isCancelled()) {
         return;
       }
 
       const { cardOrientation, game, set } = settings;
       const selected = selectFrameToFlatten(burst.accepted, preview.frame);
-      const cardCanvas = captureFlattenedCard(cv, selected, cardOrientation);
+      const cardCanvas = captureFlattenedCard(selected, cardOrientation);
 
       setState({ phase: "processing", message: "Identifying…" });
       const worker = await ocrWorker.get();
-      const identification = await identifyCard(cv, worker, selected, cardOrientation, game, set, isCancelled);
+      const identification = await identifyCard(worker, selected, cardOrientation, game, set, isCancelled);
       if (!identification || isCancelled()) {
         return;
       }
@@ -351,7 +352,7 @@ export function initApp(cv: OpenCv): void {
     }
 
     const frameSize: Size = { width: still.width, height: still.height };
-    const evaluation = await evaluateFrameForQuad(new FrameSampler(), edgeDetection.get(), still, frameSize);
+    const evaluation = evaluateFrameForQuad(new FrameSampler(), still, frameSize);
     if (isCurrentScan(requestId)) {
       debugPanel.render(buildForcedDebugTrail(evaluation, `Hi-res still — ${frameSize.width} × ${frameSize.height}`));
     }
@@ -368,7 +369,7 @@ export function initApp(cv: OpenCv): void {
     if (cameraStatus === "active") {
       stopScan();
     } else {
-      void startScan();
+      runStartScan();
     }
   });
 
@@ -386,9 +387,8 @@ export function initApp(cv: OpenCv): void {
   window.addEventListener("pagehide", () => {
     // Also fires when entering the back-forward cache, where this JS state
     // survives; releasing (not just terminating) resources ensures a restore
-    // doesn't keep a dead pool or OCR worker around.
+    // doesn't keep a dead OCR worker around.
     releaseScanResources();
-    edgeDetection.terminate();
     guide.clear();
     render();
     ocrWorker.terminate();

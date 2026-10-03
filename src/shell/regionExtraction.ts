@@ -8,28 +8,23 @@ import {
   regionOutputSize,
   regionWarpMatrix,
 } from "../core";
-import type { CardOrientation, OpenCv, RegionConfig, TextColumnAnalysis, TextRowAnalysis } from "../core";
-import { createCanvas, require2dContext } from "./canvasUtils";
-import { warpWithMatrix } from "./warp";
+import type { CardOrientation, RegionConfig, TextColumnAnalysis, TextRowAnalysis } from "../core";
+import { canvasPixels, createCanvas, require2dContext } from "./canvasUtils";
 import type { AcceptedFrame } from "./frameDetection";
 import { orientationFromSize } from "./orientationWatcher";
+import { warpToCanvas } from "./warp";
 
 /**
  * Warps `region` straight out of the camera frame the card was detected in,
  * upright and at REGION_PX_PER_MM, in a single interpolation (see
  * regionWarpMatrix) — no intermediate flattened or rotated card, each of which
- * would blur it further.
+ * would blur it further. Bicubic, which keeps glyph edges sharper for OCR.
  */
-export function warpRegion(
-  cv: OpenCv,
-  frame: AcceptedFrame,
-  cardOrientation: CardOrientation,
-  region: RegionConfig,
-): HTMLCanvasElement {
-  const camera = orientationFromSize(frame.frameCanvas);
-  const frameToCardMm = computePerspectiveTransform(cv, frame.corners, cardSizeMm(camera));
+export function warpRegion(frame: AcceptedFrame, cardOrientation: CardOrientation, region: RegionConfig): HTMLCanvasElement {
+  const camera = orientationFromSize(frame.pixels);
+  const frameToCardMm = computePerspectiveTransform(frame.corners, cardSizeMm(camera));
   const matrix = regionWarpMatrix(frameToCardMm, camera, cardOrientation, region, REGION_PX_PER_MM);
-  return warpWithMatrix(cv, frame.frameCanvas, matrix, regionOutputSize(region, REGION_PX_PER_MM));
+  return warpToCanvas(frame.pixels, matrix, regionOutputSize(region, REGION_PX_PER_MM), "bicubic");
 }
 
 /** Both text analyses of a search area; `columns` is null when no text rows
@@ -51,8 +46,7 @@ export function fitCropToText(
   maxGapTextHeights: number,
 ): { canvas: HTMLCanvasElement; analysis: TextCropAnalysis } {
   const { width, height } = searchCanvas;
-  const rgba = require2dContext(searchCanvas).getImageData(0, 0, width, height);
-  const gray = extractGrayscaleRegion(rgba, { origin: { x: 0, y: 0 }, size: { width, height } });
+  const gray = extractGrayscaleRegion(canvasPixels(searchCanvas), { origin: { x: 0, y: 0 }, size: { width, height } });
   const rows = analyzeTextRows(gray);
   if (!rows.band || !rows.crop) {
     return { canvas: searchCanvas, analysis: { rows, columns: null } };

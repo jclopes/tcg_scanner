@@ -1,11 +1,5 @@
 // Shared data contracts for the functional core — plain data shapes only.
 
-import type { CV } from "@techstark/opencv-js";
-
-/** An already-initialized OpenCV.js instance, passed explicitly to the core
- * functions that need it rather than imported as a global. */
-export type OpenCv = CV;
-
 /** Camera frame orientation; also the guide's shape. */
 export type Orientation = "portrait" | "landscape";
 

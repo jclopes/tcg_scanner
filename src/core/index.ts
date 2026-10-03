@@ -17,4 +17,6 @@ export * from "./tags";
 export * from "./validation";
 export * from "./textBand";
 export * from "./regionWarp";
+export * from "./warp";
+export * from "./ocrImage";
 export * from "./textPolarity";

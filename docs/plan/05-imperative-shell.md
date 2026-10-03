@@ -4,10 +4,10 @@ This document describes `src/shell/` — the browser I/O layer (camera,
 guide overlay, Scan button, frame-sampling loop, capture) — and how it's
 wired into `src/main.ts`/`index.html`. It assumes the reader has already
 read [01-capture-and-detection.md](./01-capture-and-detection.md),
-[03-functional-core.md](./03-functional-core.md) and
-[04-worker-pool.md](./04-worker-pool.md); this stage treats `src/core` and
-`src/workers`'s public APIs as fixed contracts and didn't modify either,
-except for one addition described below.
+[03-functional-core.md](./03-functional-core.md); this stage treated
+`src/core`'s public API as a fixed contract, except for one addition
+described below. (It originally also used a 4-worker edge-detection pool
+and OpenCV.js; both were removed in October 2026.)
 
 ## One addition to `src/core`: `pixelExtraction.ts`
 
@@ -51,7 +51,7 @@ src/shell/
   frameDetection.ts       One quad-detection pass on a frame → FrameEvaluation
   detectionLoop.ts        The per-frame live detection loop
   frameBurst.ts           Post-acceptance burst of detection-only frames
-  capture.ts              Perspective warp (OpenCV.js) + upright rotation of the selected frame
+  capture.ts              Perspective warp (core warpPerspective) + upright rotation of the selected frame
   debugSteps.ts           Builds/renders the debug trail
   app.ts                  Orchestrator: DOM wiring, event handlers, the state machine
 ```
@@ -158,8 +158,8 @@ the debug views.
 one frame per `scheduleVideoFrame` (`requestVideoFrameCallback`, falling
 back to `requestAnimationFrame`). A rejected frame is an expected outcome:
 report its edges and schedule the next frame. The first accepted frame stops
-the loop and calls `onAccepted`. An unexpected failure (a crashed worker, a
-video without dimensions) stops the loop and calls `onError`, which
+the loop and calls `onAccepted`. An unexpected failure (e.g. a video
+without dimensions) stops the loop and calls `onError`, which
 `app.ts` shows as the `"error"` state.
 
 ### 7. Burst, selection and capture — `frameBurst.ts` / `capture.ts`
@@ -170,14 +170,14 @@ picks the best accepted frame with core's `selectBestFrame` (card-region
 sharpness + quad aspect ratio), falling back to the preview frame if no
 burst frame was accepted, and only that frame is flattened.
 
-`captureFlattenedCard(cv, frame, cardOrientation)`:
+`captureFlattenedCard(frame, cardOrientation)`:
 
 1. **Output size** (`flattenedOutputSize`): the quad's measured side
    lengths (native size — the image is for display only), snapped to the card's exact
    aspect ratio by `canonicalCardSizeFor`. Short/long sides come from the
    measured lengths, since a pre-rotation quad may be sideways.
-2. **Warp** (`warpQuad`): `computePerspectiveTransform` + `cv.warpPerspective`
-   from the frame canvas the quad was detected in.
+2. **Warp**: `computePerspectiveTransform` + core `warpPerspective`
+   (bilinear) from the pixels of the frame the quad was detected in.
 3. **Rotate**: `computeOutputRotationDegrees(orientationFromSize(frame),
    cardOrientation)` gives `0 | 90`, applied with `rotateCanvas`.
 
@@ -186,8 +186,8 @@ burst frame was accepted, and only that frame is flattened.
 Expected outcomes of a function's own logic are handled where they occur
 (an edge not found, parallel edges, a bad aspect ratio, `ImageCapture`
 unsupported → `captureHiResStill` returns `null`). Everything else
-propagates: a missing 2D context (`require2dContext` throws), a worker
-failure, an OCR or game-config failure all reach `failScan` in `app.ts`
+propagates: a missing 2D context (`require2dContext` throws), an OCR or
+game-config failure all reach `failScan` in `app.ts`
 and show the `"error"` state — unless that scan cycle is already stale.
 
 ### 8. Display the result — `app.ts`
@@ -214,14 +214,10 @@ this skips `"idle"`.
   for the next reviewer to re-tune against real camera frames** — see
   "What I couldn't verify" below.
 - **`PREVIEW_STREAM_SIZE = 1280×720`**: a moderate preview resolution
-  requested via `ideal` (never `exact`), keeping per-frame Canny/Hough
+  requested via `ideal` (never `exact`), keeping per-frame edge-fitting
   cost bounded without failing acquisition on devices that can't hit it.
-- **Worker pool lives for the page's lifetime**: the pool (and its 4
-  OpenCV.js/WASM instances) is created when the app starts, so it warms up
-  while cameras are probed, and is reused by every scan — stopping a scan or
-  changing camera/resolution doesn't terminate it. Only `pagehide`
-  terminates it; `startScan` recreates it after a back-forward-cache
-  restore.
+- **Edge detection on the main thread**: the 4 bands are fitted in turn,
+  synchronously (~0.5 ms each at 1080p), with no worker pool.
 - **Output image size in `capture.ts`** is derived from the detected
   quad's own measured pixel dimensions on the final still, not a fixed
   constant — maximizes preserved resolution per the plan's "maximum
@@ -229,12 +225,10 @@ this skips `"idle"`.
   output dimensions varying scan-to-scan (acceptable for Phase 1's
   "displayed/saved locally for now" output goal; Phase 2 can normalize
   size later if it needs to).
-- **`cv.warpPerspective` (OpenCV.js) over hand-rolled canvas transform
-  math**: `src/core` already builds the transform via
-  `cv.getPerspectiveTransform`, and Canvas 2D's `ctx.transform` is affine
-  — no projective/perspective term — so a true perspective warp isn't
-  expressible with it without hand-rolling per-pixel remapping. Reusing
-  OpenCV.js keeps this on the one CV dependency the project already has.
+- **Per-pixel perspective warp in `src/core`**: Canvas 2D's
+  `ctx.transform` is affine — no projective term — so a true perspective
+  warp needs per-pixel remapping (`warpPerspective`, bilinear or bicubic),
+  which measured as fast as OpenCV.js's for this app's sizes.
 - **"Scan Again" goes straight back into `"scanning"`, not through
   `"idle"` first.** In `app.ts`'s `scanButton` click handler, the
   `"captured"` branch clears the result image and calls the same
@@ -295,17 +289,15 @@ this skips `"idle"`.
 6. **End-to-end permission-denial and no-camera UX** — the error-message
    mapping in `cameraStream.ts` is based on documented `DOMException` names
    but was never exercised against a real browser's permission prompt.
-7. **Perf**: whether `FrameSampler`'s per-band reads plus the worker
-   round-trip keep the live preview visibly smooth, especially on a
+7. **Perf**: whether `FrameSampler`'s per-band reads plus the main-thread
+   edge fitting keep the live preview visibly smooth, especially on a
    lower-end mobile device.
 
 ## Verification performed
 
 - `npm run build` (`tsc --noEmit && vite build`) passes — no type errors
   across `src/core`'s new module, all of `src/shell`, and the updated
-  `src/main.ts`. Same pre-existing OpenCV.js bundle-size warning as prior
-  stages (documented in
-  [02-project-structure.md](./02-project-structure.md)), not a new issue.
+  `src/main.ts`.
 - `npm test` (Vitest) passes: 48 tests across 6 files (41 pre-existing +
   7 new in `src/core/pixelExtraction.test.ts`). Nothing in `src/shell` has
   unit tests, per the task's explicit instruction — it's DOM/camera glue

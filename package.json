@@ -1,14 +1,16 @@
 {
   "name": "tcg-scanner",
   "version": "0.0.1",
-  "description": "Browser-only trading card scanner: camera capture, card-shaped quad detection, and flattened crop output.",
+  "description": "Browser-only trading card scanner: detects a card with the camera, reads its collector number and set code with OCR, and keeps an exportable list of scanned cards.",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "clean": "node -e \"for (const p of ['dist', 'public/tesseract', 'node_modules/.vite']) require('fs').rmSync(p, { recursive: true, force: true })\"",
+    "clean:all": "npm run clean && node -e \"require('fs').rmSync('node_modules', { recursive: true, force: true })\""
   },
   "keywords": [],
   "devDependencies": {
@@ -18,7 +20,6 @@
     "vitest": "^5.0.1"
   },
   "dependencies": {
-    "@techstark/opencv-js": "^5.0.0-release.1",
     "@tesseract.js-data/eng": "^1.0.0",
     "tesseract.js": "^7.0.0"
   }
