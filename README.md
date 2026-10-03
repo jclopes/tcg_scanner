@@ -13,13 +13,14 @@ Requirements: Node.js 20+, and a browser with camera access (Chrome, Edge or Saf
 
 ```sh
 npm install
-npm run dev     # https://localhost:5173, also reachable on the LAN
+npm run dev     # https://localhost:5173
+npm run dev:lan # same, also reachable on the LAN (e.g. from a phone)
 npm test        # unit tests (add -- --watch for watch mode)
 npm run clean   # delete generated files (dist/, public/tesseract/, Vite's cache)
 npm run clean:all  # also delete node_modules (run npm install afterwards)
 ```
 
-The dev server uses a self-signed certificate because browsers only allow camera access over HTTPS. To scan from a phone, open the LAN URL that Vite prints and accept the certificate warning.
+The dev server uses a self-signed certificate because browsers only allow camera access over HTTPS. To scan from a phone, run `npm run dev:lan`, open the LAN URL that Vite prints and accept the certificate warning.
 
 ## Production
 

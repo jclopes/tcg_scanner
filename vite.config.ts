@@ -60,14 +60,12 @@ function copyTesseractToPublic(): Plugin {
 }
 
 export default defineConfig({
-  // HTTPS + listening on the LAN interface (not just localhost) so this can
-  // be opened from a phone on the same network — required for camera access
-  // (getUserMedia only works in a secure context, and a plain-HTTP LAN IP
-  // doesn't count as one). basicSsl generates a self-signed cert on the fly;
-  // the phone's browser will show a one-time "not private" warning to click
-  // through.
+  // HTTPS so the app can also be opened from a phone on the same network
+  // (`npm run dev:lan`) — required for camera access (getUserMedia only
+  // works in a secure context, and a plain-HTTP LAN IP doesn't count as one).
+  // basicSsl generates a self-signed cert on the fly; the phone's browser
+  // will show a one-time "not private" warning to click through. The dev
+  // server serves the whole project (source, docs, node_modules), so it
+  // listens on localhost only unless started with --host.
   plugins: [copyTesseractToPublic(), basicSsl()],
-  server: {
-    host: true,
-  },
 });
