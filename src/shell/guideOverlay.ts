@@ -1,12 +1,16 @@
 import { computeGuideGeometry, computeOutputRotationDegrees, mapEdges } from "../core";
 import type { CardOrientation, Orientation, PerEdge, Point, Size } from "../core";
 import { require2dContext } from "./canvasUtils";
+import { paletteColor } from "./dom";
 
-export type EdgeColors = PerEdge<string>;
+/** Palette colors in index.html. */
+type GuideColor = "--guide-not-found" | "--guide-found" | "--guide-flash";
 
-const GUIDE_EDGE_NOT_FOUND_COLOR = "rgba(239, 68, 68, 0.95)";
-const GUIDE_EDGE_FOUND_COLOR = "rgba(56, 224, 130, 0.95)";
-const GUIDE_EDGE_ALL_FOUND_FLASH_COLOR = "rgba(255, 255, 255, 0.95)";
+export type EdgeColors = PerEdge<GuideColor>;
+
+const GUIDE_EDGE_NOT_FOUND_COLOR: GuideColor = "--guide-not-found";
+const GUIDE_EDGE_FOUND_COLOR: GuideColor = "--guide-found";
+const GUIDE_EDGE_ALL_FOUND_FLASH_COLOR: GuideColor = "--guide-flash";
 
 /** How long the all-edges-found white flash stays up. */
 export const GUIDE_ALL_FOUND_FLASH_DURATION_MS = 500;
@@ -31,7 +35,7 @@ export function edgeColorsForDetection(edgesFound: PerEdge<boolean>): EdgeColors
 }
 
 /**
- * Redraws the guide rectangle (one color per edge) and the "TOP" indicator.
+ * Redraws the guide rectangle (one color per edge) and the "TOP" pill.
  * The canvas buffer is sized to `frameSize`, so guide coordinates are drawn
  * as-is; the page keeps the canvas's CSS box matching the video's.
  */
@@ -69,39 +73,46 @@ export function drawGuideOverlay(
   edgeColors.forEach((color, i) => {
     const from = corners[i]!;
     const to = corners[(i + 1) % 4]!;
-    ctx.strokeStyle = color;
+    ctx.strokeStyle = paletteColor(color);
     ctx.beginPath();
     ctx.moveTo(from.x, from.y);
     ctx.lineTo(to.x, to.y);
     ctx.stroke();
   });
 
-  drawCardTopIndicator(ctx, frameSize, camera, cardOrientation);
+  drawCardTopIndicator(ctx, frameSize, { left, top, bottom }, camera, cardOrientation);
 }
 
-/** Labels the frame side the card's top edge should face: the top of the
- * frame when orientations match, otherwise the left side (see
- * computeOutputRotationDegrees). */
+/** A "▲ TOP" pill on the guide edge the card's top should face: the left
+ * edge when the card is rotated (see computeOutputRotationDegrees). */
 function drawCardTopIndicator(
   ctx: CanvasRenderingContext2D,
   frameSize: Size,
+  guide: { left: number; top: number; bottom: number },
   camera: Orientation,
   cardOrientation: CardOrientation,
 ): void {
-  const padding = frameSize.width * 0.08;
   const placement =
     computeOutputRotationDegrees(camera, cardOrientation) === 0
-      ? { x: frameSize.width / 2, y: padding, angle: 0 }
-      : { x: padding, y: frameSize.height / 2, angle: -Math.PI / 2 };
+      ? { x: frameSize.width / 2, y: guide.top, angle: 0 }
+      : { x: guide.left, y: (guide.top + guide.bottom) / 2, angle: -Math.PI / 2 };
+  const fontSize = Math.max(14, frameSize.width * 0.035);
+  const label = "▲ TOP";
 
   ctx.save();
-  ctx.fillStyle = "rgba(200, 200, 200, 0.8)";
-  ctx.font = `${Math.max(16, frameSize.width * 0.05)}px sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
   ctx.translate(placement.x, placement.y);
   ctx.rotate(placement.angle);
-  ctx.fillText("^ TOP ^", 0, 0);
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  const width = ctx.measureText(label).width + fontSize * 1.2;
+  const height = fontSize * 1.6;
+  ctx.fillStyle = paletteColor("--scrim");
+  ctx.beginPath();
+  ctx.roundRect(-width / 2, -height / 2, width, height, height / 2);
+  ctx.fill();
+  ctx.fillStyle = paletteColor("--on-scrim");
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, 0, 0);
   ctx.restore();
 }
 

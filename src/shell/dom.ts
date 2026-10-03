@@ -18,3 +18,13 @@ export function optionElement(value: string, label: string): HTMLOptionElement {
 export function placeholderOption(label: string): HTMLOptionElement {
   return optionElement("", label);
 }
+
+/** A palette color from index.html's `:root` (e.g. "--accent"), for canvas
+ * drawing. */
+export function paletteColor(name: string): string {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  if (!value) {
+    throw new Error(`Expected a palette color ${name} on :root in index.html.`);
+  }
+  return value;
+}

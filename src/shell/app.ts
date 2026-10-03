@@ -19,6 +19,9 @@ import { LazyOcrWorker } from "./ocr";
 import { watchVideoFrameSize } from "./orientationWatcher";
 import { ResultView } from "./resultView";
 import { ScannedCardList } from "./scannedCards";
+import { ScanSounds } from "./scanSounds";
+import { ScreenNavigator } from "./screens";
+import type { ScreenName } from "./screens";
 import { SessionTagsInput } from "./sessionTags";
 import { SettingsPanel } from "./settings";
 import { INITIAL_SCAN_STATE } from "./state";
@@ -38,6 +41,7 @@ export function initApp(): void {
   const scanButton = requireElement<HTMLButtonElement>("scan-button");
   const resolutionStatus = requireElement<HTMLElement>("resolution-status");
   const debugForceButton = requireElement<HTMLButtonElement>("debug-force-button");
+  const captureFlash = requireElement<HTMLDivElement>("capture-flash");
 
   const settings = new SettingsPanel(
     {
@@ -54,7 +58,6 @@ export function initApp(): void {
   );
   const sessionTags = new SessionTagsInput({
     input: requireElement("tags-input"),
-    suggestions: requireElement("tag-suggestions"),
     error: requireElement("tags-error"),
   });
   const guide = new GuideFeedback(requireElement("guide-overlay"), video, () => settings.cardOrientation);
@@ -99,6 +102,15 @@ export function initApp(): void {
     controls: requireElement("debug-controls"),
   });
   const ocrWorker = new LazyOcrWorker();
+  const sounds = new ScanSounds(requireElement("sound-checkbox"));
+  const screens = new ScreenNavigator(
+    {
+      screens: { scan: requireElement("screen-scan"), game: requireElement("screen-game"), settings: requireElement("screen-settings") },
+      tabs: { scan: requireElement("tab-scan"), game: requireElement("tab-game"), settings: requireElement("tab-settings") },
+    },
+    settings.hasSavedGame ? "scan" : "game",
+    handleNavigate,
+  );
 
   let state: ScanState = INITIAL_SCAN_STATE;
   let cameraStatus: CameraStatus = "stopped";
@@ -120,8 +132,14 @@ export function initApp(): void {
     scanButton.disabled = cameraStatus === "starting" || !settings.camera;
     scanButton.textContent = scanButtonLabel(cameraStatus);
     settings.setCameraStarting(cameraStatus === "starting");
+    // No leaving the scan screen mid-start: the camera would come up hidden
+    // (see handleNavigate).
+    screens.setEnabled(cameraStatus !== "starting");
     // A forced capture needs a running detection loop (see handleDebugForceCapture).
     debugForceButton.disabled = state.phase !== "scanning";
+    // The camera check matters on pagehide, which releases the camera
+    // without leaving the "scanning" phase.
+    sounds.setHeartbeat(state.phase === "scanning" && cameraStatus === "active");
   }
 
   function setState(next: ScanState): void {
@@ -306,6 +324,8 @@ export function initApp(): void {
         .show(cardCanvas, identification.collectorNumberCrop)
         .catch((error: unknown) => failScan(error, "Could not encode the captured image.", requestId));
       identificationView.show(set, identification);
+      captureFlash.animate([{ opacity: 0 }, { opacity: 0.45 }, { opacity: 0 }], { duration: 300, iterations: 2 });
+      sounds.ping();
       guide.clear();
       setState({ phase: "captured" });
     } catch (error: unknown) {
@@ -329,6 +349,23 @@ export function initApp(): void {
     detectionLoop = null;
     stopCameraStream(video);
     cameraStatus = "stopped";
+  }
+
+  // ---- Screens ----------------------------------------------------------
+
+  /** A running scan stops when its screen is left, so it never captures a
+   * card while hidden. The game choice is saved on leaving its screen, so
+   * the next launch opens on the scan screen. */
+  function handleNavigate(from: ScreenName): void {
+    if (cameraStatus === "starting") {
+      throw new Error("Navigated away while the camera was starting.");
+    }
+    if (from === "scan" && cameraStatus === "active") {
+      stopScan();
+    }
+    if (from === "game") {
+      settings.saveGameChoice();
+    }
   }
 
   // ---- Debug --------------------------------------------------------------
@@ -369,6 +406,7 @@ export function initApp(): void {
     if (cameraStatus === "active") {
       stopScan();
     } else {
+      sounds.unlock();
       runStartScan();
     }
   });

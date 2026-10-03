@@ -41,9 +41,6 @@ export const CAMERA_RESOLUTION_OPTIONS: readonly { label: string; size: Size }[]
   { label: "3840 × 2160 (4K)", size: { width: 3840, height: 2160 } },
 ];
 
-/** Tags offered as one-click suggestions next to the session-tags input. */
-export const SUGGESTED_SESSION_TAGS: readonly string[] = ["#box-01", "#booster-01"];
-
 /** The resolution pre-selected when the app first loads — the minimum this
  * app supports (see CAMERA_RESOLUTION_OPTIONS' doc comment). */
 export const DEFAULT_CAMERA_RESOLUTION: Size = CAMERA_RESOLUTION_OPTIONS[0]!.size;

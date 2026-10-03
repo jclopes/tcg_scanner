@@ -73,8 +73,8 @@ export function scannedCardsCsv(cards: readonly ScannedCard[], games: readonly G
   const withFoil = attributes.some((a) => a.hasFoil);
   const withOrientation = attributes.some((a) => a.hasOrientation);
   const header = [
-    "set_id",
-    "card_id",
+    "set",
+    "card_number",
     ...(withFoil ? ["foil"] : []),
     ...(withOrientation ? ["orientation"] : []),
     "quantity",

@@ -23,7 +23,7 @@ export class IdentificationView {
       ...identification.matches.map((match) => {
         const button = document.createElement("button");
         button.type = "button";
-        button.className = "match-button";
+        button.className = "button button-outline mono";
         button.textContent = match.id;
         button.addEventListener("click", () => this.onAccept(set, match.id));
         return button;
@@ -40,7 +40,7 @@ export class IdentificationView {
   private rescanButton(): HTMLButtonElement {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "match-button rescan-button";
+    button.className = "button";
     button.textContent = "Rescan";
     button.title = "None of these — scan the card again";
     button.addEventListener("click", () => this.onRescan());

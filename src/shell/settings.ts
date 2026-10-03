@@ -93,6 +93,18 @@ export class SettingsPanel {
     return this.selectedCardOrientation;
   }
 
+  /** Whether a game choice was saved by an earlier session (see
+   * saveGameChoice) — false on first launch. */
+  get hasSavedGame(): boolean {
+    return this.preferences.gameId !== undefined;
+  }
+
+  /** Saves the selected game and set, so they're restored next launch even
+   * when the user kept the defaults. */
+  saveGameChoice(): void {
+    savePreferences({ gameId: this.selectedGame.id, setCode: this.selectedSet.code });
+  }
+
   /** Whether the next accepted card is foil. Always false for a game
    * without foils. */
   get foil(): boolean {

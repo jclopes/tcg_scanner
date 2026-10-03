@@ -9,56 +9,75 @@
       :root {
         color-scheme: dark;
         font-family: system-ui, sans-serif;
+
+        /* Every UI color; the guide overlay canvas reads --guide-*, --scrim and --on-scrim too. */
         --bg: #111;
         --panel-bg: #1a1a1a;
         --panel-border: #2e2e2e;
-        --text: #eee;
-        --text-muted: #999;
-        --accent: #38e082;
-        --accent-text: #111;
-        --danger: #ff7b7b;
         --control-bg: #222;
         --control-border: #444;
-        --radius: 10px;
-        --radius-sm: 6px;
+        --bar-bg: rgba(22, 22, 22, 0.82);
+        --bar-border: rgba(255, 255, 255, 0.14);
+        --media-bg: #000;
+        --scrim: rgba(0, 0, 0, 0.85);
+        --on-scrim: #fff;
+        --text: #eee;
+        --text-secondary: #ccc;
+        --text-muted: #999;
+        --tab-inactive: #8e8e93;
+        --accent: #ffc107;
+        --accent-text: #111;
+        --accent-tint: rgba(255, 193, 7, 0.1);
+        --danger: #ff7b7b;
+        --danger-tint: rgba(255, 123, 123, 0.12);
+        --warning: #ff9f43;
+        --guide-not-found: rgba(239, 68, 68, 0.95);
+        --guide-found: rgba(56, 224, 130, 0.95);
+        --guide-flash: rgba(255, 255, 255, 0.95);
+
+        --font-xs: 0.75rem;
+        --font-sm: 0.85rem;
+        /* Inputs stay at 1rem: smaller makes iOS Safari zoom in on focus. */
+        --font-md: 1rem;
+        --font-lg: 1.1rem;
+        --font-mono: ui-monospace, monospace;
+
+        --gap-xs: 0.25rem;
+        --gap-sm: 0.5rem;
         --gap: 0.75rem;
-        /* Comfortable touch target height. */
+        --radius-sm: 6px;
+        --radius: 10px;
+        --radius-pill: 999px;
         --tap: 2.75rem;
+        --tap-lg: 3.25rem;
+        --label-width: 6.5rem;
+        --thumb-width: 8rem;
+        --tab-bar-height: 49px;
       }
+
+      /* ---- Base ---- */
 
       * {
         box-sizing: border-box;
       }
 
+      [hidden] {
+        display: none !important;
+      }
+
       body {
         margin: 0;
-        padding: 0.75rem max(0.75rem, env(safe-area-inset-right)) 0 max(0.75rem, env(safe-area-inset-left));
         background: var(--bg);
         color: var(--text);
-        display: flex;
-        justify-content: center;
-        gap: 1rem;
-        align-items: flex-start;
       }
 
-      #app {
-        max-width: 480px;
-        width: 100%;
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-      }
-
-      h1 {
-        font-size: 1rem;
+      h2,
+      p {
         margin: 0;
-        color: var(--text-muted);
-        font-weight: 600;
       }
 
       h2 {
-        font-size: 0.95rem;
-        margin: 0;
+        font-size: var(--font-md);
       }
 
       button,
@@ -67,56 +86,241 @@
         font: inherit;
       }
 
+      button {
+        cursor: pointer;
+      }
+
+      :disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+      }
+
+      .hint {
+        font-size: var(--font-sm);
+        color: var(--text-muted);
+      }
+
+      .error {
+        font-size: var(--font-sm);
+        color: var(--danger);
+      }
+
+      /* ---- Layout ---- */
+
+      #app {
+        max-width: 480px;
+        margin-inline: auto;
+        padding: max(var(--gap), env(safe-area-inset-top)) max(var(--gap), env(safe-area-inset-right))
+          calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + var(--gap)) max(var(--gap), env(safe-area-inset-left));
+      }
+
+      .screen {
+        display: flex;
+        flex-direction: column;
+        gap: var(--gap);
+      }
+
       .panel {
         display: flex;
         flex-direction: column;
-        gap: 0.6rem;
-        padding: 0.75rem;
+        gap: var(--gap-sm);
+        padding: var(--gap);
         border: 1px solid var(--panel-border);
         border-radius: var(--radius);
         background: var(--panel-bg);
       }
 
-      .panel[hidden] {
-        display: none;
+      .tab-bar {
+        position: fixed;
+        inset: auto 0 0 0;
+        z-index: 5;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        height: calc(var(--tab-bar-height) + env(safe-area-inset-bottom));
+        padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        background: var(--bar-bg);
+        -webkit-backdrop-filter: saturate(180%) blur(20px);
+        backdrop-filter: saturate(180%) blur(20px);
+        border-top: 0.5px solid var(--bar-border);
       }
 
-      .secondary-button {
-        min-height: 2.25rem;
-        padding: 0.35rem 0.75rem;
-        font-size: 0.85rem;
+      .tab-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        padding: 0;
+        border: none;
+        background: none;
+        color: var(--tab-inactive);
+        font-size: 10px;
+        font-weight: 500;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      .tab-item svg {
+        width: 26px;
+        height: 26px;
+      }
+
+      .tab-item[aria-current="page"] {
+        color: var(--accent);
+      }
+
+      /* ---- Controls ---- */
+
+      .button {
+        min-height: var(--tap);
+        padding: 0 var(--gap);
         border: 1px solid var(--control-border);
+        border-radius: var(--radius-sm);
         background: var(--control-bg);
         color: var(--text);
+        font-size: var(--font-sm);
+      }
+
+      .button-primary {
+        min-height: var(--tap-lg);
+        border: none;
+        background: var(--accent);
+        color: var(--accent-text);
+        font-size: var(--font-lg);
+        font-weight: 600;
+      }
+
+      .button-outline {
+        border-color: var(--accent);
+        background: var(--accent-tint);
+        font-size: var(--font-md);
+      }
+
+      .button-danger {
+        color: var(--danger);
+      }
+
+      .mono {
+        font-family: var(--font-mono);
+      }
+
+      .input {
+        width: 100%;
+        min-height: var(--tap);
+        padding: 0 var(--gap-sm);
+        border: 1px solid var(--control-border);
         border-radius: var(--radius-sm);
+        background: var(--control-bg);
+        color: var(--text);
+        font-size: var(--font-md);
       }
 
-      .secondary-button:disabled {
-        color: #666;
-        border-color: #333;
+      .input[aria-invalid="true"] {
+        border-color: var(--danger);
       }
 
-      /* ---- Camera ---------------------------------------------------------- */
+      .field {
+        display: grid;
+        grid-template-columns: var(--label-width) minmax(0, 1fr);
+        align-items: center;
+        gap: var(--gap);
+      }
 
+      .field-auto {
+        grid-template-columns: auto minmax(0, 1fr);
+      }
+
+      .field label,
+      .checkbox-row {
+        font-size: var(--font-sm);
+        color: var(--text-secondary);
+      }
+
+      .field-note {
+        padding-left: calc(var(--label-width) + var(--gap));
+      }
+
+      .checkbox-row {
+        display: flex;
+        align-items: center;
+        gap: var(--gap-sm);
+        min-height: var(--tap);
+      }
+
+      .checkbox-row input {
+        width: 1.2rem;
+        height: 1.2rem;
+      }
+
+      /* Radio/checkbox pill toggles; the input is invisible but stays focusable. */
+      .segmented,
+      .pill-toggle {
+        display: flex;
+        overflow: hidden;
+        border: 1px solid var(--control-border);
+        border-radius: var(--radius-pill);
+        background: var(--control-bg);
+      }
+
+      .segmented label,
+      .pill-toggle {
+        position: relative;
+        display: flex;
+        align-items: center;
+        min-height: var(--tap);
+        padding: 0 var(--gap);
+        color: var(--text-muted);
+        font-size: var(--font-sm);
+        cursor: pointer;
+      }
+
+      .segmented input,
+      .pill-toggle input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .segmented label:has(input:checked),
+      .pill-toggle:has(input:checked) {
+        background: var(--accent);
+        color: var(--accent-text);
+        font-weight: 600;
+      }
+
+      .segmented label:has(input:focus-visible),
+      .pill-toggle:has(input:focus-visible) {
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+      }
+
+      /* ---- Camera ---- */
+
+      /* --frame-aspect (set in app.ts) keeps the stage, and so the overlay
+         canvas, the video's exact shape; the width shrinks to stay under 55%
+         of the screen height. */
       #camera-stage {
         position: relative;
-        /* --frame-aspect is the live video's width / height, set from JS
-           (src/shell/app.ts) once it loads; 16:9 until then. The stage keeps
-           exactly that shape — so the guide-overlay canvas, sized to the
-           video's intrinsic pixels, maps 1:1 onto the video — and shrinks
-           its width rather than its height to stay under 55% of the screen
-           height, so a portrait phone camera doesn't push everything else
-           off-screen. */
         aspect-ratio: var(--frame-aspect, 1.7778);
         width: min(100%, calc(55svh * var(--frame-aspect, 1.7778)));
         margin-inline: auto;
-        background: #000;
         overflow: hidden;
         border-radius: var(--radius);
+        background: var(--media-bg);
       }
 
       #camera-video,
-      #guide-overlay {
+      #guide-overlay,
+      #capture-flash {
         position: absolute;
         inset: 0;
         width: 100%;
@@ -127,193 +331,106 @@
         object-fit: cover;
       }
 
-      /* Stays reachable at the bottom of the screen whenever its normal spot
-         is scrolled out of view below. */
-      #actions {
-        position: sticky;
-        bottom: 0;
-        z-index: 1;
-        padding: 0.5rem 0 max(0.5rem, env(safe-area-inset-bottom));
-        background: linear-gradient(to bottom, transparent, var(--bg) 35%);
+      #capture-flash {
+        background: var(--accent);
+        opacity: 0;
+        pointer-events: none;
       }
 
       .card-options {
         display: flex;
-        justify-content: center;
         flex-wrap: wrap;
-        gap: 0.5rem;
-        margin-bottom: 0.5rem;
+        justify-content: center;
+        gap: var(--gap-sm);
       }
 
       .card-options:not(:has(> :not([hidden]))) {
         display: none;
       }
 
-      .card-options [hidden] {
-        display: none;
-      }
-
-      /* Radio buttons / checkbox shown as pill toggles; the input itself is
-         visually hidden but stays focusable. */
-      .segmented,
-      .foil-toggle {
+      /* Sticks above the tab bar when scrolled out of view. */
+      #actions {
+        position: sticky;
+        bottom: calc(var(--tab-bar-height) + env(safe-area-inset-bottom));
+        z-index: 1;
         display: flex;
-        border: 1px solid var(--control-border);
-        border-radius: 999px;
-        overflow: hidden;
-        background: var(--control-bg);
+        flex-direction: column;
+        gap: var(--gap-sm);
+        padding: var(--gap-sm) 0;
+        background: linear-gradient(to bottom, transparent, var(--bg) 35%);
       }
 
-      .segmented label,
-      .foil-toggle {
-        position: relative;
-        display: flex;
-        align-items: center;
-        min-height: 2.5rem;
-        padding: 0 1rem;
-        font-size: 0.9rem;
-        color: var(--text-muted);
-        cursor: pointer;
-      }
-
-      .segmented input,
-      .foil-toggle input {
-        position: absolute;
-        opacity: 0;
-        pointer-events: none;
-      }
-
-      .segmented label:has(input:checked),
-      .foil-toggle:has(input:checked) {
-        background: var(--accent);
-        color: var(--accent-text);
-        font-weight: 600;
-      }
-
-      .segmented label:has(input:focus-visible),
-      .foil-toggle:has(input:focus-visible) {
-        outline: 2px solid var(--accent);
-        outline-offset: -2px;
-      }
-
-      #scan-button {
+      #actions .button {
         width: 100%;
-        min-height: 3.25rem;
-        padding: 0.7rem 1.25rem;
-        font-size: 1.05rem;
-        font-weight: 600;
-        border-radius: var(--radius);
-        border: none;
-        background: var(--accent);
-        color: var(--accent-text);
       }
 
-      #scan-button:disabled {
-        background: #555;
-        color: #999;
-      }
+      /* ---- Capture ---- */
 
-      /* ---- Capture: thumbnail + identification ----------------------------- */
-
-      /* Always on the page at a fixed size, empty or not, so the layout
-         never moves: a thumbnail slot and two text lines on top, one row of
-         buttons below. */
+      /* Fixed size, empty or not, so the layout never moves. */
       #capture {
         display: grid;
-        grid-template-columns: 8rem minmax(0, 1fr);
+        grid-template-columns: var(--thumb-width) minmax(0, 1fr);
         grid-template-rows: 3.5rem var(--tap);
-        gap: 0.5rem var(--gap);
+        gap: var(--gap-sm) var(--gap);
       }
 
       .thumb-slot {
-        border: 1px dashed var(--control-border);
-        border-radius: var(--radius-sm);
         overflow: hidden;
-      }
-
-      .thumb-slot:has(#result:not([hidden])) {
-        border-style: solid;
+        border: 1px solid var(--control-border);
+        border-radius: var(--radius-sm);
       }
 
       #result {
         display: block;
         width: 100%;
         height: 100%;
-        margin: 0;
         padding: 0;
         border: none;
-        background: #000;
+        background: var(--media-bg);
         cursor: zoom-in;
       }
 
-      #result[hidden] {
-        display: none;
+      #result img,
+      #card-overlay img {
+        display: block;
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
       }
 
       #result img {
-        display: block;
         width: 100%;
         height: 100%;
-        object-fit: contain;
       }
 
       .capture-text {
         display: flex;
         flex-direction: column;
         justify-content: center;
-        gap: 0.2rem;
+        gap: var(--gap-xs);
         min-width: 0;
       }
 
-      /* Status (scan progress, prompts, errors): up to two lines. */
       #status {
-        margin: 0;
-        font-size: 0.9rem;
-        line-height: 1.25;
         display: -webkit-box;
+        overflow: hidden;
         -webkit-box-orient: vertical;
         -webkit-line-clamp: 2;
         line-clamp: 2;
-        overflow: hidden;
+        font-size: var(--font-sm);
+        line-height: 1.25;
       }
 
       #status[data-kind="error"] {
         color: var(--danger);
       }
 
-
-      #card-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 10;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
-        background: rgba(0, 0, 0, 0.88);
-        cursor: zoom-out;
-      }
-
-      #card-overlay[hidden] {
-        display: none;
-      }
-
-      #card-overlay img {
-        max-width: 100%;
-        max-height: 100%;
-        object-fit: contain;
-        border-radius: var(--radius);
-      }
-
-      /* One line; longer text is cut with an ellipsis (full text in the
-         element's title). */
       #identification-warning {
-        margin: 0;
-        white-space: nowrap;
         overflow: hidden;
+        white-space: nowrap;
         text-overflow: ellipsis;
-        color: #ffc400;
-        font-size: 0.75rem;
+        color: var(--warning);
+        font-size: var(--font-xs);
       }
 
       #identification-warning::before {
@@ -322,7 +439,7 @@
 
       /* Keeps its line when there's no warning. */
       #identification-warning[hidden] {
-        display: block;
+        display: block !important;
         visibility: hidden;
       }
 
@@ -330,268 +447,77 @@
         grid-column: 1 / -1;
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 0.5rem;
+        gap: var(--gap-sm);
       }
 
-      .match-button {
+      .match-buttons .button {
         min-width: 0;
-        min-height: var(--tap);
-        padding: 0.4rem 0.7rem;
-        font-family: ui-monospace, monospace;
-        font-size: 0.95rem;
-        border: 1px solid var(--accent);
-        background: rgba(56, 224, 130, 0.08);
-        color: var(--text);
-        border-radius: var(--radius-sm);
-        cursor: pointer;
+        padding: 0 var(--gap-sm);
       }
 
-      .rescan-button {
-        font-family: inherit;
-        border-color: var(--control-border);
-        background: var(--control-bg);
-        color: var(--text-muted);
-      }
-
-      /* ---- Settings -------------------------------------------------------- */
-
-      details.panel {
-        gap: 0;
-        padding: 0;
-      }
-
-      details.panel > summary {
+      #card-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        min-height: var(--tap);
-        padding: 0 0.75rem;
-        font-size: 0.95rem;
-        font-weight: 600;
-        cursor: pointer;
-        list-style: none;
+        justify-content: center;
+        padding: max(var(--gap), env(safe-area-inset-top)) var(--gap) max(var(--gap), env(safe-area-inset-bottom));
+        background: var(--scrim);
+        cursor: zoom-out;
       }
 
-      details.panel > summary::-webkit-details-marker {
-        display: none;
+      #card-overlay img {
+        border-radius: var(--radius);
       }
 
-      details.panel > summary::after {
-        content: "▾";
-        color: var(--text-muted);
-        transition: transform 0.15s;
-      }
+      /* ---- Scanned cards ---- */
 
-      details.panel:not([open]) > summary::after {
-        transform: rotate(-90deg);
-      }
-
-      .panel-body {
-        display: flex;
-        flex-direction: column;
-        gap: 0.6rem;
-        padding: 0 0.75rem 0.75rem;
-      }
-
-      .setting-row {
-        display: grid;
-        grid-template-columns: 6.5rem minmax(0, 1fr);
-        align-items: center;
-        gap: var(--gap);
-      }
-
-      .setting-row label {
-        font-size: 0.85rem;
-        color: #ccc;
-      }
-
-      /* 1rem font keeps iOS Safari from zooming in when a control is focused. */
-      .setting-select {
-        width: 100%;
-        min-height: var(--tap);
-        padding: 0.4rem 0.6rem;
-        font-size: 1rem;
-        border: 1px solid var(--control-border);
-        background: var(--control-bg);
-        color: var(--text);
-        border-radius: var(--radius-sm);
-      }
-
-      .setting-select:disabled {
-        opacity: 0.6;
-      }
-
-      .setting-note {
-        margin: -0.3rem 0 0;
-        font-size: 0.8rem;
-        color: var(--text-muted);
-        text-align: right;
-      }
-
-      #tags-input[aria-invalid="true"] {
-        border-color: var(--danger);
-      }
-
-      .tag-suggestions {
-        display: flex;
-        justify-content: flex-end;
-        flex-wrap: wrap;
-        gap: 0.4rem;
-        margin-top: -0.2rem;
-      }
-
-      .tag-suggestion {
-        min-height: 2rem;
-        padding: 0.2rem 0.7rem;
-        font-size: 0.85rem;
-        font-family: ui-monospace, monospace;
-        border: 1px solid var(--control-border);
-        background: var(--control-bg);
-        color: var(--text-muted);
-        border-radius: 999px;
-        cursor: pointer;
-      }
-
-      #tags-error {
-        margin: 0;
-        font-size: 0.8rem;
-        color: var(--danger);
-        text-align: right;
-      }
-
-      #tags-error[hidden] {
-        display: none;
-      }
-
-      .debug-toggle {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        min-height: var(--tap);
-        font-size: 0.85rem;
-        color: #ccc;
-      }
-
-      .debug-toggle input {
-        width: 1.2rem;
-        height: 1.2rem;
-      }
-
-      .debug-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: var(--gap);
-      }
-
-      #debug-controls[hidden] {
-        display: none;
-      }
-
-      /* ---- Scanned cards --------------------------------------------------- */
-
+      /* The count lines up with #capture's text column (less this panel's padding and border). */
       .scanned-cards-header {
+        display: grid;
+        grid-template-columns: calc(var(--thumb-width) - var(--gap) - 1px) minmax(0, 1fr) auto;
+        align-items: center;
+        column-gap: var(--gap);
+      }
+
+      .scanned-cards-header h2 {
+        white-space: nowrap;
+      }
+
+      .scanned-cards-actions,
+      .manual-entry,
+      .scanned-card-actions {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        gap: 0.5rem;
+        gap: var(--gap-sm);
       }
 
       .scanned-cards-actions {
-        display: flex;
-        gap: 0.4rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
       }
 
-      #scanned-cards-clear:not(:disabled),
-      .danger-button {
-        color: var(--danger);
-      }
-
-      .visually-hidden {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border: 0;
-      }
-
-      .manual-entry {
-        display: flex;
-        gap: 0.5rem;
-      }
-
-      .manual-entry input {
-        flex: 1 1 auto;
+      .manual-entry .input {
+        flex: 1;
         min-width: 0;
       }
 
-      .manual-entry button {
-        min-height: var(--tap);
-        min-width: 4.5rem;
-      }
-
-      #manual-entry-input[aria-invalid="true"] {
-        border-color: var(--danger);
-      }
-
-      #manual-entry-error {
-        margin: -0.3rem 0 0;
-        font-size: 0.8rem;
-        color: var(--danger);
-      }
-
-      #manual-entry-error[hidden] {
-        display: none;
-      }
-
-      .count-badge {
-        display: inline-block;
-        min-width: 1.5rem;
-        padding: 0.05rem 0.45rem;
-        margin-left: 0.25rem;
-        border-radius: 999px;
-        background: var(--control-bg);
-        border: 1px solid var(--control-border);
-        color: var(--text-muted);
-        font-size: 0.8rem;
-        font-weight: 600;
-        text-align: center;
-      }
-
-      #scanned-cards-empty {
-        margin: 0;
-        font-size: 0.85rem;
-        color: var(--text-muted);
-      }
-
-      #scanned-cards-empty[hidden] {
-        display: none;
-      }
-
       #scanned-cards-list {
+        max-height: 45svh;
         margin: 0;
         padding-left: 2.25rem;
-        max-height: 45svh;
         overflow-y: auto;
-        font-size: 0.9rem;
+        font-size: var(--font-sm);
       }
 
-      #scanned-cards-list li {
-        border-bottom: 1px solid var(--panel-border);
-      }
-
-      #scanned-cards-list li:last-child {
-        border-bottom: none;
+      #scanned-cards-list li + li {
+        border-top: 1px solid var(--panel-border);
       }
 
       #scanned-cards-list li::marker {
         color: var(--text-muted);
-        font-size: 0.8rem;
+        font-size: var(--font-xs);
       }
 
       #scanned-cards-list summary {
@@ -599,9 +525,9 @@
         align-items: center;
         justify-content: space-between;
         min-height: var(--tap);
-        font-family: ui-monospace, monospace;
-        cursor: pointer;
+        font-family: var(--font-mono);
         list-style: none;
+        cursor: pointer;
       }
 
       #scanned-cards-list summary::-webkit-details-marker {
@@ -619,11 +545,11 @@
       }
 
       .scanned-card-facts {
-        margin: 0 0 0.5rem;
         display: grid;
         grid-template-columns: auto 1fr;
-        gap: 0.25rem 0.75rem;
-        font-size: 0.85rem;
+        gap: var(--gap-xs) var(--gap);
+        margin: 0 0 var(--gap-sm);
+        font-size: var(--font-sm);
       }
 
       .scanned-card-facts dt {
@@ -632,181 +558,136 @@
 
       .scanned-card-facts dd {
         margin: 0;
-        font-family: ui-monospace, monospace;
+        font-family: var(--font-mono);
         overflow-wrap: anywhere;
       }
 
       .scanned-card-actions {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding-bottom: 0.6rem;
+        padding-bottom: var(--gap-sm);
       }
 
-      .scanned-card-actions button {
+      .scanned-card-actions .button {
         flex: 0 0 var(--tap);
-        min-height: var(--tap);
-        font-size: 1.2rem;
-        line-height: 1;
+        padding: 0;
+        font-size: var(--font-lg);
       }
 
       .scanned-card-quantity {
         min-width: 2.5rem;
         text-align: center;
-        font-family: ui-monospace, monospace;
-        font-size: 1.05rem;
+        font-family: var(--font-mono);
+        font-size: var(--font-lg);
         font-weight: 600;
       }
 
-      /* ---- Debug panel ----------------------------------------------------- */
+      /* ---- Debug panel ---- */
 
       #debug-panel {
-        width: 220px;
         display: flex;
         flex-direction: column;
-        gap: 0.75rem;
-      }
-
-      #debug-panel[hidden] {
-        display: none;
+        gap: var(--gap);
       }
 
       #debug-panel figure {
-        margin: 0;
         display: flex;
         flex-direction: column;
-        gap: 0.25rem;
+        gap: var(--gap-xs);
+        margin: 0;
       }
 
       #debug-panel img {
+        display: block;
         width: 100%;
         height: auto;
-        display: block;
         border-radius: var(--radius-sm);
-        background: #000;
+        background: var(--media-bg);
       }
 
-      /* Edge-band strips are extreme long/thin rectangles (a ~20-40px thick
-         band running the length of a guide edge) — after rotating so every
-         one reads horizontally (see debugSteps.ts), scaling to the panel's
-         full width the way other debug images do would still crush them to
-         a sliver only a few pixels tall. Pin a legible fixed height instead
-         and let width follow at that height's own (undistorted) aspect
-         ratio; a figure narrower than its image scrolls horizontally rather
-         than squeezing it. */
+      #debug-panel figcaption {
+        color: var(--text-muted);
+        font-size: var(--font-xs);
+      }
+
+      /* Edge bands are long thin strips: a fixed legible height, natural width,
+         scrolling sideways instead of being squeezed to the panel width. */
       #debug-panel .debug-step--edge-band {
         overflow-x: auto;
       }
 
       #debug-panel .debug-step--edge-band img {
         width: auto;
-        height: 64px;
         max-width: none;
-        /* #debug-panel figure is a column flex container, and flex items
-           default to align-items: stretch on the cross axis (width, here) —
-           that silently overrides `width: auto` above and stretches the
-           image back out to the figure's full width, undoing the
-           aspect-ratio-preserving sizing this rule exists for. Opting this
-           one item out of stretch is what actually lets it size itself. */
+        height: 64px;
+        /* Otherwise the column flex parent stretches it back to full width. */
         align-self: flex-start;
       }
 
-      #debug-panel figcaption {
-        font-size: 0.75rem;
-        color: #aaa;
-      }
-
       .debug-rejection-reason {
-        margin: 0;
-        padding: 0.5rem;
+        padding: var(--gap-sm);
         border-radius: var(--radius-sm);
-        background: rgba(255, 123, 123, 0.12);
+        background: var(--danger-tint);
         color: var(--danger);
-        font-size: 0.8rem;
+        font-size: var(--font-sm);
       }
 
       .debug-stage-heading {
-        margin: 0;
-        padding-top: 0.25rem;
-        border-top: 1px solid #333;
-        font-size: 0.8rem;
+        padding-top: var(--gap-xs);
+        border-top: 1px solid var(--panel-border);
+        color: var(--text-secondary);
+        font-size: var(--font-sm);
         font-weight: 600;
-        color: #ccc;
       }
 
       .debug-stage-heading:first-child {
-        border-top: none;
         padding-top: 0;
-      }
-
-      /* ---- Narrow screens -------------------------------------------------- */
-
-      @media (max-width: 720px) {
-        /* The debug panel stacks under the app instead of beside it. */
-        body {
-          flex-direction: column;
-          align-items: center;
-        }
-
-        #debug-panel {
-          width: 100%;
-          max-width: 480px;
-          padding-bottom: 1rem;
-        }
+        border-top: none;
       }
     </style>
   </head>
   <body>
     <main id="app">
-      <h1>TCG Scanner</h1>
+      <section id="screen-scan" class="screen" aria-label="Scan">
+        <div id="camera-stage">
+          <video id="camera-video" autoplay playsinline muted></video>
+          <canvas id="guide-overlay"></canvas>
+          <div id="capture-flash"></div>
+        </div>
 
-      <div id="camera-stage">
-        <video id="camera-video" autoplay playsinline muted></video>
-        <canvas id="guide-overlay"></canvas>
-      </div>
-
-
-      <div id="actions">
         <div class="card-options">
           <div id="orientation-toggle" class="segmented" role="radiogroup" aria-label="Card orientation">
             <label><input type="radio" name="card-orientation" id="orientation-portrait" value="portrait" /> Portrait</label>
             <label><input type="radio" name="card-orientation" id="orientation-landscape" value="landscape" /> Landscape</label>
           </div>
-          <label id="foil-toggle" class="foil-toggle"><input type="checkbox" id="foil-checkbox" /> Foil</label>
+          <label id="foil-toggle" class="pill-toggle"><input type="checkbox" id="foil-checkbox" /> Foil</label>
         </div>
-        <button type="button" id="scan-button">Start Scan</button>
-      </div>
 
-      <section id="capture" aria-label="Captured card">
-        <div class="thumb-slot">
-          <button type="button" id="result" aria-label="Show the full captured card" hidden>
-            <img id="result-image" alt="Collector number as captured" />
-          </button>
+        <div id="actions">
+          <div id="debug-controls" hidden>
+            <button type="button" id="debug-force-button" class="button" disabled>Capture Debug Frame</button>
+          </div>
+          <button type="button" id="scan-button" class="button button-primary">Start Scan</button>
         </div>
-        <div class="capture-text">
-          <p id="status" role="status" aria-live="polite">Starting…</p>
-          <p id="identification-warning" role="alert" hidden></p>
-        </div>
-        <div id="identification-matches" class="match-buttons"></div>
-      </section>
 
-      <details class="panel" open>
-        <summary>Session</summary>
-        <div class="panel-body">
-          <div class="setting-row">
-            <label for="game-select">Game</label>
-            <select id="game-select" class="setting-select"></select>
+        <section id="capture" aria-label="Captured card">
+          <div class="thumb-slot">
+            <button type="button" id="result" aria-label="Show the full captured card" hidden>
+              <img id="result-image" alt="Collector number as captured" />
+            </button>
           </div>
-          <div class="setting-row">
-            <label for="set-select">Set</label>
-            <select id="set-select" class="setting-select"></select>
+          <div class="capture-text">
+            <p id="status" role="status" aria-live="polite">Starting…</p>
+            <p id="identification-warning" role="alert" hidden></p>
           </div>
-          <div class="setting-row">
+          <div id="identification-matches" class="match-buttons"></div>
+        </section>
+
+        <div class="panel">
+          <div class="field field-auto">
             <label for="tags-input">Tags</label>
             <input
               type="text"
               id="tags-input"
-              class="setting-select"
+              class="input"
               placeholder="#box-01 #booster-01"
               autocomplete="off"
               autocapitalize="off"
@@ -815,73 +696,110 @@
               aria-describedby="tags-error"
             />
           </div>
-          <div id="tag-suggestions" class="tag-suggestions" aria-label="Suggested tags"></div>
-          <p id="tags-error" hidden></p>
+          <p id="tags-error" class="error" hidden></p>
         </div>
-      </details>
 
-      <section id="scanned-cards" class="panel">
-        <div class="scanned-cards-header">
-          <h2>Scanned cards <span id="scanned-cards-count" class="count-badge">0</span></h2>
-          <div class="scanned-cards-actions">
-            <button type="button" id="scanned-cards-download" class="secondary-button" aria-label="Download CSV" title="Download CSV" disabled>CSV</button>
-            <button type="button" id="scanned-cards-merge" class="secondary-button" title="Merge duplicate entries into one, adding up their quantities" disabled>Merge</button>
-            <button type="button" id="scanned-cards-clear" class="secondary-button" disabled>Clear</button>
+        <aside id="debug-panel" aria-label="Debug steps" hidden></aside>
+
+        <section id="scanned-cards" class="panel">
+          <div class="scanned-cards-header">
+            <h2>Scanned cards</h2>
+            <span id="scanned-cards-count" class="hint">0</span>
+            <div class="scanned-cards-actions">
+              <button type="button" id="scanned-cards-download" class="button" aria-label="Download CSV" title="Download CSV" disabled>CSV</button>
+              <button type="button" id="scanned-cards-merge" class="button" title="Merge duplicate entries into one, adding up their quantities" disabled>Merge</button>
+              <button type="button" id="scanned-cards-clear" class="button button-danger" disabled>Clear</button>
+            </div>
           </div>
-        </div>
-        <form id="manual-entry" class="manual-entry" autocomplete="off">
-          <label for="manual-entry-input" class="visually-hidden">Card number</label>
-          <input
-            type="text"
-            id="manual-entry-input"
-            class="setting-select"
-            list="manual-entry-options"
-            placeholder="Card number, e.g. 005a"
-            autocapitalize="off"
-            spellcheck="false"
-            enterkeyhint="done"
-            aria-describedby="manual-entry-error"
-          />
-          <datalist id="manual-entry-options"></datalist>
-          <button type="submit" class="secondary-button">Add</button>
-        </form>
-        <p id="manual-entry-error" hidden></p>
-        <p id="scanned-cards-empty">No cards yet — tap a best match after a scan, or type a card number.</p>
-        <ol id="scanned-cards-list" reversed></ol>
+          <form id="manual-entry" class="manual-entry" autocomplete="off">
+            <label for="manual-entry-input" class="visually-hidden">Card number</label>
+            <input
+              type="text"
+              id="manual-entry-input"
+              class="input"
+              list="manual-entry-options"
+              placeholder="Card number, e.g. 005a"
+              autocapitalize="off"
+              spellcheck="false"
+              enterkeyhint="done"
+              aria-describedby="manual-entry-error"
+            />
+            <datalist id="manual-entry-options"></datalist>
+            <button type="submit" class="button">Add</button>
+          </form>
+          <p id="manual-entry-error" class="error" hidden></p>
+          <p id="scanned-cards-empty" class="hint">No cards yet — tap a best match after a scan, or type a card number.</p>
+          <ol id="scanned-cards-list" reversed></ol>
+        </section>
       </section>
 
-      <details class="panel">
-        <summary>Camera &amp; advanced</summary>
-        <div class="panel-body">
-          <div class="setting-row">
+      <section id="screen-game" class="screen" aria-label="Game and set" hidden>
+        <div class="panel">
+          <div class="field">
+            <label for="game-select">Game</label>
+            <select id="game-select" class="input"></select>
+          </div>
+          <div class="field">
+            <label for="set-select">Set</label>
+            <select id="set-select" class="input"></select>
+          </div>
+        </div>
+      </section>
+
+      <section id="screen-settings" class="screen" aria-label="Settings" hidden>
+        <div class="panel">
+          <div class="field">
             <label for="camera-select">Camera</label>
-            <select id="camera-select" class="setting-select">
+            <select id="camera-select" class="input">
               <option value="">Detecting cameras…</option>
             </select>
           </div>
-          <div class="setting-row">
+          <div class="field">
             <label for="resolution-select">Resolution</label>
-            <select id="resolution-select" class="setting-select"></select>
+            <select id="resolution-select" class="input"></select>
           </div>
-          <p id="resolution-status" class="setting-note">-</p>
-          <div class="debug-row">
-            <label class="debug-toggle" for="debug-checkbox">
-              <input type="checkbox" id="debug-checkbox" />
-              Debug mode
-            </label>
-            <div id="debug-controls" hidden>
-              <button type="button" id="debug-force-button" class="secondary-button" disabled>Capture Debug Frame</button>
-            </div>
-          </div>
+          <p id="resolution-status" class="hint field-note">-</p>
+          <label class="checkbox-row" for="sound-checkbox">
+            <input type="checkbox" id="sound-checkbox" />
+            Sound
+          </label>
+          <label class="checkbox-row" for="debug-checkbox">
+            <input type="checkbox" id="debug-checkbox" />
+            Debug mode
+          </label>
         </div>
-      </details>
+      </section>
     </main>
+
+    <nav class="tab-bar" aria-label="Screens">
+      <button type="button" id="tab-scan" class="tab-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" />
+          <rect x="9" y="7.5" width="6" height="9" rx="1" />
+        </svg>
+        Scan
+      </button>
+      <button type="button" id="tab-game" class="tab-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="3" width="11" height="15" rx="2" />
+          <path d="M6 6.5v11A3.5 3.5 0 0 0 9.5 21H16" />
+        </svg>
+        Game
+      </button>
+      <button type="button" id="tab-settings" class="tab-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1" />
+          <circle cx="15" cy="6" r="2" />
+          <circle cx="9" cy="12" r="2" />
+          <circle cx="17" cy="18" r="2" />
+        </svg>
+        Settings
+      </button>
+    </nav>
 
     <div id="card-overlay" role="dialog" aria-label="Captured card — tap to close" hidden>
       <img id="card-overlay-image" alt="Full captured card" />
     </div>
-
-    <aside id="debug-panel" hidden></aside>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

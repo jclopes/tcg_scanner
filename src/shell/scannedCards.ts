@@ -6,7 +6,7 @@ const CSV_FILENAME = "scanned-cards.csv";
 
 export interface ScannedCardListElements {
   list: HTMLOListElement;
-  /** The total-cards badge next to the heading. */
+  /** The total-cards count next to the heading. */
   count: HTMLElement;
   emptyNote: HTMLElement;
   downloadButton: HTMLButtonElement;
@@ -89,11 +89,12 @@ export class ScannedCardList {
    * than one copy); expanding shows its details and the quantity controls. */
   private row(card: ScannedCard, index: number, open: boolean): HTMLLIElement {
     const { hasFoil, hasOrientation } = cardAttributes(card, this.games);
+    const set = this.games.find((g) => g.id === card.gameId)!.sets.find((s) => s.code === card.setCode)!;
 
     const summary = document.createElement("summary");
     summary.textContent = [
       card.cardId,
-      card.setCode,
+      set.print,
       ...(hasFoil && card.foil ? ["foil"] : []),
       ...(card.quantity > 1 ? [`×${card.quantity}`] : []),
     ].join(" · ");
@@ -114,10 +115,10 @@ export class ScannedCardList {
     const quantity = document.createElement("output");
     quantity.className = "scanned-card-quantity";
     quantity.textContent = String(card.quantity);
-    const decrease = actionButton("−", "secondary-button", () => this.changeQuantity(index, -1));
+    const decrease = actionButton("−", "button", () => this.changeQuantity(index, -1));
     decrease.setAttribute("aria-label", card.quantity === 1 ? "Remove this card" : "One fewer");
-    decrease.classList.toggle("danger-button", card.quantity === 1);
-    const increase = actionButton("+", "secondary-button", () => this.changeQuantity(index, 1));
+    decrease.classList.toggle("button-danger", card.quantity === 1);
+    const increase = actionButton("+", "button", () => this.changeQuantity(index, 1));
     increase.setAttribute("aria-label", "One more");
 
     const actions = document.createElement("div");
