@@ -35,11 +35,8 @@ export type FrameEvaluation = {
 /** An accepted frame's evaluation. */
 export type AcceptedEvaluation = Extract<FrameEvaluation, { status: "accepted" }>;
 
-/**
- * Runs one quad-detection pass on a frame: sample the 4 guide-edge bands, fit
- * each edge (fitEdgeLine), intersect the lines and validate the quad's aspect
- * ratio. `frameSize` must match `source`'s pixel dimensions.
- */
+/** One detection pass: fit each guide edge in its band, intersect the lines
+ * and check the quad's aspect ratio. `frameSize` must match `source`'s. */
 export function evaluateFrameForQuad(sampler: FrameSampler, source: CanvasImageSource, frameSize: Size): FrameEvaluation {
   const guide = computeGuideGeometry(orientationFromSize(frameSize), frameSize);
   const expected = expectedEdgeBands(guide, frameSize);

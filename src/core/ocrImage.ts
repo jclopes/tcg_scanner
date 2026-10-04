@@ -4,11 +4,8 @@ import type { RgbaPixelBuffer } from "./pixelExtraction";
 import { isLightTextOnDark } from "./textPolarity";
 import type { GrayscalePixels } from "./types";
 
-/**
- * A text crop prepared for Tesseract: grayscale, inverted to dark-on-light
- * when the text is light on dark (`inverted`), then denoised with an
- * edge-preserving bilateral filter (see OCR_DENOISE_RADIUS_PX).
- */
+/** A text crop prepared for Tesseract: grayscale, inverted to dark-on-light
+ * when needed, denoised. */
 export function prepareTextForOcr(rgba: RgbaPixelBuffer): { gray: GrayscalePixels; inverted: boolean } {
   const { data, width, height } = extractGrayscaleRegion(rgba, {
     origin: { x: 0, y: 0 },
@@ -27,12 +24,9 @@ export function prepareTextForOcr(rgba: RgbaPixelBuffer): { gray: GrayscalePixel
   };
 }
 
-/**
- * Edge-preserving smoothing: each pixel becomes the average of its neighbors
- * within `radius` (a disc), weighted by both distance (`sigmaSpace`) and
- * difference in value (`sigmaColor`), so similar neighbors blend while a
- * strong edge stays sharp. Borders reflect (like OpenCV's BORDER_DEFAULT).
- */
+/** Edge-preserving smoothing: each pixel averages its neighbors within
+ * `radius`, weighted by distance and by similarity, so edges stay sharp.
+ * Borders reflect (OpenCV's BORDER_DEFAULT). */
 export function bilateralFilter(
   pixels: GrayscalePixels,
   radius: number,

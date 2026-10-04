@@ -1,7 +1,5 @@
-// Pure field checks for JSON loaded at runtime (bundled game data, saved
-// lists). Each throws an Error naming `context` (which file/entry) and the
-// field, so bad data fails loudly at load instead of breaking something
-// later (e.g. a mistyped "x_mm" silently becoming NaN).
+// Field checks for JSON loaded at runtime. Each error names the file or
+// entry and the field, so bad data fails at load instead of later.
 
 /** `value` as a JSON object's fields. Throws if it isn't a (non-array) object. */
 export function requireRecord(value: unknown, context: string): Record<string, unknown> {

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS } from "../core";
 import { listGames, parseGame, parseRegion } from "./gameConfig";
 
 const BOX = { label: "collector_number", x_mm: 1, y_mm: 2, width_mm: 3, height_mm: 4 };
+
+const textRegion = (label: string): Record<string, unknown> => ({ ...BOX, label, type: "text", allowed_chars_regex: "[0-9]" });
+const REQUIRED_REGIONS = [textRegion("collector_number"), textRegion("set_code")];
 
 describe("parseRegion", () => {
   it("translates a text region to camelCase", () => {
@@ -16,6 +20,13 @@ describe("parseRegion", () => {
       rotationDeg: -45,
       allowedCharsRegex: "[0-9]",
       maxGapTextHeights: 0.5,
+    });
+  });
+
+  it("fills in no rotation and the default maximum gap when omitted", () => {
+    expect(parseRegion("game", "portrait", textRegion("collector_number"))).toMatchObject({
+      rotationDeg: 0,
+      maxGapTextHeights: DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
     });
   });
 
@@ -65,15 +76,14 @@ describe("parseGame", () => {
   const SET = { code: "S1", name: "Set 1", print: "S1 - X", collector_numbers: ["001"] };
   const SETS = [SET];
   const config = (overrides: Record<string, unknown>): Record<string, unknown> => ({
-    game: "game",
     card_orientation: ["portrait", "landscape"],
     foil: true,
-    regions: { portrait: [], landscape: [] },
+    regions: { portrait: REQUIRED_REGIONS, landscape: REQUIRED_REGIONS },
     ...overrides,
   });
 
   it("reads card orientations and foil support", () => {
-    const game = parseGame("g", config({ card_orientation: ["landscape"], foil: false, regions: { landscape: [] } }), SETS);
+    const game = parseGame("g", config({ card_orientation: ["landscape"], foil: false, regions: { landscape: REQUIRED_REGIONS } }), SETS);
     expect(game.cardOrientations).toEqual(["landscape"]);
     expect(game.hasFoil).toBe(false);
   });
@@ -105,7 +115,7 @@ describe("parseGame", () => {
   it("throws for repeated set codes or region labels", () => {
     expect(() => parseGame("g", config({}), [SET, { ...SET, name: "Other" }])).toThrow(/set codes has "S1"/);
     const region = { ...BOX, type: "image" };
-    expect(() => parseGame("g", config({ regions: { portrait: [region, region], landscape: [] } }), SETS)).toThrow(
+    expect(() => parseGame("g", config({ regions: { portrait: [region, region], landscape: REQUIRED_REGIONS } }), SETS)).toThrow(
       /portrait region labels has "collector_number"/,
     );
   });
@@ -119,17 +129,26 @@ describe("parseGame", () => {
   });
 
   it("keeps each orientation's own regions", () => {
-    const portrait = { ...BOX, type: "image" };
-    const landscape = { ...BOX, x_mm: 50, type: "image" };
-    const game = parseGame("g", config({ regions: { portrait: [portrait], landscape: [landscape] } }), SETS);
+    const portrait = REQUIRED_REGIONS;
+    const landscape = REQUIRED_REGIONS.map((region) => ({ ...region, x_mm: 50 }));
+    const game = parseGame("g", config({ regions: { portrait, landscape } }), SETS);
     expect(game.config.regions.portrait![0]!.xMm).toBe(1);
     expect(game.config.regions.landscape![0]!.xMm).toBe(50);
   });
 
   it("throws when regions lack a listed orientation or have an unlisted one", () => {
-    expect(() => parseGame("g", config({ regions: { portrait: [] } }), SETS)).toThrow(/"landscape" must be a list/);
+    expect(() => parseGame("g", config({ regions: { portrait: REQUIRED_REGIONS } }), SETS)).toThrow(/"landscape" must be a list/);
     expect(() =>
       parseGame("g", config({ card_orientation: ["portrait"], regions: { portrait: [], landscape: [] } }), SETS),
     ).toThrow(/"regions" has "landscape", which isn't in "card_orientation"/);
+  });
+
+  it("throws when an orientation lacks the collector-number or set-code text region", () => {
+    const imageSetCode = { ...BOX, label: "set_code", type: "image" };
+    for (const portrait of [[textRegion("set_code")], [textRegion("collector_number")], [textRegion("collector_number"), imageSetCode]]) {
+      expect(() => parseGame("g", config({ card_orientation: ["portrait"], regions: { portrait } }), SETS)).toThrow(
+        /portrait regions need a text region labeled/,
+      );
+    }
   });
 });

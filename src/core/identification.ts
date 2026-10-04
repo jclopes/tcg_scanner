@@ -1,23 +1,9 @@
-// Phase 2 functional core: pure region-geometry and OCR-text-filtering
-// helpers. See docs/plan/06-card-identification.md ("Region config format",
-// "Architecture: functional core / imperative shell") for the authoritative
-// spec these implement.
-
 import { CANONICAL_CARD_MIN_PX_PER_MM, STANDARD_CARD_HEIGHT_MM, STANDARD_CARD_WIDTH_MM } from "./constants";
 import type { CardOrientation, Size } from "./types";
 
-/** `"text"` regions are OCR'd and matched against a game's ID dataset;
- * `"image"` regions are extracted but not OCR'd this phase (see the plan's
- * Open Questions). */
-export type RegionType = "text" | "image";
-
-/** The box every region has — the parsed, camelCase form of a region config
- * JSON entry (see GameConfig). `xMm`/`yMm`/`widthMm`/`heightMm` are mm
- * coordinates (origin at the top-left corner) on the upright card *after*
- * rotating the whole card clockwise by `rotationDeg` into its bounding box —
- * so a tilted element (e.g. a 45° badge) gets a tight, upright box. A config
- * author measures a rotated region's box on a reference card image rotated
- * by the same angle. See regionWarpMatrix. */
+/** A region's box, in mm from the top-left of the upright card after the
+ * whole card is rotated clockwise by `rotationDeg` into its bounding box, so a
+ * tilted element (e.g. a 45° badge) gets a tight upright box. */
 interface RegionBox {
   label: string;
   xMm: number;
@@ -25,8 +11,8 @@ interface RegionBox {
   widthMm: number;
   heightMm: number;
   /** Clockwise degrees the whole card is rotated by to make this region's
-   * content upright; 0/omitted = already upright. */
-  rotationDeg?: number;
+   * content upright; 0 when it already is. */
+  rotationDeg: number;
 }
 
 export interface TextRegionConfig extends RegionBox {
@@ -36,11 +22,11 @@ export interface TextRegionConfig extends RegionBox {
   allowedCharsRegex: string;
   /** The largest gap between runs of characters, in text heights, still
    * counted as the same line (see analyzeTextColumns). Tight for a single
-   * word, wider for text with spaces. Omitted =
-   * DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS. */
-  maxGapTextHeights?: number;
+   * word, wider for text with spaces. */
+  maxGapTextHeights: number;
 }
 
+/** A region that's extracted (shown in the debug trail) but not OCR'd. */
 export interface ImageRegionConfig extends RegionBox {
   type: "image";
 }
@@ -49,6 +35,7 @@ export interface ImageRegionConfig extends RegionBox {
 export type RegionConfig = TextRegionConfig | ImageRegionConfig;
 
 export interface GameConfig {
+  /** The game's folder id, for messages. */
   game: string;
   /** The card layout per orientation the game's cards are printed in — a
    * landscape card has its regions in different places than a portrait one. */
@@ -65,12 +52,8 @@ export function regionsFor(config: GameConfig, orientation: CardOrientation): Re
   return regions;
 }
 
-/**
- * An exactly card-proportioned pixel size (STANDARD_CARD_WIDTH_MM :
- * STANDARD_CARD_HEIGHT_MM) that is never lower-resolution than
- * `sourcePixelSize` on either axis: it uses the larger of the two axes'
- * implied px-per-mm, floored at CANONICAL_CARD_MIN_PX_PER_MM.
- */
+/** A card-proportioned pixel size never lower-resolution than
+ * `sourcePixelSize` on either axis, at least CANONICAL_CARD_MIN_PX_PER_MM. */
 export function canonicalCardSizeFor(sourcePixelSize: Size): Size {
   const impliedPxPerMmX = sourcePixelSize.width / STANDARD_CARD_WIDTH_MM;
   const impliedPxPerMmY = sourcePixelSize.height / STANDARD_CARD_HEIGHT_MM;
@@ -81,10 +64,7 @@ export function canonicalCardSizeFor(sourcePixelSize: Size): Size {
   };
 }
 
-/** `region` with `padding.xMm` added left and right of its box and
- * `padding.yMm` above and below — turns a text region's configured box into
- * the area searched for its text. Works for rotated regions too, since their
- * box is already in the rotated frame. */
+/** `region` grown by `padding` on each side: a text region's search area. */
 export function padRegion<T extends RegionConfig>(region: T, padding: { xMm: number; yMm: number }): T {
   return {
     ...region,

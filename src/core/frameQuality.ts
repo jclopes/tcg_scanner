@@ -1,12 +1,10 @@
 import { quadAspectRatio } from "./geometry";
+import { luma } from "./pixelExtraction";
 import type { RgbaPixelBuffer } from "./pixelExtraction";
 import type { Quad } from "./types";
 
-/**
- * Sharpness estimate: variance of the grayscale image's discrete Laplacian
- * (kernel [[0,1,0],[1,-4,1],[0,1,0]]). Higher is sharper. 0 for images
- * smaller than 3x3.
- */
+/** Sharpness: variance of the grayscale Laplacian. Higher is sharper; 0 below
+ * 3×3. */
 export function laplacianVariance(frame: RgbaPixelBuffer): number {
   const { data, width, height } = frame;
   if (width < 3 || height < 3) {
@@ -15,10 +13,7 @@ export function laplacianVariance(frame: RgbaPixelBuffer): number {
 
   const gray = new Float64Array(width * height);
   for (let i = 0; i < width * height; i++) {
-    const r = data[i * 4]!;
-    const g = data[i * 4 + 1]!;
-    const b = data[i * 4 + 2]!;
-    gray[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+    gray[i] = luma(data[i * 4]!, data[i * 4 + 1]!, data[i * 4 + 2]!);
   }
 
   const innerWidth = width - 2;
@@ -55,15 +50,9 @@ export interface FrameCandidate {
   cardPixels: RgbaPixelBuffer;
 }
 
-/**
- * Picks the best candidate by two signals, each normalized 0-1 against the
- * candidate set and summed with equal weight:
- * - sharpness: `laplacianVariance(cardPixels)`
- * - quad geometry: closeness of `quadAspectRatio(corners)` to `targetAspectRatio`
- *
- * Runs before flattening, so only the winner pays for the perspective warp.
- * `candidates` must be non-empty.
- */
+/** The candidate with the best sum of sharpness and card-shapedness, each
+ * normalized across the candidates. Runs before flattening, so only the
+ * winner is warped. `candidates` must be non-empty. */
 export function selectBestFrame<T extends FrameCandidate>(candidates: readonly T[], targetAspectRatio: number): T {
   if (candidates.length === 0) {
     throw new Error("selectBestFrame requires at least one frame.");

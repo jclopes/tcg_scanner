@@ -35,15 +35,10 @@ export interface TextRowAnalysis {
   crop: RowBand | null;
 }
 
-/**
- * Finds the rows to crop a text region's search area to.
- *
- * The text band is the contiguous run of rows around the strongest row of
- * glyph-stroke energy, provided that peak stands out from the background
- * (median row) by TEXT_BAND_MIN_PEAK_TO_BACKGROUND. The crop adds a margin
- * but never crosses a strong horizontal line (e.g. a badge border) above or
- * below the band.
- */
+/** The rows to crop a search area to: the run around the strongest
+ * glyph-stroke row (if it stands out from the median by
+ * TEXT_BAND_MIN_PEAK_TO_BACKGROUND), plus a margin that stops at strong
+ * horizontal lines (e.g. a badge border). */
 export function analyzeTextRows(pixels: GrayscalePixels): TextRowAnalysis {
   const textProfile = rowGradientProfile(pixels);
   const lineProfile = rowEdgeProfile(pixels);
@@ -93,16 +88,10 @@ export interface TextColumnAnalysis {
   crop: ColumnBand | null;
 }
 
-/**
- * Finds the columns of the text line within the text rows `band`.
- *
- * Columns above TEXT_COLUMN_ENERGY_THRESHOLD_FRACTION of the
- * TEXT_COLUMN_REFERENCE_PERCENTILE column form runs (glyphs). Runs at most
- * `maxGapTextHeights` × the band height apart are grouped (character and
- * word gaps); the group with the most total stroke energy is the text line,
- * so a narrow strong feature elsewhere (e.g. the card's edge) can't win. The
- * crop adds TEXT_COLUMN_MARGIN_TEXT_HEIGHTS × the band height on each side.
- */
+/** The text line's columns within rows `band`: runs of strong columns grouped
+ * across gaps up to `maxGapTextHeights`; the group with the most stroke
+ * energy wins, so a narrow strong feature (e.g. the card's edge) can't. Plus a
+ * margin. */
 export function analyzeTextColumns(
   pixels: GrayscalePixels,
   band: RowBand,
@@ -166,11 +155,8 @@ function findBand(profile: readonly number[]): { band: RowBand; threshold: numbe
   return { band: { top, bottom }, threshold };
 }
 
-/**
- * The rows between the nearest horizontal lines (rows above `lineThreshold`)
- * above and below `band`; the whole area when there are none. Line row y is
- * the edge between rows y and y+1.
- */
+/** The rows between the nearest horizontal lines above and below `band` (line
+ * row y is the edge between rows y and y+1); the whole area if none. */
 function lineBounds(lineProfile: readonly number[], lineThreshold: number, band: RowBand, height: number): RowBand {
   let top = 0;
   for (let y = band.top - 1; y >= 0; y--) {

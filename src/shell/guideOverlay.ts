@@ -8,37 +8,20 @@ type GuideColor = "--guide-not-found" | "--guide-found" | "--guide-flash";
 
 export type EdgeColors = PerEdge<GuideColor>;
 
-const GUIDE_EDGE_NOT_FOUND_COLOR: GuideColor = "--guide-not-found";
-const GUIDE_EDGE_FOUND_COLOR: GuideColor = "--guide-found";
-const GUIDE_EDGE_ALL_FOUND_FLASH_COLOR: GuideColor = "--guide-flash";
-
 /** How long the all-edges-found white flash stays up. */
 export const GUIDE_ALL_FOUND_FLASH_DURATION_MS = 500;
 
-export const DEFAULT_GUIDE_EDGE_COLORS: EdgeColors = [
-  GUIDE_EDGE_NOT_FOUND_COLOR,
-  GUIDE_EDGE_NOT_FOUND_COLOR,
-  GUIDE_EDGE_NOT_FOUND_COLOR,
-  GUIDE_EDGE_NOT_FOUND_COLOR,
-];
+export const DEFAULT_GUIDE_EDGE_COLORS: EdgeColors = ["--guide-not-found", "--guide-not-found", "--guide-not-found", "--guide-not-found"];
 
-export const ALL_FOUND_FLASH_EDGE_COLORS: EdgeColors = [
-  GUIDE_EDGE_ALL_FOUND_FLASH_COLOR,
-  GUIDE_EDGE_ALL_FOUND_FLASH_COLOR,
-  GUIDE_EDGE_ALL_FOUND_FLASH_COLOR,
-  GUIDE_EDGE_ALL_FOUND_FLASH_COLOR,
-];
+export const ALL_FOUND_FLASH_EDGE_COLORS: EdgeColors = ["--guide-flash", "--guide-flash", "--guide-flash", "--guide-flash"];
 
 /** Per-edge colors for a frame's detection result. */
 export function edgeColorsForDetection(edgesFound: PerEdge<boolean>): EdgeColors {
-  return mapEdges(edgesFound, (found) => (found ? GUIDE_EDGE_FOUND_COLOR : GUIDE_EDGE_NOT_FOUND_COLOR));
+  return mapEdges(edgesFound, (found) => (found ? "--guide-found" : "--guide-not-found"));
 }
 
-/**
- * Redraws the guide rectangle (one color per edge) and the "TOP" pill.
- * The canvas buffer is sized to `frameSize`, so guide coordinates are drawn
- * as-is; the page keeps the canvas's CSS box matching the video's.
- */
+/** Redraws the guide rectangle (one color per edge) and the TOP pill in frame
+ * pixels: the canvas buffer is sized to `frameSize`. */
 export function drawGuideOverlay(
   canvas: HTMLCanvasElement,
   camera: Orientation,

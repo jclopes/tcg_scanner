@@ -1,27 +1,32 @@
 import type { GameOption } from "./gameConfig";
-import { cardAttributes, loadScannedCards, mergeDuplicates, saveScannedCards, scannedCardsCsv } from "./scannedCardStore";
+import {
+  cardAttributes,
+  mergeDuplicates,
+  parseScannedCards,
+  readStoredScannedCards,
+  saveScannedCards,
+  scannedCardsCsv,
+} from "./scannedCardStore";
 import type { ScannedCard } from "./scannedCardStore";
 
 const CSV_FILENAME = "scanned-cards.csv";
+
+const STORAGE_ERROR = "Scanned cards can't be saved: the browser's storage is unavailable or full. Download the CSV to keep them.";
 
 export interface ScannedCardListElements {
   list: HTMLOListElement;
   /** The total-cards count next to the heading. */
   count: HTMLElement;
   emptyNote: HTMLElement;
+  /** Shown while the list can't be saved. */
+  storageError: HTMLElement;
   downloadButton: HTMLButtonElement;
   mergeButton: HTMLButtonElement;
   clearButton: HTMLButtonElement;
 }
 
-/**
- * The "Scanned cards" section: accepted cards, most recent first, saved in
- * localStorage (see scannedCardStore) until the user clears them, with CSV
- * download and duplicate merging. Each row shows the card and set and expands
- * to its details and a quantity with +/− buttons; − at a quantity of 1
- * deletes the entry. Foil and orientation are shown only for a card whose
- * game has foils or more than one orientation (see cardAttributes).
- */
+/** The "Scanned cards" section: accepted cards, most recent first, with CSV
+ * download, duplicate merging and quantity controls (− at 1 deletes). */
 export class ScannedCardList {
   /** Most recent first. */
   private cards: ScannedCard[];
@@ -30,7 +35,7 @@ export class ScannedCardList {
     private readonly games: readonly GameOption[],
     private readonly elements: ScannedCardListElements,
   ) {
-    this.cards = loadScannedCards(games);
+    this.cards = this.loadCards();
     elements.downloadButton.addEventListener("click", () => this.download());
     elements.mergeButton.addEventListener("click", () => this.update(mergeDuplicates(this.cards)));
     elements.clearButton.addEventListener("click", () => this.confirmClear());
@@ -42,12 +47,36 @@ export class ScannedCardList {
     this.update([{ ...card, tags: [...card.tags], quantity: 1, scannedAt: new Date().toISOString() }, ...this.cards]);
   }
 
+  /** The saved list; empty, with the storage error shown, when the
+   * browser's storage is unavailable. Corrupt saved data throws. */
+  private loadCards(): ScannedCard[] {
+    let json: string | null;
+    try {
+      json = readStoredScannedCards();
+    } catch {
+      this.showStorageError(STORAGE_ERROR);
+      return [];
+    }
+    return json === null ? [] : parseScannedCards(json);
+  }
+
   /** Replaces the list, saves it and re-renders, keeping the row at
-   * `openIndex` (if any) expanded. */
+   * `openIndex` (if any) expanded. A failed save keeps the list in memory and
+   * shows the storage error until a save succeeds. */
   private update(cards: ScannedCard[], openIndex?: number): void {
     this.cards = cards;
-    saveScannedCards(this.cards);
+    try {
+      saveScannedCards(this.cards);
+      this.showStorageError(null);
+    } catch {
+      this.showStorageError(STORAGE_ERROR);
+    }
     this.render(openIndex);
+  }
+
+  private showStorageError(message: string | null): void {
+    this.elements.storageError.hidden = message === null;
+    this.elements.storageError.textContent = message ?? "";
   }
 
   /** Changes entry `index`'s quantity by `delta`; at zero the entry is
@@ -105,7 +134,7 @@ export class ScannedCardList {
       facts.append(...fact("Foil", card.foil ? "yes" : "no"));
     }
     if (hasOrientation) {
-      facts.append(...fact("Orientation", card.orientation ?? "—"));
+      facts.append(...fact("Orientation", card.orientation));
     }
     facts.append(
       ...fact("Scanned", new Date(card.scannedAt).toLocaleString()),
@@ -115,10 +144,10 @@ export class ScannedCardList {
     const quantity = document.createElement("output");
     quantity.className = "scanned-card-quantity";
     quantity.textContent = String(card.quantity);
-    const decrease = actionButton("−", "button", () => this.changeQuantity(index, -1));
+    const decrease = actionButton("−", () => this.changeQuantity(index, -1));
     decrease.setAttribute("aria-label", card.quantity === 1 ? "Remove this card" : "One fewer");
     decrease.classList.toggle("button-danger", card.quantity === 1);
-    const increase = actionButton("+", "button", () => this.changeQuantity(index, 1));
+    const increase = actionButton("+", () => this.changeQuantity(index, 1));
     increase.setAttribute("aria-label", "One more");
 
     const actions = document.createElement("div");
@@ -153,10 +182,10 @@ function fact(label: string, value: string): [HTMLElement, HTMLElement] {
   return [dt, dd];
 }
 
-function actionButton(label: string, className: string, onClick: () => void): HTMLButtonElement {
+function actionButton(label: string, onClick: () => void): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = className;
+  button.className = "button";
   button.textContent = label;
   button.addEventListener("click", onClick);
   return button;

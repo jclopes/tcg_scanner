@@ -1,56 +1,36 @@
 import type { Size, ToleranceConfig } from "../core";
 
-/**
- * Placeholder detection tolerances for the live scan loop.
- *
- * Per the plan (docs/plan/01-capture-and-detection.md, Open Questions #3)
- * these are explicitly left as tunable parameters that need empirical
- * tuning against real devices/cameras once a first build exists — this is
- * not that tuning pass, just sane, documented defaults so the loop has
- * *something* concrete to run with:
- *
- * - `rotationToleranceDegrees` (8): a hand-held card roughly following the
- *   guide is rarely rotated more than a few degrees relative to it — used by
- *   fitEdgeLine's angle-plausibility filter (see ToleranceConfig's doc
- *   comment).
- * - `aspectRatioTolerance` (0.1): deliberately generous. A well-aligned
- *   card's *measured* aspect ratio is still skewed by ordinary perspective
- *   foreshortening (the card is rarely held perfectly parallel to the
- *   camera's image plane), so a tight tolerance here risks false rejections
- *   more than a loose one risks false accepts — a non-card object happening
- *   to match a ~0.72 aspect ratio within 10% against a generic background is
- *   unlikely.
- */
+/** Detection tolerances; starting guesses. A hand-held card is rarely
+ * rotated more than a few degrees, and perspective skews its measured aspect
+ * ratio, so the aspect tolerance is generous. */
 export const DEFAULT_TOLERANCE_CONFIG: ToleranceConfig = {
   rotationToleranceDegrees: 8,
   aspectRatioTolerance: 0.1,
 };
 
-/**
- * Camera resolutions offered by the resolution dropdown (src/shell/app.ts),
- * in ascending order. Detection runs against whichever is selected, not
- * full sensor resolution (per the plan's "Device & resolution handling").
- * The app requires Full HD (1920×1080) or higher — see
- * startCameraStream's doc comment — so no lower option is offered; a device
- * whose camera can't meet even the lowest option here fails to start with a
- * clear error rather than silently falling back to a blurrier feed.
- */
+/** Accepted burst frames to collect before selecting the best one. Starting guess. */
+export const CAPTURE_BURST_MIN_USABLE_FRAMES = 2;
+
+/** Max frames attempted in a burst; after that the best of whatever was
+ * accepted is used. Starting guess. */
+export const CAPTURE_BURST_HARD_LIMIT = 10;
+
+/** The lowest camera resolution the app accepts; a camera that can't reach
+ * it isn't offered. */
+export const MIN_CAMERA_RESOLUTION: Size = { width: 1920, height: 1080 };
+
+/** The resolutions the camera settings offer, ascending. */
 export const CAMERA_RESOLUTION_OPTIONS: readonly { label: string; size: Size }[] = [
-  { label: "1920 × 1080 (Full HD)", size: { width: 1920, height: 1080 } },
+  { label: "1920 × 1080 (Full HD)", size: MIN_CAMERA_RESOLUTION },
   { label: "2560 × 1440 (QHD)", size: { width: 2560, height: 1440 } },
   { label: "3840 × 2160 (4K)", size: { width: 3840, height: 2160 } },
 ];
 
-/** The resolution pre-selected when the app first loads — the minimum this
- * app supports (see CAMERA_RESOLUTION_OPTIONS' doc comment). */
-export const DEFAULT_CAMERA_RESOLUTION: Size = CAMERA_RESOLUTION_OPTIONS[0]!.size;
+/** Pre-selected until the user picks another. */
+export const DEFAULT_CAMERA_RESOLUTION: Size = MIN_CAMERA_RESOLUTION;
 
-/**
- * The CAMERA_RESOLUTION_OPTIONS a camera with this probed max width/height
- * can deliver (see listFullHdCameras in cameraDevices.ts). Throws if there
- * are none: every camera listFullHdCameras offers meets the Full HD floor,
- * so an empty result means a camera slipped past that check.
- */
+/** The options a camera with this max size can deliver. Throws if there are
+ * none: listFullHdCameras only offers cameras that reach Full HD. */
 export function resolutionOptionsForCamera(
   maxWidth: number,
   maxHeight: number,

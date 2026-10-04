@@ -4,15 +4,11 @@ import { computeOutputRotationDegrees } from "./orientation";
 import type { CardOrientation, Matrix3x3, Orientation, Point, Size } from "./types";
 
 /**
- * The single transform from camera-frame pixels to one region's output
- * pixels, so the region can be warped straight from the camera frame with one
- * interpolation. Applied right to left:
- * 1. `frameToCardMm`: camera frame → the card as it lies in the frame, in mm
- *    (`computePerspectiveTransform(corners, cardSizeMm(camera))`).
- * 2. Rotate upright (`computeOutputRotationDegrees`).
- * 3. Rotate the whole card by `region.rotationDeg` into its bounding box — the
- *    frame the region's mm box is measured in (see RegionConfig).
- * 4. Shift to the region's origin and scale to `pxPerMm`.
+ * The one transform from camera-frame pixels to a region's output pixels, so
+ * the region is warped from the frame in a single interpolation. Right to
+ * left: frame → card in mm (`frameToCardMm`), rotate upright, rotate by
+ * `region.rotationDeg` into its bounding box, shift to the region, scale to
+ * `pxPerMm`.
  */
 export function regionWarpMatrix(
   frameToCardMm: Matrix3x3,
@@ -23,12 +19,12 @@ export function regionWarpMatrix(
 ): Matrix3x3 {
   const inFrameSize = cardSizeMm(camera);
   const uprightSize = cardSizeMm(cardOrientation);
-  const regionFrameSize = rotatedBoundingSize(uprightSize, region.rotationDeg ?? 0);
+  const regionFrameSize = rotatedBoundingSize(uprightSize, region.rotationDeg);
 
   return [
     scaling(pxPerMm),
     translation(-region.xMm, -region.yMm),
-    rotationBetweenCenters(region.rotationDeg ?? 0, uprightSize, regionFrameSize),
+    rotationBetweenCenters(region.rotationDeg, uprightSize, regionFrameSize),
     rotationBetweenCenters(computeOutputRotationDegrees(camera, cardOrientation), inFrameSize, uprightSize),
     frameToCardMm,
   ].reduce(multiplyMatrix3x3);

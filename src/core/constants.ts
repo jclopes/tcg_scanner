@@ -33,9 +33,8 @@ export const EDGE_BAND_HALF_THICKNESS_PX = 30;
 export const EDGE_BAND_LENGTH_OVERHANG_PX = 15;
 
 /** `fitEdgeLine`: the smallest Sobel gradient across a scanline that counts
- * as an edge point — the high threshold the Canny detector used before. A
- * clean step of d gray levels scores 4·d, so this is a step of ~38; sensor
- * noise and faint background texture score lower. */
+ * as an edge point. A clean step of d gray levels scores 4·d, so this is a
+ * step of ~38: above sensor noise and faint background texture. */
 export const EDGE_POINT_MIN_GRADIENT = 150;
 
 /** `fitEdgeLine`: a candidate line must have edge points on at least this
@@ -49,23 +48,13 @@ export const EDGE_INLIER_DISTANCE_PX = 1.5;
 /** `fitEdgeLine` confidence below which a fit counts as "not found". */
 export const EDGE_MIN_CONFIDENCE = 0.25;
 
-/** Accepted burst frames to collect before selecting the best one. Starting guess. */
-export const CAPTURE_BURST_MIN_USABLE_FRAMES = 2;
-
 /** Largest edit distance between the OCR'd collector number and a set's
  * card ID that still counts as a confident identification; anything worse
  * (or no OCR text at all) restarts detection. */
 export const MAX_CONFIDENT_MATCH_DISTANCE = 2;
 
-/** Max frames attempted across all bursts; after that the best of whatever
- * was accepted is used. Starting guess. */
-export const CAPTURE_BURST_HARD_LIMIT = 10;
-
-/** Bilateral denoise applied to text crops before OCR: a 5×5 neighborhood
- * (radius 2) with color and space sigma 50. Edge-preserving smoothing that, in
- * testing against real captures, read as well as a 1.5× denser warp at a
- * fraction of the cost (binarization, sharpening, median and higher densities
- * were compared and dropped). */
+/** Bilateral denoise for text crops before OCR (5×5, sigmas 50): on real
+ * captures it read as well as a 1.5× denser warp, at a fraction of the cost. */
 export const OCR_DENOISE_RADIUS_PX = 2;
 export const OCR_DENOISE_SIGMA_COLOR = 50;
 export const OCR_DENOISE_SIGMA_SPACE = 50;
@@ -103,17 +92,14 @@ export const TEXT_BAND_MARGIN_FRACTION = 0.15;
  * text. Starting guess. */
 export const TEXT_COLUMN_ENERGY_THRESHOLD_FRACTION = 0.5;
 
-/** Percentile of the column profile used as the reference level, rather than
- * its max: a narrow, very strong feature (e.g. the card's edge against the
- * background) covering under 10% of the width can't raise the threshold
- * above the text. Starting guess. */
+/** Percentile of the column profile used as the reference level instead of
+ * its max, so a narrow strong feature (e.g. the card's edge) can't raise the
+ * threshold above the text. Starting guess. */
 export const TEXT_COLUMN_REFERENCE_PERCENTILE = 0.9;
 
-/** Default for a text region's `maxGapTextHeights`: runs of text columns
- * separated by at most this many text heights belong to the same line.
- * Generous, to cover word gaps (e.g. around the "·" in a set code, measured up
- * to ~1.2 text heights); single-word regions should set a tighter value in
- * their config. Starting guess. */
+/** A text region's default `maxGapTextHeights`: generous enough for word gaps
+ * (the "·" in a set code measured up to ~1.2 text heights); single-word
+ * regions set a tighter one. Starting guess. */
 export const DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS = 1.5;
 
 /** Margin kept left and right of the text columns, in text heights. Starting guess. */

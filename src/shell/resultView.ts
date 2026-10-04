@@ -10,11 +10,8 @@ export interface ResultViewElements {
   overlayImage: HTMLImageElement;
 }
 
-/**
- * The captured result: a thumbnail of the collector number's crop, and an
- * overlay with the full flattened card. The card is shown through a `blob:`
- * URL (openable at full resolution), revoked when replaced or cleared.
- */
+/** The captured result: the collector number's crop as a thumbnail, and the
+ * full card in an overlay through a `blob:` URL, revoked when replaced. */
 export class ResultView {
   private objectUrl: string | null = null;
   /** Bumped on every show/clear so a blob URL that resolves late, for an image
@@ -52,7 +49,7 @@ export class ResultView {
     this.generation += 1;
     this.setOverlayOpen(false);
     this.elements.thumbnailButton.hidden = true;
-    if (this.objectUrl) {
+    if (this.objectUrl !== null) {
       URL.revokeObjectURL(this.objectUrl);
       this.objectUrl = null;
     }

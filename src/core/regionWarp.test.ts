@@ -10,7 +10,7 @@ const IDENTITY: Matrix3x3 = [
 ];
 
 function region(overrides: Partial<ImageRegionConfig>): ImageRegionConfig {
-  return { label: "r", type: "image", xMm: 0, yMm: 0, widthMm: 10, heightMm: 5, ...overrides };
+  return { label: "r", type: "image", xMm: 0, yMm: 0, widthMm: 10, heightMm: 5, rotationDeg: 0, ...overrides };
 }
 
 function expectMapsTo(matrix: Matrix3x3, from: Point, to: Point): void {

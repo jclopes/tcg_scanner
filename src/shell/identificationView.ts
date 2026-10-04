@@ -1,12 +1,9 @@
 import type { GameSet } from "./gameConfig";
 import type { Identification } from "./identify";
 
-/** The identification part of the always-visible capture area (whose first
- * line is the app's status): a warning naming
- * the likelier set(s) when the OCR'd set code fits another set's printed code
- * better, one button per suggested card ID, closest match first — clicking
- * one accepts that card (`onAccept`) — and a Rescan button for when none is
- * right (`onRescan`). */
+/** The capture area's identification: a warning when the OCR'd set code fits
+ * another set better, a button per suggested card ID (`onAccept`) and Rescan
+ * (`onRescan`). */
 export class IdentificationView {
   constructor(
     private readonly warning: HTMLElement,

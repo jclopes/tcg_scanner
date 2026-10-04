@@ -9,12 +9,8 @@ export interface ManualEntryElements {
   error: HTMLElement;
 }
 
-/**
- * The "Card number" field: adds a card to the selected set by typing its
- * collector number, for a card that never gets detected. The number must
- * exist in the set (see findCardId); the set's numbers are offered as
- * suggestions. `add` returns an error message when the card can't be added.
- */
+/** The "Card number" field: adds a card the scan doesn't detect by typing one
+ * of the selected set's numbers. `add` returns an error message or null. */
 export class ManualCardEntry {
   constructor(
     private readonly elements: ManualEntryElements,

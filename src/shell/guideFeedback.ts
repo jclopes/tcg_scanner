@@ -12,11 +12,8 @@ import { orientationFromSize, videoFrameSize } from "./orientationWatcher";
 
 type EdgesFound = PerEdge<boolean>;
 
-/**
- * The live guide over the video: each edge colored by whether it was found in
- * the latest frame, and the whole guide flashed white for
- * GUIDE_ALL_FOUND_FLASH_DURATION_MS when all 4 edges first become found.
- */
+/** The live guide over the video: edges colored by whether the latest frame
+ * found them, all flashing white when all 4 first are. */
 export class GuideFeedback {
   private lastEdgesFound: EdgesFound | null = null;
   private flashTimeout: ReturnType<typeof setTimeout> | null = null;

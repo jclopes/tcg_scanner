@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import {
+  DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
   optionalNumber,
   requireArray,
   requireBoolean,
@@ -11,6 +12,11 @@ import {
   requireUnique,
 } from "../core";
 import type { CardOrientation, GameConfig, RegionConfig } from "../core";
+
+/** The text regions identification reads; every orientation's layout must
+ * have both. */
+export const COLLECTOR_NUMBER_REGION = "collector_number";
+export const SET_CODE_REGION = "set_code";
 
 /** One set a game's cards can be scanned from, as listed in its sets.json. */
 export interface GameSet {
@@ -43,11 +49,8 @@ const RAW_SET_CONFIGS = byGameFolder(
   import.meta.glob<unknown>("../data/games/*/sets.json", { eager: true, import: "default" }),
 );
 
-/**
- * Every bundled game, sorted alphabetically by id, each with its sets sorted
- * alphabetically by name. Throws if there are no games or any game's data is
- * invalid (see parseGame).
- */
+/** Every bundled game by id, its sets by name. Throws if there are none or a
+ * game's data is invalid (see parseGame). */
 export function listGames(): GameOption[] {
   const ids = [...new Set([...Object.keys(RAW_GAME_CONFIGS), ...Object.keys(RAW_SET_CONFIGS)])];
   if (ids.length === 0) {
@@ -56,13 +59,8 @@ export function listGames(): GameOption[] {
   return ids.sort((a, b) => a.localeCompare(b)).map((id) => parseGame(id, RAW_GAME_CONFIGS[id], RAW_SET_CONFIGS[id]));
 }
 
-/**
- * Parses and checks one game folder's regions.json and sets.json. Throws,
- * naming the file, entry and field, if either file is missing, a field is
- * missing or of the wrong type, "regions" doesn't have exactly one list per
- * "card_orientation", there are no sets, or region labels (per orientation),
- * set codes or a set's collector numbers repeat.
- */
+/** Parses one game folder's regions.json and sets.json. Throws, naming the
+ * file, entry and field, on anything missing, mistyped or repeated. */
 export function parseGame(id: string, rawConfig: unknown, rawSets: unknown): GameOption {
   if (rawConfig === undefined || rawSets === undefined) {
     throw new Error(`Game folder "${id}" must contain both regions.json and sets.json.`);
@@ -85,7 +83,7 @@ export function parseGame(id: string, rawConfig: unknown, rawSets: unknown): Gam
 
   return {
     id,
-    config: { game: requireString(config, "game", configContext), regions },
+    config: { game: id, regions },
     sets: sets.sort((a, b) => a.name.localeCompare(b.name)),
     cardOrientations,
     hasFoil: requireBoolean(config, "foil", configContext),
@@ -115,7 +113,8 @@ function parseCardOrientations(config: Record<string, unknown>, context: string)
 }
 
 /** `regions`: an object with one list of regions per orientation in
- * `card_orientation` — no more, no fewer — each with distinct labels. */
+ * `card_orientation` — no more, no fewer — each with distinct labels and the
+ * text regions identification reads. */
 function parseRegionsByOrientation(
   gameId: string,
   config: Record<string, unknown>,
@@ -137,14 +136,21 @@ function parseRegionsByOrientation(
         `${orientation} region labels`,
         context,
       );
+      requireTextRegion(regions, COLLECTOR_NUMBER_REGION, orientation, context);
+      requireTextRegion(regions, SET_CODE_REGION, orientation, context);
       return [orientation, regions];
     }),
   );
 }
 
-/** Translates one raw region into a `RegionConfig`. Throws on a missing or
- * mistyped field, a non-positive size, an unknown `type`, or a text region
- * without a valid `allowed_chars_regex`. */
+function requireTextRegion(regions: readonly RegionConfig[], label: string, orientation: CardOrientation, context: string): void {
+  if (!regions.some((region) => region.label === label && region.type === "text")) {
+    throw new Error(`${context}: the ${orientation} regions need a text region labeled "${label}".`);
+  }
+}
+
+/** One raw region as a `RegionConfig`, with no rotation and the default
+ * maximum text gap when omitted. */
 export function parseRegion(gameId: string, orientation: CardOrientation, raw: unknown): RegionConfig {
   const regionsContext = `Game "${gameId}" regions.json ${orientation} region`;
   const record = requireRecord(raw, regionsContext);
@@ -156,7 +162,7 @@ export function parseRegion(gameId: string, orientation: CardOrientation, raw: u
     yMm: requireNumber(record, "y_mm", context),
     widthMm: requirePositive(record, "width_mm", context),
     heightMm: requirePositive(record, "height_mm", context),
-    rotationDeg: optionalNumber(record, "rotation_deg", context),
+    rotationDeg: optionalNumber(record, "rotation_deg", context) ?? 0,
   };
   const type = requireString(record, "type", context);
   switch (type) {
@@ -167,7 +173,7 @@ export function parseRegion(gameId: string, orientation: CardOrientation, raw: u
         ...box,
         type: "text",
         allowedCharsRegex: requireRegex(record, "allowed_chars_regex", context),
-        maxGapTextHeights: optionalNumber(record, "max_gap_text_heights", context),
+        maxGapTextHeights: optionalNumber(record, "max_gap_text_heights", context) ?? DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
       };
     default:
       throw new Error(`${context} has unknown type "${type}".`);

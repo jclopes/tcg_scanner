@@ -1,10 +1,8 @@
 import { initApp } from "./shell/app";
 import { requireElement } from "./shell/dom";
 
-// Entry point: hands off to src/shell/app.ts, which owns everything else
-// (camera, guide overlay, Scan button, detection loop, capture) — see
-// docs/plan/05-imperative-shell.md. A startup failure (e.g. invalid game
-// data) is shown in the status line.
+// Entry point (see src/shell/app.ts). A startup failure, e.g. invalid game
+// data, is shown in the status line.
 
 try {
   initApp();

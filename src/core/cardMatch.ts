@@ -1,5 +1,4 @@
 // Pure fuzzy matching of OCR'd card text against a set's known card IDs.
-// See docs/plan/06-card-identification.md ("ID dataset format").
 
 import { MAX_CONFIDENT_MATCH_DISTANCE } from "./constants";
 
@@ -10,13 +9,8 @@ export interface CardIdMatch {
   distance: number;
 }
 
-/**
- * Ranks `candidates` by edit distance to `ocrText`, closest first, and keeps
- * the best `limit`. Ties keep `candidates`' own order (a set's IDs are listed
- * in print order). Empty `ocrText` means OCR read nothing, so there is
- * nothing to match: returns no suggestions rather than the `limit` shortest
- * IDs.
- */
+/** `candidates` ranked by edit distance to `ocrText`, the best `limit`; ties
+ * keep `candidates`' (print) order. Empty when OCR read nothing. */
 export function rankCardIds(ocrText: string, candidates: readonly string[], limit: number): CardIdMatch[] {
   if (ocrText === "") {
     return [];
@@ -35,12 +29,9 @@ export function isConfidentMatch(matches: readonly CardIdMatch[]): boolean {
   return best !== undefined && best.distance <= MAX_CONFIDENT_MATCH_DISTANCE;
 }
 
-/**
- * The sets whose printed code the OCR'd set code reads closer to than the
- * selected set's — all tied at the closest distance, in `sets` order. Empty
- * when the selected set is (joint) closest or OCR read nothing. Distances
- * ignore whitespace (OCR spacing is unreliable) but not case.
- */
+/** The sets whose printed code the OCR'd set code is closer to than the
+ * selected set's, all tied at the closest; empty when the selected set is
+ * (joint) closest or OCR read nothing. Ignores whitespace, not case. */
 export function closerSetPrints<T extends { print: string }>(ocrText: string, selected: T, sets: readonly T[]): T[] {
   const read = withoutWhitespace(ocrText);
   if (read === "") {

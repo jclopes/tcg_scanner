@@ -1,13 +1,7 @@
-import {
-  CAPTURE_BURST_HARD_LIMIT,
-  CAPTURE_BURST_MIN_USABLE_FRAMES,
-  cropRgba,
-  quadBoundingBox,
-  selectBestFrame,
-  STANDARD_CARD_ASPECT_RATIO,
-} from "../core";
+import { cropRgba, quadBoundingBox, selectBestFrame, STANDARD_CARD_ASPECT_RATIO } from "../core";
 import type { FrameCandidate } from "../core";
 import { scheduleVideoFrame, snapshotSource } from "./canvasUtils";
+import { CAPTURE_BURST_HARD_LIMIT, CAPTURE_BURST_MIN_USABLE_FRAMES } from "./config";
 import { evaluateFrameForQuad } from "./frameDetection";
 import type { AcceptedFrame, QuadRejectionReason } from "./frameDetection";
 import { FrameSampler } from "./frameSampler";
@@ -27,13 +21,9 @@ export interface FrameBurstResult {
   debugFrames: BurstFrameDebugEntry[];
 }
 
-/**
- * Runs quad detection on successive video frames until
- * CAPTURE_BURST_MIN_USABLE_FRAMES are accepted, CAPTURE_BURST_HARD_LIMIT
- * frames have been attempted, or `isCancelled()` returns true. Detection only
- * — the caller picks the best frame and flattens just that one. Rejects if a
- * frame's evaluation fails unexpectedly.
- */
+/** Runs detection on successive video frames until
+ * CAPTURE_BURST_MIN_USABLE_FRAMES are accepted, CAPTURE_BURST_HARD_LIMIT were
+ * tried, or `isCancelled()` turns true. */
 export async function collectBurstFrames(
   video: HTMLVideoElement,
   debugEnabled: boolean,

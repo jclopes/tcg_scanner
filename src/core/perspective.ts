@@ -1,11 +1,7 @@
 import type { Matrix3x3, Quad, Size } from "./types";
 
-/**
- * The perspective transform (homography) mapping `corners` onto an
- * axis-aligned `outputSize` rectangle: (0,0), (w,0), (w,h), (0,h), in corner
- * order. Throws for a degenerate quad (e.g. three corners in a line), which
- * has no such transform.
- */
+/** The homography mapping `corners` onto an `outputSize` rectangle's corners.
+ * Throws for a degenerate quad. */
 export function computePerspectiveTransform(corners: Quad, outputSize: Size): Matrix3x3 {
   const { width, height } = outputSize;
   const targets = [

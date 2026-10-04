@@ -1,10 +1,7 @@
 import { snapshotSource } from "./canvasUtils";
 
-/**
- * A still photo from the camera track via `ImageCapture.takePhoto()`, which
- * can exceed the preview stream's resolution. `null` when the browser has no
- * `ImageCapture`. Throws if there's no live track or `takePhoto()` fails.
- */
+/** A still via `ImageCapture.takePhoto()`, which can exceed the preview's
+ * resolution; null when the browser has no `ImageCapture`. */
 export async function captureHiResStill(video: HTMLVideoElement): Promise<HTMLCanvasElement | null> {
   if (typeof ImageCapture === "undefined") {
     return null;

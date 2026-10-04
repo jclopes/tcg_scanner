@@ -38,7 +38,7 @@ src/core/         Pure logic (geometry, edge detection, OCR text analysis, match
 src/shell/        Browser code: camera, UI, detection loop, OCR, scanned-card list.
 src/data/games/   Per-game data, validated at startup.
 index.html        Markup and CSS.
-docs/plan/        Design notes.
+docs/             How the app works (architecture.md).
 ```
 
 Put browser-free logic in `src/core` with tests, everything else in `src/shell`. See [DEVELOPMENT_PRINCIPLES.md](./DEVELOPMENT_PRINCIPLES.md).

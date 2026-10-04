@@ -1,5 +1,6 @@
 import type { EdgeBandPixels, FittedLine, PerEdge, Quad } from "../core";
-import { canvasToObjectURL, createCanvas, pixelsToCanvas, require2dContext, rotateCanvas } from "./canvasUtils";
+import { canvasToObjectURL, createCanvas, grayscaleToCanvas, pixelsToCanvas, require2dContext, rotateCanvas } from "./canvasUtils";
+import { paletteColor } from "./dom";
 import type { BurstFrameDebugEntry, FrameBurstResult } from "./frameBurst";
 import type { AcceptedEvaluation, AcceptedFrame, FrameEvaluation, QuadRejectionReason } from "./frameDetection";
 import type { RegionResult } from "./identify";
@@ -22,8 +23,6 @@ interface DebugNote {
 export type DebugEntry = DebugStep | DebugNote;
 
 const EDGE_LABELS = ["Top edge", "Right edge", "Bottom edge", "Left edge"] as const;
-
-const OVERLAY_STROKE_STYLE = "rgba(56, 224, 130, 0.95)";
 
 function debugStageHeading(text: string): DebugNote {
   return { text, kind: "heading" };
@@ -50,7 +49,7 @@ function buildQuadOverlayStep(frame: AcceptedFrame, label: string): DebugStep {
   const canvas = pixelsToCanvas(frame.pixels);
   const ctx = require2dContext(canvas);
 
-  ctx.strokeStyle = OVERLAY_STROKE_STYLE;
+  ctx.strokeStyle = paletteColor("--guide-found");
   ctx.lineWidth = Math.max(2, canvas.width * 0.004);
   ctx.beginPath();
   for (const corner of corners) {
@@ -62,33 +61,26 @@ function buildQuadOverlayStep(frame: AcceptedFrame, label: string): DebugStep {
   return { label, canvas };
 }
 
-const TEXT_PROFILE_STYLE = "rgba(80, 200, 255, 0.8)";
-const LINE_PROFILE_STYLE = "rgba(255, 150, 40, 0.8)";
-
-/**
- * A text region's search area with its profile plots: row profiles on the
- * right (glyph-stroke energy in blue, horizontal-line energy in orange),
- * the column profile underneath (blue), each scaled to its own max with its
- * threshold as a marker line. The crop rectangle is drawn in green across the
- * image and plots.
- */
+/** A text region's search area with its row profiles plotted to the right and
+ * its column profile below, each with a threshold line, and the crop on top. */
 function buildTextBandStep(regionLabel: string, searchCanvas: HTMLCanvasElement, analysis: TextCropAnalysis): DebugStep {
   const { rows, columns } = analysis;
   const plotWidth = Math.max(40, Math.round(searchCanvas.width * 0.5));
   const plotHeight = Math.max(30, Math.round(searchCanvas.height * 0.5));
   const canvas = createCanvas({ width: searchCanvas.width + plotWidth, height: searchCanvas.height + plotHeight });
   const ctx = require2dContext(canvas);
-  ctx.fillStyle = "black";
+  ctx.fillStyle = paletteColor("--media-bg");
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(searchCanvas, 0, 0);
 
-  drawRowProfile(ctx, rows.textProfile, rows.textThreshold, searchCanvas.width, plotWidth, TEXT_PROFILE_STYLE);
-  drawRowProfile(ctx, rows.lineProfile, rows.lineThreshold, searchCanvas.width, plotWidth, LINE_PROFILE_STYLE);
+  const textProfileColor = paletteColor("--debug-text-profile");
+  drawRowProfile(ctx, rows.textProfile, rows.textThreshold, searchCanvas.width, plotWidth, textProfileColor);
+  drawRowProfile(ctx, rows.lineProfile, rows.lineThreshold, searchCanvas.width, plotWidth, paletteColor("--debug-line-profile"));
   if (columns) {
-    drawColumnProfile(ctx, columns.profile, columns.threshold, canvas.height, plotHeight, TEXT_PROFILE_STYLE);
+    drawColumnProfile(ctx, columns.profile, columns.threshold, canvas.height, plotHeight, textProfileColor);
   }
 
-  ctx.strokeStyle = OVERLAY_STROKE_STYLE;
+  ctx.strokeStyle = paletteColor("--guide-found");
   ctx.lineWidth = Math.max(1, Math.round(searchCanvas.height * 0.01));
   ctx.beginPath();
   for (const y of rows.crop ? [rows.crop.top, rows.crop.bottom] : []) {
@@ -310,17 +302,9 @@ function describeRejectionReason(reason: QuadRejectionReason): string {
 }
 
 function renderEdgeBand(band: EdgeBandPixels, line: FittedLine | null): HTMLCanvasElement {
-  const canvas = createCanvas(band);
-  const ctx = require2dContext(canvas);
-
-  const imageData = ctx.createImageData(band.width, band.height);
-  band.data.forEach((value, i) => {
-    imageData.data.set([value, value, value, 255], i * 4);
-  });
-  ctx.putImageData(imageData, 0, 0);
-
+  const canvas = grayscaleToCanvas(band);
   if (line) {
-    drawLineAcrossBand(ctx, line, band.width, band.height);
+    drawLineAcrossBand(require2dContext(canvas), line, band.width, band.height);
   }
 
   return canvas.height > canvas.width ? rotateCanvas(canvas, 90) : canvas;
@@ -331,7 +315,7 @@ function drawLineAcrossBand(ctx: CanvasRenderingContext2D, line: FittedLine, wid
   const span = width + height;
   const { point, direction } = line;
 
-  ctx.strokeStyle = OVERLAY_STROKE_STYLE;
+  ctx.strokeStyle = paletteColor("--guide-found");
   ctx.lineWidth = Math.max(1, Math.round(Math.min(width, height) * 0.03));
   ctx.beginPath();
   ctx.moveTo(point.x - direction.x * span, point.y - direction.y * span);

@@ -4,15 +4,9 @@ import type { Matrix3x3, Size } from "./types";
 
 export type Interpolation = "bilinear" | "bicubic";
 
-/**
- * `source` warped by the homography `sourceToOutput` onto a new `outputSize`
- * image. Each output pixel samples the source at its inverse-mapped position
- * (pixel centers at integer coordinates, as in OpenCV's warpPerspective):
- * bilinear, or bicubic with OpenCV's INTER_CUBIC kernel (a = −0.75), which
- * keeps glyph edges sharper when upsampling. Taps past the source's edge
- * repeat its edge pixels; a sample position outside the source is
- * transparent black.
- */
+/** `source` warped by `sourceToOutput` onto an `outputSize` image, bilinear or
+ * bicubic (OpenCV's INTER_CUBIC: sharper glyphs when upsampling), with
+ * OpenCV's pixel centers; outside the source is transparent black. */
 export function warpPerspective(
   source: RgbaPixelBuffer,
   sourceToOutput: Matrix3x3,

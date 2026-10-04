@@ -14,20 +14,10 @@ function packageDir(name: string, from: string = fileURLToPath(import.meta.url))
   return dirname(createRequire(from).resolve(`${name}/package.json`));
 }
 
-/**
- * Copies what Tesseract.js needs to run entirely client-side into
- * public/tesseract/, so it's served from this app's own origin instead of
- * Tesseract.js's default jsdelivr CDN (see src/shell/ocr.ts):
- * - its worker script;
- * - the LSTM-only core in its 3 variants (SIMD, relaxed SIMD, plain), so
- *   getCore.js can pick the fastest the browser supports. Each `.wasm.js`
- *   embeds its WASM, so the separate `.wasm` files are never requested and
- *   aren't copied;
- * - the English trained data.
- *
- * Runs on `buildStart`, for both `vite` and `vite build`; public/tesseract/ is
- * generated, not committed (see .gitignore).
- */
+/** Copies Tesseract.js's worker, its LSTM-only core (3 variants, so
+ * getCore.js can pick the fastest the browser supports; each embeds its WASM)
+ * and the English data into public/tesseract/ on every dev/build start, so
+ * they're served from this app's origin instead of a CDN. */
 function copyTesseractToPublic(): Plugin {
   return {
     name: "copy-tesseract-to-public",
@@ -60,12 +50,8 @@ function copyTesseractToPublic(): Plugin {
 }
 
 export default defineConfig({
-  // HTTPS so the app can also be opened from a phone on the same network
-  // (`npm run dev:lan`) — required for camera access (getUserMedia only
-  // works in a secure context, and a plain-HTTP LAN IP doesn't count as one).
-  // basicSsl generates a self-signed cert on the fly; the phone's browser
-  // will show a one-time "not private" warning to click through. The dev
-  // server serves the whole project (source, docs, node_modules), so it
-  // listens on localhost only unless started with --host.
+  // HTTPS: camera access needs a secure context, which a plain-HTTP LAN
+  // address (`npm run dev:lan`, e.g. from a phone) isn't. The dev server
+  // exposes the whole project, so it stays on localhost unless --host.
   plugins: [copyTesseractToPublic(), basicSsl()],
 });

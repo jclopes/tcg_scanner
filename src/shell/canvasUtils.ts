@@ -51,28 +51,22 @@ export function canvasPixels(canvas: HTMLCanvasElement): ImageData {
   return require2dContext(canvas).getImageData(0, 0, canvas.width, canvas.height);
 }
 
-/** `source` rotated clockwise by `degrees` onto a new canvas (width/height
- * swapped for 90/270). Returns `source` itself for 0. */
-export function rotateCanvas(source: HTMLCanvasElement, degrees: 0 | 90 | 180 | 270): HTMLCanvasElement {
+/** `source` rotated clockwise by `degrees` onto a new canvas. Returns
+ * `source` itself for 0. */
+export function rotateCanvas(source: HTMLCanvasElement, degrees: 0 | 90): HTMLCanvasElement {
   if (degrees === 0) {
     return source;
   }
-  const swap = degrees === 90 || degrees === 270;
-  const output = createCanvas(
-    swap ? { width: source.height, height: source.width } : { width: source.width, height: source.height },
-  );
+  const output = createCanvas({ width: source.height, height: source.width });
   const ctx = require2dContext(output);
   ctx.translate(output.width / 2, output.height / 2);
-  ctx.rotate((degrees * Math.PI) / 180);
+  ctx.rotate(Math.PI / 2);
   ctx.drawImage(source, -source.width / 2, -source.height / 2);
   return output;
 }
 
-/**
- * `canvas` as a `blob:` object URL. Unlike a `data:` URL, its length doesn't
- * grow with the image, so browsers can open large captures (e.g. "open image
- * in new tab"). The caller must `URL.revokeObjectURL` it when done.
- */
+/** `canvas` as a `blob:` URL, which unlike a `data:` URL stays openable for
+ * large images. The caller must revoke it. */
 export function canvasToObjectURL(canvas: HTMLCanvasElement): Promise<string> {
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {

@@ -7,24 +7,20 @@ import {
   REGION_PX_PER_MM,
   regionOutputSize,
   regionWarpMatrix,
+  warpPerspective,
 } from "../core";
 import type { CardOrientation, RegionConfig, TextColumnAnalysis, TextRowAnalysis } from "../core";
-import { canvasPixels, createCanvas, require2dContext } from "./canvasUtils";
+import { canvasPixels, createCanvas, pixelsToCanvas, require2dContext } from "./canvasUtils";
 import type { AcceptedFrame } from "./frameDetection";
 import { orientationFromSize } from "./orientationWatcher";
-import { warpToCanvas } from "./warp";
 
-/**
- * Warps `region` straight out of the camera frame the card was detected in,
- * upright and at REGION_PX_PER_MM, in a single interpolation (see
- * regionWarpMatrix) — no intermediate flattened or rotated card, each of which
- * would blur it further. Bicubic, which keeps glyph edges sharper for OCR.
- */
+/** `region` warped upright at REGION_PX_PER_MM straight from the camera frame
+ * in one bicubic pass: every extra resampling would blur the text. */
 export function warpRegion(frame: AcceptedFrame, cardOrientation: CardOrientation, region: RegionConfig): HTMLCanvasElement {
   const camera = orientationFromSize(frame.pixels);
   const frameToCardMm = computePerspectiveTransform(frame.corners, cardSizeMm(camera));
   const matrix = regionWarpMatrix(frameToCardMm, camera, cardOrientation, region, REGION_PX_PER_MM);
-  return warpToCanvas(frame.pixels, matrix, regionOutputSize(region, REGION_PX_PER_MM), "bicubic");
+  return pixelsToCanvas(warpPerspective(frame.pixels, matrix, regionOutputSize(region, REGION_PX_PER_MM), "bicubic"));
 }
 
 /** Both text analyses of a search area; `columns` is null when no text rows
@@ -34,13 +30,8 @@ export interface TextCropAnalysis {
   columns: TextColumnAnalysis | null;
 }
 
-/**
- * Narrows a text region's search area to its text: rows from
- * `analyzeTextRows` (band plus margin, kept inside nearby horizontal lines),
- * then columns from `analyzeTextColumns` within those rows (merging character
- * runs up to `maxGapTextHeights` apart), copying that rectangle 1:1. When no
- * text is found the whole search area is used.
- */
+/** Narrows a text region's search area to its text line (rows, then columns
+ * within them); the whole area when no text is found. */
 export function fitCropToText(
   searchCanvas: HTMLCanvasElement,
   maxGapTextHeights: number,

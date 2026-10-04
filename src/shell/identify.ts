@@ -1,7 +1,7 @@
 import {
   closerSetPrints,
-  DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
   padRegion,
+  prepareTextForOcr,
   rankCardIds,
   regionsFor,
   TEXT_SEARCH_PADDING_X_MM,
@@ -10,28 +10,19 @@ import {
 import type { CardIdMatch, CardOrientation, RegionConfig, TextRegionConfig } from "../core";
 import type { Worker as TesseractWorker } from "tesseract.js";
 import type { AcceptedFrame } from "./frameDetection";
+import { COLLECTOR_NUMBER_REGION, SET_CODE_REGION } from "./gameConfig";
 import type { GameOption, GameSet } from "./gameConfig";
+import { canvasPixels, grayscaleToCanvas } from "./canvasUtils";
 import { recognizeRegion } from "./ocr";
-import { prepareForOcr } from "./ocrPreprocessing";
 import { fitCropToText, warpRegion } from "./regionExtraction";
 import type { TextCropAnalysis } from "./regionExtraction";
-
-/** The text region whose OCR is fuzzy-matched against the selected set's
- * collector numbers. */
-const COLLECTOR_NUMBER_REGION_LABEL = "collector_number";
-
-/** The text region whose OCR is checked against the selected set's printed
- * code. */
-const SET_CODE_REGION_LABEL = "set_code";
 
 /** How many best-matching collector numbers to suggest. */
 const CARD_MATCH_SUGGESTION_COUNT = 3;
 
-/** One region warped out of the camera frame. For a text region,
- * `searchCanvas` is the padded search area, `analysis` its text-row analysis
- * and `canvas` the fitted crop (the whole search area when no text was
- * found); for an image region both canvases are the configured box and
- * `analysis` is null. */
+/** One region warped out of the frame. For a text region `canvas` is the crop
+ * fitted to its text within `searchCanvas`; for an image region both are the
+ * configured box and `analysis` is null. */
 export interface RegionCrop {
   region: RegionConfig;
   searchCanvas: HTMLCanvasElement;
@@ -65,14 +56,9 @@ export interface Identification {
   collectorNumberCrop: HTMLCanvasElement;
 }
 
-/**
- * Warps every region of `game`'s `cardOrientation` layout straight out of
- * `frame` (text regions fitted to their text line), OCRs the text regions,
- * ranks `set`'s collector numbers against the OCR'd collector number and
- * looks for sets whose printed code fits the OCR'd set code better than
- * `set`'s. Returns null if
- * `isCancelled()` becomes true, checked between regions.
- */
+/** Warps and OCRs `game`'s regions for `cardOrientation` out of `frame`, ranks
+ * `set`'s collector numbers and checks the set code against the game's sets.
+ * Null if `isCancelled()` turns true (checked between regions). */
 export async function identifyCard(
   worker: TesseractWorker,
   frame: AcceptedFrame,
@@ -94,8 +80,8 @@ export async function identifyCard(
       regions.push({ crop: { region, searchCanvas: canvas, analysis: null, canvas }, ocr: null });
     }
   }
-  const collectorNumber = textRegionResult(regions, COLLECTOR_NUMBER_REGION_LABEL, game.config.game);
-  const setCodeText = textRegionResult(regions, SET_CODE_REGION_LABEL, game.config.game).ocr.text;
+  const collectorNumber = textRegionResult(regions, COLLECTOR_NUMBER_REGION, game.id);
+  const setCodeText = textRegionResult(regions, SET_CODE_REGION, game.id).ocr.text;
   return {
     regions,
     matches: rankCardIds(collectorNumber.ocr.text, set.collectorNumbers, CARD_MATCH_SUGGESTION_COUNT),
@@ -109,26 +95,23 @@ export async function identifyCard(
 function extractTextRegion(frame: AcceptedFrame, cardOrientation: CardOrientation, region: TextRegionConfig): RegionCrop {
   const searchRegion = padRegion(region, { xMm: TEXT_SEARCH_PADDING_X_MM, yMm: TEXT_SEARCH_PADDING_Y_MM });
   const searchCanvas = warpRegion(frame, cardOrientation, searchRegion);
-  const { canvas, analysis } = fitCropToText(
-    searchCanvas,
-    region.maxGapTextHeights ?? DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
-  );
+  const { canvas, analysis } = fitCropToText(searchCanvas, region.maxGapTextHeights);
   return { region: searchRegion, searchCanvas, analysis, canvas };
 }
 
-/** Preprocesses a text crop (prepareForOcr) and OCRs it. */
+/** Preprocesses a text crop (prepareTextForOcr) and OCRs it. */
 async function recognizeCrop(
   worker: TesseractWorker,
   canvas: HTMLCanvasElement,
   region: TextRegionConfig,
 ): Promise<RegionOcr> {
-  const prepared = prepareForOcr(canvas);
-  const text = await recognizeRegion(worker, prepared.canvas, region.allowedCharsRegex);
-  return { canvas: prepared.canvas, inverted: prepared.inverted, text };
+  const { gray, inverted } = prepareTextForOcr(canvasPixels(canvas));
+  const prepared = grayscaleToCanvas(gray);
+  const text = await recognizeRegion(worker, prepared, region.allowedCharsRegex);
+  return { canvas: prepared, inverted, text };
 }
 
-/** The result of the text region `label`. Throws if the game has no such
- * text region. */
+/** The result of the text region `label`, which parseGame guarantees. */
 function textRegionResult(
   regions: readonly RegionResult[],
   label: string,

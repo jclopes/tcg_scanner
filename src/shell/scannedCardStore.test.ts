@@ -25,36 +25,26 @@ function card(overrides: Partial<ScannedCard>): ScannedCard {
   };
 }
 
-const noLegacyGame = (setCode: string): string => {
-  throw new Error(`unexpected lookup of ${setCode}`);
-};
-
 describe("parseScannedCards", () => {
   it("returns the stored list, keeping duplicates as separate entries", () => {
     const cards = [card({ foil: true, quantity: 3, tags: ["#box-01"] }), card({ orientation: "landscape" })];
-    expect(parseScannedCards(JSON.stringify(cards), noLegacyGame)).toEqual(cards);
-  });
-
-  it("fills in fields older entries lack: game from the set, no tags, not foil, no orientation, one copy", () => {
-    const stored = [{ setCode: "PRM01", cardId: "005", scannedAt: "2026-09-27T10:00:00.000Z" }];
-    expect(parseScannedCards(JSON.stringify(stored), () => "cyberpunk")).toEqual([
-      { ...stored[0], gameId: "cyberpunk", tags: [], foil: false, orientation: null, quantity: 1 },
-    ]);
+    expect(parseScannedCards(JSON.stringify(cards))).toEqual(cards);
   });
 
   it("throws, naming the entry and field, for a stored value that isn't a list of cards", () => {
-    const entry = '"gameId":"full","setCode":"PRM01","cardId":"005","scannedAt":"x"';
-    for (const [json, field] of [
-      ['{"setCode":"PRM01"}', /must be a list/],
-      ['[{"gameId":"full","setCode":"PRM01","cardId":"005"}]', /entry 1: "scannedAt"/],
-      [`[{${entry},"tags":"#box-01"}]`, /"tags"/],
-      [`[{${entry},"tags":[1]}]`, /"tags"/],
-      [`[{${entry},"foil":"yes"}]`, /"foil"/],
-      [`[{${entry},"orientation":"square"}]`, /"orientation"/],
-      [`[{${entry},"quantity":0}]`, /"quantity"/],
-      [`[{${entry}},{${entry},"quantity":1.5}]`, /entry 2: "quantity"/],
+    const valid = card({});
+    for (const [stored, field] of [
+      [{ setCode: "S1" }, /must be a list/],
+      [[{ ...valid, gameId: undefined }], /entry 1: "gameId"/],
+      [[{ ...valid, scannedAt: undefined }], /entry 1: "scannedAt"/],
+      [[{ ...valid, tags: "#box-01" }], /"tags"/],
+      [[{ ...valid, tags: [1] }], /"tags"/],
+      [[{ ...valid, foil: "yes" }], /"foil"/],
+      [[{ ...valid, orientation: "square" }], /"orientation"/],
+      [[{ ...valid, quantity: 0 }], /"quantity"/],
+      [[valid, { ...valid, quantity: 1.5 }], /entry 2: "quantity"/],
     ] as const) {
-      expect(() => parseScannedCards(json, noLegacyGame)).toThrow(field);
+      expect(() => parseScannedCards(JSON.stringify(stored))).toThrow(field);
     }
   });
 });
@@ -66,23 +56,18 @@ describe("scannedCardsCsv", () => {
       GAMES,
     );
     expect(csv).toBe(
-      "set_id,card_id,foil,orientation,quantity,scanned_at,tags\r\nS1,001,true,landscape,2,2026-09-29T10:00:00.000Z,#a #b\r\n",
+      "set,card_number,foil,orientation,quantity,scanned_at,tags\r\nS1,001,true,landscape,2,2026-09-29T10:00:00.000Z,#a #b\r\n",
     );
   });
 
   it("leaves out foil and orientation when no card's game has them", () => {
     const csv = scannedCardsCsv([card({ gameId: "plain", foil: false })], GAMES);
-    expect(csv).toBe("set_id,card_id,quantity,scanned_at,tags\r\nS1,001,1,2026-09-29T10:00:00.000Z,\r\n");
+    expect(csv).toBe("set,card_number,quantity,scanned_at,tags\r\nS1,001,1,2026-09-29T10:00:00.000Z,\r\n");
   });
 
   it("leaves the cells blank for a card whose game lacks them when others have them", () => {
     const csv = scannedCardsCsv([card({ gameId: "full", foil: true }), card({ gameId: "plain" })], GAMES);
     expect(csv.split("\r\n")[2]).toBe("S1,001,,,1,2026-09-29T10:00:00.000Z,");
-  });
-
-  it("leaves the orientation blank for an entry saved before it was recorded", () => {
-    const csv = scannedCardsCsv([card({ orientation: null })], GAMES);
-    expect(csv.split("\r\n")[1]).toBe("S1,001,false,,1,2026-09-29T10:00:00.000Z,");
   });
 
   it("throws for a card of a game that isn't bundled", () => {

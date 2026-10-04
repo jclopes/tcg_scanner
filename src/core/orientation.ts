@@ -1,13 +1,8 @@
 import type { CardOrientation, Orientation } from "./types";
 
-/**
- * Clockwise rotation (degrees) that makes the flattened card upright.
- *
- * Matching camera/card orientation → 0. Mismatched → 90: the guide tells the
- * user to place the card's top edge toward the left of the camera's view, so
- * the raw flattened crop's top sits on the left and a 90° clockwise rotation
- * moves it to the top.
- */
+/** Clockwise rotation that makes the flattened card upright: 90 when the
+ * orientations differ, since the guide then asks for the card's top on the
+ * left. */
 export function computeOutputRotationDegrees(
   camera: Orientation,
   card: CardOrientation,

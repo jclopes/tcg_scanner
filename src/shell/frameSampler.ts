@@ -2,11 +2,8 @@ import { clampRegion, extractGrayscaleRegion, mapEdges } from "../core";
 import type { EdgeBand, EdgeBandPixels, PerEdge, Size } from "../core";
 import { require2dContext } from "./canvasUtils";
 
-/**
- * Draws a frame off an image source (video, canvas, bitmap) into one reused
- * offscreen canvas and reads back only the edge bands, as grayscale — not the
- * whole frame, which is several times more pixels than the four thin bands.
- */
+/** Draws frames into one reused canvas and reads back only the edge bands, as
+ * grayscale: a fraction of the frame's pixels. */
 export class FrameSampler {
   private readonly canvas = document.createElement("canvas");
   private readonly ctx = require2dContext(this.canvas, { willReadFrequently: true });

@@ -8,11 +8,13 @@ export interface RgbaPixelBuffer {
   height: number;
 }
 
-/**
- * `region` rounded to whole pixels and clamped to a `size`d source: its
- * clamped top-left and size (0 on an axis where the region lies entirely
- * outside the source).
- */
+/** Rec. 601 luma: a pixel's gray level. */
+export function luma(r: number, g: number, b: number): number {
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+/** `region` rounded to whole pixels and clamped to a `size`d source (0 wide or
+ * high where it lies outside). */
 export function clampRegion(
   region: { origin: Point; size: Size },
   size: Size,
@@ -24,13 +26,8 @@ export function clampRegion(
   return { x0, y0, width: Math.max(0, x1 - x0), height: Math.max(0, y1 - y0) };
 }
 
-/**
- * Crops `region` out of `source` as grayscale (Rec. 601 luma, rounded).
- * The region is rounded to whole pixels and clamped to the source's bounds
- * (see clampRegion); the result's `origin` is the clamped top-left, which callers must use to
- * translate band-local coordinates. A region fully outside the source yields
- * a 0x0 band.
- */
+/** `region` of `source` as grayscale, rounded and clamped (see clampRegion);
+ * `origin` is the clamped top-left, for translating band coordinates. */
 export function extractGrayscaleRegion(
   source: RgbaPixelBuffer,
   region: { origin: Point; size: Size },
@@ -46,7 +43,7 @@ export function extractGrayscaleRegion(
       const r = source.data[srcIndex]!;
       const g = source.data[srcIndex + 1]!;
       const b = source.data[srcIndex + 2]!;
-      data[dstRowOffset + x] = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+      data[dstRowOffset + x] = Math.round(luma(r, g, b));
     }
   }
 

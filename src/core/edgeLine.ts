@@ -1,11 +1,8 @@
 import { EDGE_INLIER_DISTANCE_PX, EDGE_LINE_MIN_SUPPORT_FRACTION, EDGE_MIN_CONFIDENCE, EDGE_POINT_MIN_GRADIENT } from "./constants";
 import type { EdgeBandPixels, FittedLine, Point } from "./types";
 
-/**
- * A band seen as scanlines across its edge: `along` indexes the scanline
- * (along the edge), `across` the position within it. For a left/right band
- * the scanlines are rows; for a top/bottom band, columns.
- */
+/** A band as scanlines across its edge: `along` indexes the scanline,
+ * `across` the position within it (rows for a left/right band). */
 interface ScanGeometry {
   /** Number of scanlines. */
   length: number;
@@ -31,20 +28,11 @@ interface ScanLine {
 }
 
 /**
- * Fits the card edge running through a band (band-local coordinates), or
- * `null` if there is none:
- * 1. On each scanline across the band, find the strong gradient peaks (edge
- *    points, see edgePoints).
- * 2. Vote the points into lines within `rotationToleranceDegrees` of the
- *    band's direction (perpendicular to the axis-aligned `outwardDirection`)
- *    and keep the outward-most well-supported line, so an inner parallel
- *    feature (e.g. the card's printed border) can't pull the fit inward.
- * 3. Weighted least-squares fit through that line's inlier points.
- *    Confidence is its linearity × the fraction of scanlines it covers; below
- *    EDGE_MIN_CONFIDENCE counts as not found.
- *
- * A band under 3px in either dimension (clamped at the frame edge) has no
- * edge. `samples.data` must hold exactly width * height bytes.
+ * The card edge through a band (band-local coordinates), or null: gradient
+ * peaks on each scanline (edgePoints) vote for lines within
+ * `rotationToleranceDegrees`; the outward-most well-supported line wins, so an
+ * inner parallel feature (e.g. the printed border) can't pull it inward; then
+ * a weighted fit through its inliers. A band under 3px has no edge.
  */
 export function fitEdgeLine(samples: EdgeBandPixels, outwardDirection: Point, rotationToleranceDegrees: number): FittedLine | null {
   const { data, width, height } = samples;
@@ -74,13 +62,8 @@ export function fitEdgeLine(samples: EdgeBandPixels, outwardDirection: Point, ro
   return fitted && fitted.confidence >= EDGE_MIN_CONFIDENCE ? fitted : null;
 }
 
-/**
- * Every scanline's local maxima of the Sobel gradient across the band (a
- * central difference smoothed 1-2-1 over the neighboring scanlines) of at
- * least EDGE_POINT_MIN_GRADIENT, placed with sub-pixel precision (parabola
- * through the peak and its neighbors). The threshold keeps sensor noise and
- * faint background texture out, as Canny's high threshold did.
- */
+/** Each scanline's local maxima of the Sobel gradient across the band of at
+ * least EDGE_POINT_MIN_GRADIENT, at sub-pixel precision (parabola fit). */
 function edgePoints(data: Uint8ClampedArray, scan: ScanGeometry): EdgePoint[] {
   const { length, thickness, alongStride, acrossStride } = scan;
   const minGradient = EDGE_POINT_MIN_GRADIENT;
@@ -114,15 +97,11 @@ function edgePoints(data: Uint8ClampedArray, scan: ScanGeometry): EdgePoint[] {
 }
 
 /**
- * The outward-most line through the points whose angle is within
- * `rotationToleranceDegrees`, or null if none is well supported. Each point
- * votes, for every candidate slope, for the 1-px offset bin it falls in; a
- * line's support is its bin plus the two neighbors (points within ~1.5 px).
- * A line qualifies when its support covers at least
- * EDGE_LINE_MIN_SUPPORT_FRACTION of the scanlines where it lies inside the
- * band, and enough of all scanlines to possibly reach EDGE_MIN_CONFIDENCE.
- * Of the qualifying lines within 2 px of the outward-most, the best supported
- * wins.
+ * The outward-most well-supported line, or null. Each point votes, per
+ * candidate slope, for its 1-px offset bin; support is a bin plus its
+ * neighbors. A line qualifies with support on EDGE_LINE_MIN_SUPPORT_FRACTION
+ * of the scanlines it crosses inside the band; of those within 2 px of the
+ * outward-most, the best supported wins.
  */
 function outwardMostLine(points: readonly EdgePoint[], scan: ScanGeometry, outwardSign: number, rotationToleranceDegrees: number): ScanLine | null {
   const { length, thickness } = scan;
@@ -219,11 +198,8 @@ function inliersOf(points: readonly EdgePoint[], line: ScanLine, length: number)
   return closest.filter((point): point is EdgePoint => point !== undefined);
 }
 
-/**
- * Weighted total-least-squares line through `points`: direction is the
- * principal eigenvector of the weighted covariance. Confidence = linearity
- * ((λ1 − λ2) / (λ1 + λ2)) × `coverage`. `null` for a degenerate direction.
- */
+/** Weighted total-least-squares line (principal eigenvector of the
+ * covariance); confidence = linearity × `coverage`. Null if degenerate. */
 function fitWeightedLine(points: readonly { x: number; y: number; weight: number }[], coverage: number): FittedLine | null {
   let totalWeight = 0;
   let sumX = 0;

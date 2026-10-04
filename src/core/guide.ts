@@ -22,11 +22,8 @@ export function outwardDirectionForSide(side: EdgeBand["side"]): Point {
   }
 }
 
-/**
- * The guide rectangle: centered, card-shaped (STANDARD_CARD_ASPECT_RATIO),
- * long side vertical for a portrait camera and horizontal for landscape,
- * as large as fits within GUIDE_FILL_FRACTION of the frame.
- */
+/** The centered, card-shaped guide, its long side along the camera's, as large
+ * as fits in GUIDE_FILL_FRACTION of the frame. */
 export function computeGuideGeometry(camera: Orientation, frameSize: Size): GuideRect {
   const availableWidth = frameSize.width * GUIDE_FILL_FRACTION;
   const availableHeight = frameSize.height * GUIDE_FILL_FRACTION;
@@ -63,13 +60,9 @@ function edgeBandScaleFactor(frameSize: Size): number {
   return Math.sqrt(frameArea / referenceArea);
 }
 
-/**
- * The 4 search bands ([top, right, bottom, left]) around the guide's edges.
- * Each is centered on its edge line, EDGE_BAND_HALF_THICKNESS_PX thick on
- * each side, and extends EDGE_BAND_LENGTH_OVERHANG_PX past each end — both
- * scaled from the reference frame size to `frameSize`, which must be the
- * frame `guide` was computed for.
- */
+/** The 4 search bands ([top, right, bottom, left]) centered on the guide's
+ * edges, sized at the reference frame and scaled to `frameSize` (the frame
+ * `guide` was computed for). */
 export function expectedEdgeBands(guide: GuideRect, frameSize: Size): PerEdge<EdgeBand> {
   const halfWidth = guide.width / 2;
   const halfHeight = guide.height / 2;

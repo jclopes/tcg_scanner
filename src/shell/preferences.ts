@@ -1,14 +1,8 @@
 import type { Size } from "../core";
 
-/** The user's remembered camera, resolution, game, set, session-tags and
- * sound choices, persisted across sessions (localStorage) so returning users don't
- * have to re-pick them every load. Best-effort only: localStorage can throw (private browsing,
- * disabled storage) or simply be unavailable, and a previously-picked
- * camera/resolution can vanish (device unplugged, browser no longer
- * reports it) — callers must treat every field as optional and fall back
- * to their own defaults rather than assuming a stored value is still
- * valid.
- */
+/** The user's remembered choices, in localStorage. Best-effort: storage can
+ * be unavailable and a saved camera can vanish, so every field is optional
+ * and callers fall back to their own defaults. */
 export interface StoredPreferences {
   cameraDeviceId?: string;
   resolution?: Size;
@@ -24,7 +18,7 @@ const STORAGE_KEY = "tcg-scanner:preferences";
 export function loadPreferences(): StoredPreferences {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
+    if (raw === null) {
       return {};
     }
     const parsed: unknown = JSON.parse(raw);

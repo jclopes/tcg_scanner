@@ -7,11 +7,8 @@ export interface SessionTagsElements {
   error: HTMLElement;
 }
 
-/**
- * The session-tags input: space-separated "#tags" recorded with every card
- * added, and an error line listing tokens that aren't valid tags. The
- * input's text is saved as a preference and restored on load.
- */
+/** The session-tags input: "#tags" recorded with every card added, saved as a
+ * preference; invalid tokens are listed in its error line. */
 export class SessionTagsInput {
   private parsedTags: ParsedTags;
 

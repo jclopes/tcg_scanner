@@ -14,10 +14,7 @@ export interface DetectionLoopCallbacks {
   onError: (error: unknown) => void;
 }
 
-/**
- * Evaluates video frames, one per new frame, until one's quad is accepted. A
- * rejected frame is an expected outcome and just moves on to the next frame.
- */
+/** Evaluates each new video frame until one's quad is accepted. */
 export class DetectionLoop {
   private readonly sampler = new FrameSampler();
   private cancelScheduled: (() => void) | null = null;
@@ -26,7 +23,11 @@ export class DetectionLoop {
 
   constructor(private readonly video: HTMLVideoElement) {}
 
+  /** Throws if the loop is already running. */
   start(callbacks: DetectionLoopCallbacks): void {
+    if (!this.stopped) {
+      throw new Error("The detection loop is already running.");
+    }
     this.stopped = false;
 
     const step = (): void => {

@@ -1,10 +1,8 @@
-import { MIN_CAMERA_WIDTH, MIN_CAMERA_HEIGHT, toCameraError } from "./cameraStream";
+import { toCameraError } from "./cameraStream";
+import { MIN_CAMERA_RESOLUTION } from "./config";
 
-/** One camera device confirmed to support this app's Full HD floor (see
- * MIN_CAMERA_WIDTH/MIN_CAMERA_HEIGHT), with the highest resolution it
- * reported supporting — used to filter which entries of
- * CAMERA_RESOLUTION_OPTIONS (config.ts) are worth offering for this
- * specific camera. */
+/** A camera that reaches MIN_CAMERA_RESOLUTION, with the highest resolution
+ * it reports. */
 export interface CameraOption {
   deviceId: string;
   label: string;
@@ -13,35 +11,18 @@ export interface CameraOption {
 }
 
 /**
- * Enumerates the device's video input cameras and probes each one to find
- * out which support Full HD (see startCameraStream's `min` constraint) —
- * `enumerateDevices` alone can't answer that; it only lists device ids and
- * (once permission is granted) labels, not capabilities.
- *
- * Probing means briefly opening a stream against each camera with the same
- * Full HD `min` constraint startCameraStream uses, reading back
- * `getCapabilities()` (or, where unsupported, the negotiated
- * `getSettings()` size) for its max resolution, then stopping it — so each
- * candidate camera's indicator light blinks on and off once. This runs
- * once per app load (see app.ts), not on every dropdown open.
- *
- * A device that rejects the Full HD `min` constraint (`OverconstrainedError`)
- * or is already in use (`NotReadableError`) is left out of the returned list.
- * Any other failure — no camera API, permission denied — throws a
- * user-facing Error (see toCameraError).
- *
- * Triggers the browser's permission dialog the first time it runs.
+ * The cameras that reach MIN_CAMERA_RESOLUTION, found by briefly opening each
+ * one (its light blinks once), since `enumerateDevices` lists cameras but not
+ * their capabilities. Cameras below it or in use are left out; any other
+ * failure throws a user-facing Error. Asks for camera permission first.
  */
 export async function listFullHdCameras(): Promise<CameraOption[]> {
   if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices?.enumerateDevices) {
     throw new Error("Camera access (getUserMedia) isn't supported in this browser. Try a recent Chrome or Safari.");
   }
 
-  // A generic permission probe first: until the user has granted camera
-  // permission at least once, enumerateDevices() returns video inputs with
-  // blank labels and (in some browsers) a single anonymized entry, so
-  // per-device probing below wouldn't produce usable labels or distinct
-  // ids. Stopped immediately — this stream is only to unlock labels.
+  // Until camera permission is granted, enumerateDevices returns blank labels
+  // (and in some browsers one anonymized device), so ask first.
   let probeStream: MediaStream;
   try {
     probeStream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -63,7 +44,7 @@ export async function listFullHdCameras(): Promise<CameraOption[]> {
     }
     results.push({
       deviceId: device.deviceId,
-      label: device.label || `Camera ${results.length + 1}`,
+      label: device.label === "" ? `Camera ${results.length + 1}` : device.label,
       maxWidth: capability.maxWidth,
       maxHeight: capability.maxHeight,
     });
@@ -83,8 +64,8 @@ async function probeCameraCapability(deviceId: string): Promise<{ maxWidth: numb
       audio: false,
       video: {
         deviceId: { exact: deviceId },
-        width: { min: MIN_CAMERA_WIDTH },
-        height: { min: MIN_CAMERA_HEIGHT },
+        width: { min: MIN_CAMERA_RESOLUTION.width },
+        height: { min: MIN_CAMERA_RESOLUTION.height },
       },
     });
   } catch (error) {
@@ -106,7 +87,7 @@ async function probeCameraCapability(deviceId: string): Promise<{ maxWidth: numb
     if (maxWidth === undefined || maxHeight === undefined) {
       throw new Error(`Camera ${deviceId} reported no resolution.`);
     }
-    if (maxWidth < MIN_CAMERA_WIDTH || maxHeight < MIN_CAMERA_HEIGHT) {
+    if (maxWidth < MIN_CAMERA_RESOLUTION.width || maxHeight < MIN_CAMERA_RESOLUTION.height) {
       return null;
     }
     return { maxWidth, maxHeight };

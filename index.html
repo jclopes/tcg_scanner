@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- Mirrors --bg: meta tags can't read CSS variables. -->
     <meta name="theme-color" content="#111111" />
     <title>TCG Scanner</title>
     <style>
@@ -10,7 +11,7 @@
         color-scheme: dark;
         font-family: system-ui, sans-serif;
 
-        /* Every UI color; the guide overlay canvas reads --guide-*, --scrim and --on-scrim too. */
+        /* Every UI color; canvas drawing reads them too (see paletteColor). */
         --bg: #111;
         --panel-bg: #1a1a1a;
         --panel-border: #2e2e2e;
@@ -34,6 +35,8 @@
         --guide-not-found: rgba(239, 68, 68, 0.95);
         --guide-found: rgba(56, 224, 130, 0.95);
         --guide-flash: rgba(255, 255, 255, 0.95);
+        --debug-text-profile: rgba(80, 200, 255, 0.8);
+        --debug-line-profile: rgba(255, 150, 40, 0.8);
 
         --font-xs: 0.75rem;
         --font-sm: 0.85rem;
@@ -711,6 +714,7 @@
               <button type="button" id="scanned-cards-clear" class="button button-danger" disabled>Clear</button>
             </div>
           </div>
+          <p id="scanned-cards-error" class="error" hidden></p>
           <form id="manual-entry" class="manual-entry" autocomplete="off">
             <label for="manual-entry-input" class="visually-hidden">Card number</label>
             <input

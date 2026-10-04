@@ -1,5 +1,4 @@
-// Public API of the functional core. See docs/plan/03-functional-core.md for
-// the authoritative, documented list of everything exported here.
+// Public API of the functional core.
 
 export * from "./types";
 export * from "./constants";

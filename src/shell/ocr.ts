@@ -3,31 +3,11 @@ import type { Worker as TesseractWorker } from "tesseract.js";
 import { filterAllowedChars } from "../core";
 
 /**
- * Creates a ready-to-use Tesseract.js worker, configured to load its
- * worker script, WASM core, and English trained-data from this app's own
- * origin (public/tesseract/ — see vite.config.ts's copyTesseractToPublic
- * plugin) instead of Tesseract.js's own default of fetching each from the
- * jsdelivr CDN at runtime, consistent with this app's client-only, no-
- * external-network-call constraint (see docs/plan/00-overview.md).
- *
- * Tesseract.js manages its own dedicated Web Worker internally (spawned
- * from `workerPath`) — this call resolves once that worker has loaded the
- * WASM core and English language data and is ready to `recognize()`, per
- * `createWorker`'s own contract. Defaults to `OEM.LSTM_ONLY` (Tesseract.js's
- * own default engine mode, not overridden here) — the Legacy engine's
- * assets aren't even vendored (see copyTesseractToPublic's doc comment).
- *
- * The `load_*_dawg` config disables every one of Tesseract's built-in
- * dictionaries ("dawgs" — system word list, frequent-words list,
- * punctuation patterns, number patterns, etc.) at load time. These act as
- * a language-model prior during LSTM decoding, biasing recognition toward
- * sequences that look like real English words/punctuation *even among
- * characters `tessedit_char_whitelist` already allows* — actively
- * counterproductive for this app's actual input (collector numbers, set
- * codes: structured alphanumeric strings, never real words). This has to
- * be set at init time via `createWorker`'s `config` argument, not
- * per-`recognize()` via `setParameters` — the dictionaries are loaded
- * together with the language data itself, not reconsulted per call.
+ * A Tesseract.js worker that loads its script, WASM core and English data
+ * from this app's origin (public/tesseract/, see vite.config.ts), not a CDN.
+ * Tesseract's dictionaries ("dawgs") bias recognition toward English words,
+ * which collector numbers and set codes aren't; they load with the language
+ * data, so they can only be disabled here, not per `recognize()`.
  */
 async function createOcrWorker(): Promise<TesseractWorker> {
   return createWorker(
@@ -66,28 +46,12 @@ export class LazyOcrWorker {
   }
 }
 
-/** The printable-ASCII range `tesseractWhitelistFor` tests `allowedCharsRegex`
- * against — every character an OCR'd card region could plausibly contain
- * (letters, digits, punctuation); deliberately not the full Unicode range,
- * since Tesseract's `eng` model has no non-ASCII glyphs to whitelist in the
- * first place (see the plan's identification.ts doc comment on `RegionType`
- * for the Greek-beta case this matters for: the model can't output `β`
- * regardless, so there's nothing to gain testing it). */
+/** Printable ASCII: the `eng` model can't output anything else (not even
+ * the "β" some collector numbers have). */
 const WHITELIST_CANDIDATE_RANGE = { first: 0x20, last: 0x7e };
 
-/**
- * Converts a region's `allowedCharsRegex` (a character class like `"[B0-9]"`
- * — see RegionConfig's doc comment, src/core/identification.ts) into a flat
- * string of the individual characters it matches, suitable for Tesseract's
- * `tessedit_char_whitelist` parameter — which wants an explicit character
- * list, not a regex. Built by brute-force testing every printable-ASCII
- * character against the regex (cheap: at most ~95 `RegExp.test` calls) and
- * keeping the ones that match, rather than trying to parse/expand the regex
- * itself — sufficient because every `allowed_chars_regex` seen so far is a
- * plain character class, and future ones documented that way stay valid
- * input to this same brute-force test regardless of what's inside the
- * brackets.
- */
+/** The characters `allowedCharsRegex` (a character class like "[B0-9]")
+ * matches, as the explicit list `tessedit_char_whitelist` wants. */
 function tesseractWhitelistFor(allowedCharsRegex: string): string {
   const regex = new RegExp(allowedCharsRegex);
   let whitelist = "";
@@ -101,19 +65,10 @@ function tesseractWhitelistFor(allowedCharsRegex: string): string {
 }
 
 /**
- * OCRs one upright text region (already at REGION_PX_PER_MM — see
- * warpRegion) and returns Tesseract's text filtered to `allowedCharsRegex`.
- *
- * `allowedCharsRegex` is used twice on purpose: as Tesseract's
- * `tessedit_char_whitelist`, so a misread can't land on a disallowed
- * character (e.g. `]` read as `)`), and again via `filterAllowedChars` as a
- * cheap backstop for anything else emitted (e.g. stray spaces).
- *
- * Page segmentation is SINGLE_LINE: every region is one short line.
- * SINGLE_WORD and RAW_LINE consistently misread the first character (e.g.
- * "B" as "8") on real captures.
- *
- * The whitelist is a worker-wide parameter, so it's set before every region.
+ * OCRs one upright text region, filtered to `allowedCharsRegex`. The regex is
+ * also Tesseract's whitelist (worker-wide, so set per region), which keeps
+ * misreads within it. SINGLE_LINE because SINGLE_WORD and RAW_LINE misread
+ * the first character on real captures.
  */
 export async function recognizeRegion(
   worker: TesseractWorker,

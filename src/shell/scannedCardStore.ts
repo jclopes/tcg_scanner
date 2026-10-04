@@ -2,18 +2,14 @@ import { formatCsv, requireArray, requireBoolean, requireList, requireNumber, re
 import type { CardOrientation } from "../core";
 import type { GameOption } from "./gameConfig";
 
-/** One card the user accepted: its game (folder id), the set's code (the Set
- * dropdown's value), the card's collector number, whether it's the foil
- * version, its orientation, how many copies, when it was accepted (ISO 8601,
- * UTC) and the session tags active then (e.g. "#box-01"). Scanning the same
- * card again adds a separate entry. */
+/** One accepted card; scanning the same card again adds a separate entry.
+ * `scannedAt` is ISO 8601 (UTC); `tags` are the session tags at the time. */
 export interface ScannedCard {
   gameId: string;
   setCode: string;
   cardId: string;
   foil: boolean;
-  /** null for entries saved before orientation was recorded. */
-  orientation: CardOrientation | null;
+  orientation: CardOrientation;
   /** A positive integer. */
   quantity: number;
   scannedAt: string;
@@ -22,14 +18,13 @@ export interface ScannedCard {
 
 const STORAGE_KEY = "tcg-scanner:scanned-cards";
 
-/** The saved list, most recent first (empty if nothing is saved). Entries
- * saved before games were recorded get their game from their set code.
- * Throws if the saved list is corrupted or names an unknown set. */
-export function loadScannedCards(games: readonly GameOption[]): ScannedCard[] {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  return stored === null ? [] : parseScannedCards(stored, (setCode) => gameIdOfSet(setCode, games));
+/** The saved list's JSON, or null when nothing is saved. Throws when the
+ * browser's storage is unavailable. */
+export function readStoredScannedCards(): string | null {
+  return localStorage.getItem(STORAGE_KEY);
 }
 
+/** Throws when the browser's storage is unavailable or full. */
 export function saveScannedCards(cards: readonly ScannedCard[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(cards));
 }
@@ -47,12 +42,9 @@ export function cardAttributes(
   return { hasFoil: game.hasFoil, hasOrientation: game.cardOrientations.length > 1 };
 }
 
-/**
- * `cards` with duplicates merged: entries of the same card — game, set,
- * number, foil, orientation and tags (in any order) — become one whose
- * quantity is their total. The merged entry keeps the most recent one's place
- * and timestamp (`cards` is most recent first).
- */
+/** `cards` with entries of the same card (game, set, number, foil,
+ * orientation, tags in any order) merged into the most recent, quantities
+ * summed. */
 export function mergeDuplicates(cards: readonly ScannedCard[]): ScannedCard[] {
   const merged = new Map<string, ScannedCard>();
   for (const card of cards) {
@@ -63,11 +55,8 @@ export function mergeDuplicates(cards: readonly ScannedCard[]): ScannedCard[] {
   return [...merged.values()];
 }
 
-/**
- * `cards` as CSV: set_id, card_id, then foil and orientation only if some
- * card's game has them (see cardAttributes; blank for a card whose game
- * doesn't), then quantity, scanned_at and tags.
- */
+/** `cards` as CSV; the foil and orientation columns only appear when some
+ * card's game has them. */
 export function scannedCardsCsv(cards: readonly ScannedCard[], games: readonly GameOption[]): string {
   const attributes = cards.map((card) => cardAttributes(card, games));
   const withFoil = attributes.some((a) => a.hasFoil);
@@ -87,7 +76,7 @@ export function scannedCardsCsv(cards: readonly ScannedCard[], games: readonly G
       card.setCode,
       card.cardId,
       ...(withFoil ? [hasFoil ? String(card.foil) : ""] : []),
-      ...(withOrientation ? [hasOrientation ? (card.orientation ?? "") : ""] : []),
+      ...(withOrientation ? [hasOrientation ? card.orientation : ""] : []),
       String(card.quantity),
       card.scannedAt,
       card.tags.join(" "),
@@ -96,39 +85,33 @@ export function scannedCardsCsv(cards: readonly ScannedCard[], games: readonly G
   return formatCsv(header, rows);
 }
 
-/**
- * The stored JSON list. Older entries lack later fields and get: the game
- * from `gameIdForSet`, not foil, no recorded orientation, one copy, no tags.
- * Throws, naming the entry and field, if it isn't a list of scanned cards.
- */
-export function parseScannedCards(json: string, gameIdForSet: (setCode: string) => string): ScannedCard[] {
+/** The saved JSON list. Throws, naming the entry and field, if it isn't a
+ * list of scanned cards. */
+export function parseScannedCards(json: string): ScannedCard[] {
   const context = `The saved scanned-card list (localStorage "${STORAGE_KEY}")`;
-  return requireList(JSON.parse(json), context).map((raw, i) => parseStoredCard(raw, `${context}, entry ${i + 1}`, gameIdForSet));
+  return requireList(JSON.parse(json), context).map((raw, i) => parseStoredCard(raw, `${context}, entry ${i + 1}`));
 }
 
-function parseStoredCard(raw: unknown, context: string, gameIdForSet: (setCode: string) => string): ScannedCard {
+function parseStoredCard(raw: unknown, context: string): ScannedCard {
   const card = requireRecord(raw, context);
-  const setCode = requireString(card, "setCode", context);
   return {
-    gameId: card.gameId === undefined ? gameIdForSet(setCode) : requireString(card, "gameId", context),
-    setCode,
+    gameId: requireString(card, "gameId", context),
+    setCode: requireString(card, "setCode", context),
     cardId: requireString(card, "cardId", context),
-    foil: card.foil === undefined ? false : requireBoolean(card, "foil", context),
-    orientation: parseOrientation(card.orientation, context),
-    quantity: card.quantity === undefined ? 1 : requireQuantity(card, context),
+    foil: requireBoolean(card, "foil", context),
+    orientation: requireOrientation(card, context),
+    quantity: requireQuantity(card, context),
     scannedAt: requireString(card, "scannedAt", context),
-    tags: card.tags === undefined ? [] : requireTags(card, context),
+    tags: requireTags(card, context),
   };
 }
 
-function parseOrientation(value: unknown, context: string): CardOrientation | null {
-  if (value === undefined || value === null) {
-    return null;
+function requireOrientation(card: Record<string, unknown>, context: string): CardOrientation {
+  const orientation = requireString(card, "orientation", context);
+  if (orientation !== "portrait" && orientation !== "landscape") {
+    throw new Error(`${context}: "orientation" must be "portrait" or "landscape", got "${orientation}".`);
   }
-  if (value !== "portrait" && value !== "landscape") {
-    throw new Error(`${context}: "orientation" must be "portrait" or "landscape", got ${JSON.stringify(value)}.`);
-  }
-  return value;
+  return orientation;
 }
 
 function requireQuantity(card: Record<string, unknown>, context: string): number {
@@ -146,13 +129,4 @@ function requireTags(card: Record<string, unknown>, context: string): string[] {
     throw new Error(`${context}: "tags" must be a list of strings, got ${JSON.stringify(tags)}.`);
   }
   return tags as string[];
-}
-
-/** The game owning set `setCode`. Throws if no bundled game has it. */
-function gameIdOfSet(setCode: string, games: readonly GameOption[]): string {
-  const game = games.find((g) => g.sets.some((set) => set.code === setCode));
-  if (!game) {
-    throw new Error(`Saved scanned card has set "${setCode}", which no bundled game has.`);
-  }
-  return game.id;
 }
