@@ -18,7 +18,7 @@ import { fitCropToText, warpRegion } from "./regionExtraction";
 import type { TextCropAnalysis } from "./regionExtraction";
 
 /** How many best-matching collector numbers to suggest. */
-const CARD_MATCH_SUGGESTION_COUNT = 3;
+const CARD_MATCH_SUGGESTION_COUNT = 2;
 
 /** One region warped out of the frame. For a text region `canvas` is the crop
  * fitted to its text within `searchCanvas`; for an image region both are the
