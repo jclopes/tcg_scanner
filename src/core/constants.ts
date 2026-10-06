@@ -81,7 +81,7 @@ export const HORIZONTAL_LINE_MIN_ENERGY_TO_BACKGROUND = 2.5;
 
 /** Rows whose gradient energy is above this fraction of the way from the
  * profile's min to its max belong to the text band. Starting guess. */
-export const TEXT_BAND_ENERGY_THRESHOLD_FRACTION = 0.3;
+export const TEXT_BAND_ENERGY_THRESHOLD_FRACTION = 0.25;
 
 /** Margin kept above and below the detected text band, as a fraction of the
  * band's height. Starting guess. */
