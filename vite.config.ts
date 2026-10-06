@@ -54,4 +54,7 @@ export default defineConfig({
   // address (`npm run dev:lan`, e.g. from a phone) isn't. The dev server
   // exposes the whole project, so it stays on localhost unless --host.
   plugins: [copyTesseractToPublic(), basicSsl()],
+  // Pinned to IPv4 loopback: left to resolve "localhost", Vite may bind only
+  // ::1, which browsers that resolve localhost to 127.0.0.1 can't reach.
+  server: { host: "127.0.0.1" },
 });
