@@ -26,10 +26,9 @@ The session's state is one of `stopped`, `starting`, `scanning`, `processing`, `
 A bottom tab bar (`screens.ts`) switches between:
 
 - **Scan** — camera with the guide, card orientation and foil toggles, Start/Stop, the result and match buttons, session tags, the debug trail and the scanned-card list.
-- **Game** — game and set.
 - **Settings** — camera, resolution, sound, debug mode.
 
-Leaving Scan stops a running scan.
+Start Scan first opens a dialog to pick the game and set (`gameChoice.ts`). Leaving Scan stops a running scan.
 
 ## Game data
 

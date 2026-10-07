@@ -6,24 +6,26 @@ import { loadPreferences, savePreferences } from "./preferences";
 export interface GameChoiceElements {
   gameSelect: HTMLSelectElement;
   setSelect: HTMLSelectElement;
+  dialog: HTMLDialogElement;
+  startButton: HTMLButtonElement;
+  cancelButton: HTMLButtonElement;
 }
 
-/** The Game screen's game and set dropdowns. The choice is saved as a
+/** The Start Scan dialog's game and set dropdowns. The choice is saved as a
  * preference and restored when that game and set still exist. */
 export class GameChoice {
   private readonly games = listGames();
-  /** Whether an earlier session saved a game choice; false on first launch. */
-  readonly hasSavedGame: boolean;
   private selectedGame: GameOption;
   private selectedSet: GameSet;
 
-  /** `onGameChange` runs after the user picks another game. */
+  /** `onGameChange` runs after the user picks another game; `onStart` after
+   * the user confirms the dialog. */
   constructor(
     private readonly elements: GameChoiceElements,
     private readonly onGameChange: (game: GameOption) => void,
+    onStart: () => void,
   ) {
     const preferences = loadPreferences();
-    this.hasSavedGame = preferences.gameId !== undefined;
     elements.gameSelect.replaceChildren(...this.games.map((game) => optionElement(game.id, game.id)));
     this.selectedGame = this.games.find((game) => game.id === preferences.gameId) ?? this.games[0]!;
     elements.gameSelect.value = this.selectedGame.id;
@@ -31,6 +33,18 @@ export class GameChoice {
 
     elements.gameSelect.addEventListener("change", () => this.handleGameChange());
     elements.setSelect.addEventListener("change", () => this.handleSetChange());
+    elements.startButton.addEventListener("click", () => {
+      elements.dialog.close();
+      onStart();
+    });
+    elements.cancelButton.addEventListener("click", () => elements.dialog.close());
+  }
+
+  /** Shows the dialog with the current choice selected. */
+  open(): void {
+    if (!this.elements.dialog.open) {
+      this.elements.dialog.showModal();
+    }
   }
 
   /** Every bundled game. */
@@ -46,9 +60,7 @@ export class GameChoice {
     return this.selectedSet;
   }
 
-  /** Saves the selected game and set — also when the user kept the defaults,
-   * so the next launch counts as having a saved choice. */
-  save(): void {
+  private save(): void {
     savePreferences({ gameId: this.selectedGame.id, setCode: this.selectedSet.code });
   }
 

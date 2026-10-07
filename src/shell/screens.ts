@@ -1,4 +1,4 @@
-export type ScreenName = "scan" | "game" | "settings";
+export type ScreenName = "scan" | "settings";
 
 export interface ScreenElements {
   screens: Record<ScreenName, HTMLElement>;
@@ -8,16 +8,14 @@ export interface ScreenElements {
 
 /** Shows one screen at a time, switched with the bottom tab bar. */
 export class ScreenNavigator {
-  private current: ScreenName;
+  private current: ScreenName = "scan";
 
   /** `onNavigate` runs after every switch to a different screen, with the
    * screen that was left. */
   constructor(
     private readonly elements: ScreenElements,
-    initial: ScreenName,
     private readonly onNavigate: (from: ScreenName) => void,
   ) {
-    this.current = initial;
     this.render();
 
     for (const [screen, tab] of Object.entries(elements.tabs) as [ScreenName, HTMLButtonElement][]) {

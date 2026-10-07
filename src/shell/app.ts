@@ -32,8 +32,15 @@ export function initApp(): void {
   const captureFlash = requireElement<HTMLDivElement>("capture-flash");
 
   const gameChoice = new GameChoice(
-    { gameSelect: requireElement("game-select"), setSelect: requireElement("set-select") },
+    {
+      gameSelect: requireElement("game-select"),
+      setSelect: requireElement("set-select"),
+      dialog: requireElement("game-dialog"),
+      startButton: requireElement("game-dialog-start"),
+      cancelButton: requireElement("game-dialog-cancel"),
+    },
     (game) => cardOptions.applyGame(game),
+    startScan,
   );
   const cardOptions = new CardOptions(
     {
@@ -111,10 +118,9 @@ export function initApp(): void {
   );
   const screens = new ScreenNavigator(
     {
-      screens: { scan: requireElement("screen-scan"), game: requireElement("screen-game"), settings: requireElement("screen-settings") },
-      tabs: { scan: requireElement("tab-scan"), game: requireElement("tab-game"), settings: requireElement("tab-settings") },
+      screens: { scan: requireElement("screen-scan"), settings: requireElement("screen-settings") },
+      tabs: { scan: requireElement("tab-scan"), settings: requireElement("tab-settings") },
     },
-    gameChoice.hasSavedGame ? "scan" : "game",
     handleNavigate,
   );
 
@@ -202,8 +208,7 @@ export function initApp(): void {
   // ---- Screens ------------------------------------------------------------
 
   /** A running scan stops when its screen is left, so it never captures a
-   * card while hidden. The game choice is saved on leaving its screen, so
-   * the next launch opens on the scan screen. */
+   * card while hidden. */
   function handleNavigate(from: ScreenName): void {
     if (session.state.phase === "starting") {
       throw new Error("Navigated away while the camera was starting.");
@@ -211,20 +216,22 @@ export function initApp(): void {
     if (from === "scan" && isCameraOn(session.state)) {
       session.stop();
     }
-    if (from === "game") {
-      gameChoice.save();
-    }
   }
 
   // ---- Event wiring -------------------------------------------------------
+
+  /** Runs when the user confirms the game dialog. */
+  function startScan(): void {
+    sounds.unlock();
+    debugPanel.clear();
+    session.start();
+  }
 
   scanButton.addEventListener("click", () => {
     if (isCameraOn(session.state)) {
       session.stop();
     } else {
-      sounds.unlock();
-      debugPanel.clear();
-      session.start();
+      gameChoice.open();
     }
   });
 

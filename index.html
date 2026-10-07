@@ -148,7 +148,7 @@
         inset: auto 0 0 0;
         z-index: 5;
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         height: calc(var(--tab-bar-height) + env(safe-area-inset-bottom));
         padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
         background: var(--bar-bg);
@@ -474,6 +474,32 @@
         border-radius: var(--radius);
       }
 
+      /* ---- Game dialog ---- */
+
+      #game-dialog {
+        width: min(100% - 2 * var(--gap), 440px);
+        color: var(--text);
+      }
+
+      /* Only while open: display: flex would otherwise show the closed dialog. */
+      #game-dialog:not([open]) {
+        display: none;
+      }
+
+      #game-dialog::backdrop {
+        background: var(--scrim);
+      }
+
+      .dialog-buttons {
+        display: flex;
+        gap: var(--gap-sm);
+        padding-top: var(--gap-sm);
+      }
+
+      .dialog-buttons .button {
+        flex: 1;
+      }
+
       /* ---- Scanned cards ---- */
 
       /* The count lines up with #capture's text column (less this panel's padding and border). */
@@ -737,19 +763,6 @@
         </section>
       </section>
 
-      <section id="screen-game" class="screen" aria-label="Game and set" hidden>
-        <div class="panel">
-          <div class="field">
-            <label for="game-select">Game</label>
-            <select id="game-select" class="input"></select>
-          </div>
-          <div class="field">
-            <label for="set-select">Set</label>
-            <select id="set-select" class="input"></select>
-          </div>
-        </div>
-      </section>
-
       <section id="screen-settings" class="screen" aria-label="Settings" hidden>
         <div class="panel">
           <div class="field">
@@ -783,13 +796,6 @@
         </svg>
         Scan
       </button>
-      <button type="button" id="tab-game" class="tab-item">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="9" y="3" width="11" height="15" rx="2" />
-          <path d="M6 6.5v11A3.5 3.5 0 0 0 9.5 21H16" />
-        </svg>
-        Game
-      </button>
       <button type="button" id="tab-settings" class="tab-item">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1" />
@@ -804,6 +810,21 @@
     <div id="card-overlay" role="dialog" aria-label="Captured card — tap to close" hidden>
       <img id="card-overlay-image" alt="Full captured card" />
     </div>
+
+    <dialog id="game-dialog" class="panel" aria-label="Game and set">
+      <div class="field">
+        <label for="game-select">Game</label>
+        <select id="game-select" class="input"></select>
+      </div>
+      <div class="field">
+        <label for="set-select">Set</label>
+        <select id="set-select" class="input"></select>
+      </div>
+      <div class="dialog-buttons">
+        <button type="button" id="game-dialog-cancel" class="button">Cancel</button>
+        <button type="button" id="game-dialog-start" class="button button-primary">Start Scan</button>
+      </div>
+    </dialog>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
