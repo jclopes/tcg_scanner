@@ -1,23 +1,68 @@
+import { closerSetPrints } from "../core";
+import { optionElement } from "./dom";
 import type { GameSet } from "./gameConfig";
+import { suggestCardIds } from "./identify";
 import type { Identification } from "./identify";
 
-/** The capture area's identification: a warning when the OCR'd set code fits
- * another set better, a button per suggested card ID (`onAccept`) and Rescan
- * (`onRescan`). */
+export interface IdentificationViewElements {
+  warning: HTMLElement;
+  /** The set dropdown's row, which keeps its space when hidden. */
+  setRow: HTMLElement;
+  setSelect: HTMLSelectElement;
+  matches: HTMLElement;
+}
+
+/** The capture area's identification: a set dropdown, preselected with the set
+ * the card was identified in, a warning when the OCR'd set code fits another
+ * set better, a button per suggested card ID (`onAccept`) and Rescan
+ * (`onRescan`). Picking another set suggests that set's card IDs instead. */
 export class IdentificationView {
+  /** The shown identification and its game's sets; null while cleared. */
+  private shown: { sets: readonly GameSet[]; identification: Identification } | null = null;
+
   constructor(
-    private readonly warning: HTMLElement,
-    private readonly matches: HTMLElement,
+    private readonly elements: IdentificationViewElements,
     private readonly onAccept: (set: GameSet, cardId: string) => void,
     private readonly onRescan: () => void,
   ) {
+    elements.setSelect.addEventListener("change", () => this.handleSetChange());
     this.clear();
   }
 
-  show(set: GameSet, identification: Identification): void {
-    this.showWarning(setWarning(identification.setCode.closerSets));
-    this.matches.replaceChildren(
-      ...identification.matches.map((match) => {
+  /** Shows `identification` for `set`, with `sets` (its game's) to pick from. */
+  show(sets: readonly GameSet[], set: GameSet, identification: Identification): void {
+    this.shown = { sets, identification };
+    this.elements.setSelect.replaceChildren(...sets.map((s) => optionElement(s.code, s.name)));
+    this.elements.setSelect.value = set.code;
+    this.elements.setRow.hidden = false;
+    this.render(sets, identification, set);
+  }
+
+  clear(): void {
+    this.shown = null;
+    this.elements.setRow.hidden = true;
+    this.elements.setSelect.replaceChildren();
+    this.showWarning(null);
+    this.elements.matches.replaceChildren();
+  }
+
+  private handleSetChange(): void {
+    if (this.shown === null) {
+      throw new Error("The capture's set changed while no card was shown.");
+    }
+    const { sets, identification } = this.shown;
+    const set = sets.find((s) => s.code === this.elements.setSelect.value);
+    if (!set) {
+      throw new Error(`Unknown set option: ${this.elements.setSelect.value}`);
+    }
+    this.render(sets, identification, set);
+  }
+
+  /** The warning and the match buttons for `set`. */
+  private render(sets: readonly GameSet[], identification: Identification, set: GameSet): void {
+    this.showWarning(setWarning(closerSetPrints(identification.setCodeText, set, sets)));
+    this.elements.matches.replaceChildren(
+      ...suggestCardIds(identification.collectorNumberText, set).map((match) => {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "button button-outline mono";
@@ -27,11 +72,6 @@ export class IdentificationView {
       }),
       this.rescanButton(),
     );
-  }
-
-  clear(): void {
-    this.showWarning(null);
-    this.matches.replaceChildren();
   }
 
   private rescanButton(): HTMLButtonElement {
@@ -47,9 +87,9 @@ export class IdentificationView {
   /** The warning keeps its line when hidden; a message too long for it is
    * cut off, so the full text is also its title. */
   private showWarning(message: string | null): void {
-    this.warning.hidden = message === null;
-    this.warning.textContent = message ?? "";
-    this.warning.title = message ?? "";
+    this.elements.warning.hidden = message === null;
+    this.elements.warning.textContent = message ?? "";
+    this.elements.warning.title = message ?? "";
   }
 }
 

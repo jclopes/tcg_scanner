@@ -1,7 +1,10 @@
 import { optionElement } from "./dom";
 import { listGames } from "./gameConfig";
-import type { GameOption, GameSet } from "./gameConfig";
+import type { GameOption, SetChoice } from "./gameConfig";
 import { loadPreferences, savePreferences } from "./preferences";
+
+/** The set dropdown's value for Autodetect: empty, which no set code is. */
+const AUTODETECT_OPTION_VALUE = "";
 
 export interface GameChoiceElements {
   gameSelect: HTMLSelectElement;
@@ -11,18 +14,21 @@ export interface GameChoiceElements {
   cancelButton: HTMLButtonElement;
 }
 
-/** The Start Scan dialog's game and set dropdowns. The choice is saved as a
- * preference and restored when that game and set still exist. */
+/** The Start Scan dialog's game and set dropdowns; the set can be
+ * Autodetect, the default. The choice is saved as a preference and restored
+ * when that game and set still exist. */
 export class GameChoice {
   private readonly games = listGames();
   private selectedGame: GameOption;
-  private selectedSet: GameSet;
+  private selectedSet: SetChoice;
 
-  /** `onGameChange` runs after the user picks another game; `onStart` after
-   * the user confirms the dialog. */
+  /** `onGameChange` runs after the user picks another game; `onSetChange`
+   * after the set choice changes, also when a game change resets it; `onStart`
+   * after the user confirms the dialog. */
   constructor(
     private readonly elements: GameChoiceElements,
     private readonly onGameChange: (game: GameOption) => void,
+    private readonly onSetChange: (set: SetChoice) => void,
     onStart: () => void,
   ) {
     const preferences = loadPreferences();
@@ -56,21 +62,26 @@ export class GameChoice {
     return this.selectedGame;
   }
 
-  get set(): GameSet {
+  get set(): SetChoice {
     return this.selectedSet;
   }
 
+  /** Autodetect saves no set code, so the next launch restores the default. */
   private save(): void {
-    savePreferences({ gameId: this.selectedGame.id, setCode: this.selectedSet.code });
+    const setCode = this.selectedSet === "autodetect" ? undefined : this.selectedSet.code;
+    savePreferences({ gameId: this.selectedGame.id, setCode });
   }
 
-  /** Fills the set dropdown with the selected game's sets and selects
-   * `desiredCode` when the game has it, otherwise its first set. */
-  private populateSets(desiredCode: string | undefined): GameSet {
+  /** Fills the set dropdown with Autodetect and the selected game's sets, and
+   * selects `desiredCode` when the game has it, otherwise Autodetect. */
+  private populateSets(desiredCode: string | undefined): SetChoice {
     const { sets } = this.selectedGame;
-    this.elements.setSelect.replaceChildren(...sets.map((set) => optionElement(set.code, set.name)));
-    const set = sets.find((s) => s.code === desiredCode) ?? sets[0]!;
-    this.elements.setSelect.value = set.code;
+    this.elements.setSelect.replaceChildren(
+      optionElement(AUTODETECT_OPTION_VALUE, "Autodetect"),
+      ...sets.map((set) => optionElement(set.code, set.name)),
+    );
+    const set: SetChoice = sets.find((s) => s.code === desiredCode) ?? "autodetect";
+    this.elements.setSelect.value = set === "autodetect" ? AUTODETECT_OPTION_VALUE : set.code;
     return set;
   }
 
@@ -83,14 +94,17 @@ export class GameChoice {
     this.selectedSet = this.populateSets(undefined);
     this.save();
     this.onGameChange(game);
+    this.onSetChange(this.selectedSet);
   }
 
   private handleSetChange(): void {
-    const set = this.selectedGame.sets.find((s) => s.code === this.elements.setSelect.value);
+    const { value } = this.elements.setSelect;
+    const set = value === AUTODETECT_OPTION_VALUE ? "autodetect" : this.selectedGame.sets.find((s) => s.code === value);
     if (!set) {
-      throw new Error(`Unknown set option: ${this.elements.setSelect.value}`);
+      throw new Error(`Unknown set option: ${value}`);
     }
     this.selectedSet = set;
     this.save();
+    this.onSetChange(set);
   }
 }

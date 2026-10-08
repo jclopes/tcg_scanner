@@ -43,6 +43,26 @@ export function closerSetPrints<T extends { print: string }>(ocrText: string, se
   return closest < selectedDistance ? sets.filter((set) => distanceTo(set) === closest) : [];
 }
 
+/** The set whose printed code the OCR'd set code is closest to, the first in
+ * `sets` order on a tie; null when OCR read nothing. Ignores whitespace, not
+ * case. */
+export function closestSetPrint<T extends { print: string }>(ocrText: string, sets: readonly T[]): T | null {
+  const read = withoutWhitespace(ocrText);
+  if (read === "") {
+    return null;
+  }
+  let closest: T | null = null;
+  let closestDistance = Infinity;
+  for (const set of sets) {
+    const distance = levenshteinDistance(read, withoutWhitespace(set.print));
+    if (distance < closestDistance) {
+      closest = set;
+      closestDistance = distance;
+    }
+  }
+  return closest;
+}
+
 function withoutWhitespace(text: string): string {
   return text.replace(/\s+/g, "");
 }

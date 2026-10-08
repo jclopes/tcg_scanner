@@ -40,6 +40,10 @@ export interface GameOption {
   hasFoil: boolean;
 }
 
+/** The set dropdown's choice: one set, or "autodetect" — the set whose printed
+ * code the card's set code reads closest to (see closestSetPrint). */
+export type SetChoice = GameSet | "autodetect";
+
 /** Every game folder's regions.json and sets.json, keyed by folder name —
  * gathered at build time by Vite's `import.meta.glob`, still unchecked JSON
  * (see parseGame). */

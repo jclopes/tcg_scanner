@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { closerSetPrints, findCardId, isConfidentMatch, levenshteinDistance, rankCardIds } from "./cardMatch";
+import { closerSetPrints, closestSetPrint, findCardId, isConfidentMatch, levenshteinDistance, rankCardIds } from "./cardMatch";
 
 describe("levenshteinDistance", () => {
   it("counts single-character substitutions, insertions and deletions", () => {
@@ -47,13 +47,13 @@ describe("findCardId", () => {
   });
 });
 
-describe("closerSetPrints", () => {
-  const heist = { name: "Heist", print: "SD01 - HEI [A]" };
-  const power = { name: "Power", print: "SD02 - EBP [A]" };
-  const retail = { name: "Retail", print: "MS01 - WNC [A]" };
-  const beta = { name: "Beta", print: "MS01 - WNC [A]" };
-  const sets = [heist, power, retail, beta];
+const heist = { name: "Heist", print: "SD01 - HEI [A]" };
+const power = { name: "Power", print: "SD02 - EBP [A]" };
+const retail = { name: "Retail", print: "MS01 - WNC [A]" };
+const beta = { name: "Beta", print: "MS01 - WNC [A]" };
+const sets = [heist, power, retail, beta];
 
+describe("closerSetPrints", () => {
   it("is empty when the selected set's print is the closest, even misread or tied with another set", () => {
     expect(closerSetPrints("SDO2 - EBP [A", power, sets)).toEqual([]);
     expect(closerSetPrints("MS01 - WNC [A]", retail, sets)).toEqual([]);
@@ -70,5 +70,21 @@ describe("closerSetPrints", () => {
 
   it("is empty when OCR read nothing", () => {
     expect(closerSetPrints("  ", power, sets)).toEqual([]);
+  });
+});
+
+describe("closestSetPrint", () => {
+  it("picks the set whose print is closest, ignoring spacing", () => {
+    expect(closestSetPrint("SD01-HEI[A]", sets)).toBe(heist);
+    expect(closestSetPrint("SDO2 - EBP [A", sets)).toBe(power);
+  });
+
+  it("takes the first of tied sets", () => {
+    expect(closestSetPrint("MS01 - WNC [A]", sets)).toBe(retail);
+  });
+
+  it("is null when OCR read nothing", () => {
+    expect(closestSetPrint("", sets)).toBeNull();
+    expect(closestSetPrint("  ", sets)).toBeNull();
   });
 });

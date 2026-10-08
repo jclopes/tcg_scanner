@@ -10,7 +10,7 @@ import { collectBurstFrames, selectFrameToFlatten } from "./frameBurst";
 import { evaluateFrameForQuad } from "./frameDetection";
 import type { AcceptedEvaluation } from "./frameDetection";
 import { FrameSampler } from "./frameSampler";
-import type { GameOption, GameSet } from "./gameConfig";
+import type { GameOption, GameSet, SetChoice } from "./gameConfig";
 import { captureHiResStill } from "./hiResStill";
 import { identifyCard } from "./identify";
 import type { Identification } from "./identify";
@@ -34,14 +34,16 @@ export interface ScanInputs {
   camera: CameraOption | null;
   resolution: Size;
   game: GameOption;
-  set: GameSet;
+  set: SetChoice;
   cardOrientation: CardOrientation;
   debug: boolean;
 }
 
-/** An identified card awaiting the user's pick; `cycle` is the scan cycle it
- * belongs to (see ScanSession.fail). */
+/** An identified card awaiting the user's pick, with the game and set it was
+ * identified in; `cycle` is the scan cycle it belongs to (see
+ * ScanSession.fail). */
 export interface Capture {
+  game: GameOption;
   set: GameSet;
   cardCanvas: HTMLCanvasElement;
   identification: Identification;
@@ -214,11 +216,15 @@ export class ScanSession {
     if (debug) {
       this.events.onDebugTrail(buildCaptureDebugTrail(preview, burst, selected, cardCanvas, identification.regions));
     }
+    if (identification.set === null) {
+      this.beginScan(++this.scanCycle, "Couldn't read the set code — scanning again.");
+      return;
+    }
     if (!isConfidentMatch(identification.matches)) {
       this.beginScan(++this.scanCycle, "Couldn't read the card number — scanning again.");
       return;
     }
-    this.events.onCapture({ set, cardCanvas, identification, cycle });
+    this.events.onCapture({ game, set: identification.set, cardCanvas, identification, cycle });
     this.setState({ phase: "captured" });
   }
 

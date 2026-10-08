@@ -40,6 +40,7 @@ export function initApp(): void {
       cancelButton: requireElement("game-dialog-cancel"),
     },
     (game) => cardOptions.applyGame(game),
+    (set) => manualEntry.applySet(set),
     startScan,
   );
   const cardOptions = new CardOptions(
@@ -76,19 +77,25 @@ export function initApp(): void {
     clearButton: requireElement("scanned-cards-clear"),
   });
   const identificationView = new IdentificationView(
-    requireElement("identification-warning"),
-    requireElement("identification-matches"),
+    {
+      warning: requireElement("identification-warning"),
+      setRow: requireElement("capture-set"),
+      setSelect: requireElement("capture-set-select"),
+      matches: requireElement("identification-matches"),
+    },
     acceptCard,
     rescan,
   );
-  new ManualCardEntry(
+  const manualEntry = new ManualCardEntry(
     {
       form: requireElement("manual-entry"),
       input: requireElement("manual-entry-input"),
+      addButton: requireElement("manual-entry-add"),
       suggestions: requireElement("manual-entry-options"),
       error: requireElement("manual-entry-error"),
+      autodetectHint: requireElement("manual-entry-hint"),
     },
-    () => gameChoice.set,
+    gameChoice.set,
     addScannedCard,
   );
   const debugPanel = new DebugPanel({
@@ -156,11 +163,11 @@ export function initApp(): void {
     }
   }
 
-  function showCapture({ set, cardCanvas, identification, cycle }: Capture): void {
+  function showCapture({ game, set, cardCanvas, identification, cycle }: Capture): void {
     resultView
       .show(cardCanvas, identification.collectorNumberCrop)
       .catch((error: unknown) => session.fail(error, "Could not encode the captured image.", cycle));
-    identificationView.show(set, identification);
+    identificationView.show(game.sets, set, identification);
     captureFlash.animate([{ opacity: 0 }, { opacity: 0.45 }, { opacity: 0 }], { duration: 300, iterations: 2 });
     sounds.ping();
   }

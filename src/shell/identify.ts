@@ -1,5 +1,5 @@
 import {
-  closerSetPrints,
+  closestSetPrint,
   extractMatch,
   padRegion,
   prepareTextForOcr,
@@ -12,7 +12,7 @@ import type { CardIdMatch, CardOrientation, RegionConfig, TextRegionConfig } fro
 import type { Worker as TesseractWorker } from "tesseract.js";
 import type { AcceptedFrame } from "./frameDetection";
 import { COLLECTOR_NUMBER_REGION, SET_CODE_REGION } from "./gameConfig";
-import type { GameOption, GameSet } from "./gameConfig";
+import type { GameOption, GameSet, SetChoice } from "./gameConfig";
 import { canvasPixels, grayscaleToCanvas } from "./canvasUtils";
 import { recognizeRegion } from "./ocr";
 import { fitCropToText, warpRegion } from "./regionExtraction";
@@ -49,26 +49,34 @@ export interface RegionResult {
 
 export interface Identification {
   regions: RegionResult[];
-  /** The set's collector numbers closest to the OCR'd collector number. */
+  /** The collector number and set code as OCR read them. */
+  collectorNumberText: string;
+  setCodeText: string;
+  /** The set the collector numbers were ranked in: the chosen one, or under
+   * Autodetect the one the set code reads closest to — null when Autodetect
+   * read no set code (then there are no matches). */
+  set: GameSet | null;
+  /** The set's suggested collector numbers (see suggestCardIds). */
   matches: CardIdMatch[];
-  /** The OCR'd set code, and the game's sets whose printed code it reads
-   * closer to than the selected set's (see closerSetPrints) — empty when the
-   * selected set fits best. Only a warning; never fails identification. */
-  setCode: { text: string; closerSets: GameSet[] };
   /** The collector number's fitted crop, in color (the image OCR read, before
    * its grayscale preprocessing). */
   collectorNumberCrop: HTMLCanvasElement;
 }
 
-/** Warps and OCRs `game`'s regions for `cardOrientation` out of `frame`, ranks
- * `set`'s collector numbers and checks the set code against the game's sets.
- * Null if `isCancelled()` turns true (checked between regions). */
+/** `set`'s collector numbers closest to the OCR'd one, best first. */
+export function suggestCardIds(collectorNumberText: string, set: GameSet): CardIdMatch[] {
+  return rankCardIds(collectorNumberText, set.collectorNumbers, CARD_MATCH_SUGGESTION_COUNT);
+}
+
+/** Warps and OCRs `game`'s regions for `cardOrientation` out of `frame`,
+ * resolves `setChoice` to a set and suggests its collector numbers. Null if
+ * `isCancelled()` turns true (checked between regions). */
 export async function identifyCard(
   worker: TesseractWorker,
   frame: AcceptedFrame,
   cardOrientation: CardOrientation,
   game: GameOption,
-  set: GameSet,
+  setChoice: SetChoice,
   isCancelled: () => boolean,
 ): Promise<Identification | null> {
   const regions: RegionResult[] = [];
@@ -86,10 +94,13 @@ export async function identifyCard(
   }
   const collectorNumber = textRegionResult(regions, COLLECTOR_NUMBER_REGION, game.id);
   const setCodeText = textRegionResult(regions, SET_CODE_REGION, game.id).ocr.text;
+  const set = setChoice === "autodetect" ? closestSetPrint(setCodeText, game.sets) : setChoice;
   return {
     regions,
-    matches: rankCardIds(collectorNumber.ocr.text, set.collectorNumbers, CARD_MATCH_SUGGESTION_COUNT),
-    setCode: { text: setCodeText, closerSets: closerSetPrints(setCodeText, set, game.sets) },
+    collectorNumberText: collectorNumber.ocr.text,
+    setCodeText,
+    set,
+    matches: set === null ? [] : suggestCardIds(collectorNumber.ocr.text, set),
     collectorNumberCrop: collectorNumber.crop.canvas,
   };
 }

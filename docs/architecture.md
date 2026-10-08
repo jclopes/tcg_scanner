@@ -16,8 +16,8 @@ TCG Scanner runs entirely in the browser. There is no server, and nothing is fet
 2. **Detection** — on every video frame, four thin bands around the on-screen guide are sampled (`FrameSampler`), an edge line is fitted in each (`fitEdgeLine`), and the lines are intersected into a quad that must be card-shaped (`evaluateFrameForQuad`).
 3. **Burst** — after a hit, a few more frames are evaluated; the sharpest, most card-shaped one is kept (`selectBestFrame`).
 4. **Flatten** — that frame's card is warped upright for display (`captureFlattenedCard`).
-5. **Identify** — each configured region is warped straight from the camera frame (`regionWarpMatrix`); text regions are narrowed to their text line (`analyzeTextRows` / `analyzeTextColumns`), preprocessed (`prepareTextForOcr`) and OCR'd; a region's `extract_regex` keeps the part of the reading that is its value (`extractMatch`, e.g. `001` from `001/298`). The collector number is fuzzy-matched against the selected set (`rankCardIds`), and the set code is checked against the game's other sets (`closerSetPrints`).
-6. **Pick** — the user taps the right match; the card is added to the list and scanning continues. Without a confident match, detection simply restarts.
+5. **Identify** — each configured region is warped straight from the camera frame (`regionWarpMatrix`); text regions are narrowed to their text line (`analyzeTextRows` / `analyzeTextColumns`), preprocessed (`prepareTextForOcr`) and OCR'd; a region's `extract_regex` keeps the part of the reading that is its value (`extractMatch`, e.g. `001` from `001/298`). With the set on Autodetect, the set code picks the set whose printed code it reads closest to (`closestSetPrint`; the first in the list on a tie, a rescan when it reads nothing). The collector number is fuzzy-matched against the chosen or detected set (`rankCardIds`), and the set code is checked against the game's other sets (`closerSetPrints`).
+6. **Pick** — the capture shows a set dropdown, preselected with the set the card was identified in; picking another set suggests that set's closest numbers instead (`suggestCardIds`). The user taps the right match; the card is added to the list and scanning continues. Without a confident match, detection simply restarts.
 
 The session's state is one of `stopped`, `starting`, `scanning`, `processing`, `captured` or `error`; `app.ts` maps each state to the page.
 
@@ -28,7 +28,7 @@ A bottom tab bar (`screens.ts`) switches between:
 - **Scan** — camera with the guide, card orientation and foil toggles, Start/Stop, the result and match buttons, session tags, the debug trail and the scanned-card list.
 - **Settings** — camera, resolution, sound, debug mode.
 
-Start Scan first opens a dialog to pick the game and set (`gameChoice.ts`). Leaving Scan stops a running scan.
+Start Scan first opens a dialog to pick the game and set, Autodetect by default (`gameChoice.ts`). Leaving Scan stops a running scan.
 
 ## Game data
 
