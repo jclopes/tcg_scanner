@@ -11,7 +11,7 @@ import type { ScannedCard } from "./scannedCardStore";
 
 const CSV_FILENAME = "scanned-cards.csv";
 
-const STORAGE_ERROR = "Scanned cards can't be saved: the browser's storage is unavailable or full. Download the CSV to keep them.";
+const STORAGE_ERROR = "Scanned cards can't be saved: the browser's storage is unavailable or full. Export them to keep a copy.";
 
 export interface ScannedCardListElements {
   list: HTMLOListElement;
