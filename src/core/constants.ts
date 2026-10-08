@@ -102,5 +102,8 @@ export const TEXT_COLUMN_REFERENCE_PERCENTILE = 0.9;
  * regions set a tighter one. Starting guess. */
 export const DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS = 1.5;
 
+/** A text region's default `extractRegex`: the whole OCR text is its value. */
+export const DEFAULT_TEXT_EXTRACT_REGEX = ".*";
+
 /** Margin kept left and right of the text columns, in text heights. Starting guess. */
 export const TEXT_COLUMN_MARGIN_TEXT_HEIGHTS = 0.3;

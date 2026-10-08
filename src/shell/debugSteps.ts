@@ -184,7 +184,7 @@ export function buildCaptureDebugTrail(
         ? [
             buildTextBandStep(region.label, searchCanvas, analysis),
             {
-              label: `Region: ${region.label} — OCR input${ocr.inverted ? " (inverted)" : ""} → "${ocr.text}"`,
+              label: `Region: ${region.label} — OCR input${ocr.inverted ? " (inverted)" : ""} → "${ocr.read}" → "${ocr.text}"`,
               canvas: ocr.canvas,
             },
           ]

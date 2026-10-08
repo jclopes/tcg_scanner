@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { CANONICAL_CARD_MIN_PX_PER_MM, STANDARD_CARD_ASPECT_RATIO } from "./constants";
-import { canonicalCardSizeFor, filterAllowedChars } from "./identification";
+import { CANONICAL_CARD_MIN_PX_PER_MM, DEFAULT_TEXT_EXTRACT_REGEX, STANDARD_CARD_ASPECT_RATIO } from "./constants";
+import { canonicalCardSizeFor, extractMatch, filterAllowedChars } from "./identification";
 
 describe("canonicalCardSizeFor", () => {
   it("floors a tiny source at CANONICAL_CARD_MIN_PX_PER_MM", () => {
@@ -29,5 +29,22 @@ describe("filterAllowedChars", () => {
   it("keeps only the allowed characters, in order", () => {
     expect(filterAllowedChars("MSO1 - WNC [A.", "[A-Za-z0-9\\-\\[\\] ]")).toBe("MSO1 - WNC [A");
     expect(filterAllowedChars(";;;'", "[0-9]")).toBe("");
+  });
+});
+
+describe("extractMatch", () => {
+  it("keeps the first match", () => {
+    expect(extractMatch("066a/298", "^[^/]+")).toBe("066a");
+    expect(extractMatch("304*/298", "^[^/]+")).toBe("304*");
+    expect(extractMatch("T01", "^[^/]+")).toBe("T01");
+  });
+
+  it("is empty when the text doesn't match", () => {
+    expect(extractMatch("/298", "^[^/]+")).toBe("");
+    expect(extractMatch("", "^[^/]+")).toBe("");
+  });
+
+  it("keeps the whole text with the default regex", () => {
+    expect(extractMatch("MS01 - WNC [A]", DEFAULT_TEXT_EXTRACT_REGEX)).toBe("MS01 - WNC [A]");
   });
 });

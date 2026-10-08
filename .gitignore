@@ -5,3 +5,6 @@ dist/
 # Copied from node_modules by vite.config.ts's copyTesseractToPublic plugin
 # on every dev/build run — always regenerated, never hand-edited.
 /public/tesseract/
+
+# Raw card dump that riftbound/sets.json was derived from; not bundled.
+/src/data/games/riftbound/riftbound_cards_detailed.json

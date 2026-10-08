@@ -1,5 +1,6 @@
 import {
   closerSetPrints,
+  extractMatch,
   padRegion,
   prepareTextForOcr,
   rankCardIds,
@@ -30,10 +31,13 @@ export interface RegionCrop {
   canvas: HTMLCanvasElement;
 }
 
-/** A text region's OCR: the preprocessed image Tesseract saw and what it read. */
+/** A text region's OCR: the preprocessed image Tesseract saw, what it read
+ * (filtered to the allowed characters) and the part of that the region's
+ * `extractRegex` keeps — the text identification uses. */
 export interface RegionOcr {
   canvas: HTMLCanvasElement;
   inverted: boolean;
+  read: string;
   text: string;
 }
 
@@ -99,7 +103,8 @@ function extractTextRegion(frame: AcceptedFrame, cardOrientation: CardOrientatio
   return { region: searchRegion, searchCanvas, analysis, canvas };
 }
 
-/** Preprocesses a text crop (prepareTextForOcr) and OCRs it. */
+/** Preprocesses a text crop (prepareTextForOcr), OCRs it and extracts the
+ * region's value from the reading. */
 async function recognizeCrop(
   worker: TesseractWorker,
   canvas: HTMLCanvasElement,
@@ -107,8 +112,8 @@ async function recognizeCrop(
 ): Promise<RegionOcr> {
   const { gray, inverted } = prepareTextForOcr(canvasPixels(canvas));
   const prepared = grayscaleToCanvas(gray);
-  const text = await recognizeRegion(worker, prepared, region.allowedCharsRegex);
-  return { canvas: prepared, inverted, text };
+  const read = await recognizeRegion(worker, prepared, region.allowedCharsRegex);
+  return { canvas: prepared, inverted, read, text: extractMatch(read, region.extractRegex) };
 }
 
 /** The result of the text region `label`, which parseGame guarantees. */

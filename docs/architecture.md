@@ -16,7 +16,7 @@ TCG Scanner runs entirely in the browser. There is no server, and nothing is fet
 2. **Detection** — on every video frame, four thin bands around the on-screen guide are sampled (`FrameSampler`), an edge line is fitted in each (`fitEdgeLine`), and the lines are intersected into a quad that must be card-shaped (`evaluateFrameForQuad`).
 3. **Burst** — after a hit, a few more frames are evaluated; the sharpest, most card-shaped one is kept (`selectBestFrame`).
 4. **Flatten** — that frame's card is warped upright for display (`captureFlattenedCard`).
-5. **Identify** — each configured region is warped straight from the camera frame (`regionWarpMatrix`); text regions are narrowed to their text line (`analyzeTextRows` / `analyzeTextColumns`), preprocessed (`prepareTextForOcr`) and OCR'd. The collector number is fuzzy-matched against the selected set (`rankCardIds`), and the set code is checked against the game's other sets (`closerSetPrints`).
+5. **Identify** — each configured region is warped straight from the camera frame (`regionWarpMatrix`); text regions are narrowed to their text line (`analyzeTextRows` / `analyzeTextColumns`), preprocessed (`prepareTextForOcr`) and OCR'd; a region's `extract_regex` keeps the part of the reading that is its value (`extractMatch`, e.g. `001` from `001/298`). The collector number is fuzzy-matched against the selected set (`rankCardIds`), and the set code is checked against the game's other sets (`closerSetPrints`).
 6. **Pick** — the user taps the right match; the card is added to the list and scanning continues. Without a confident match, detection simply restarts.
 
 The session's state is one of `stopped`, `starting`, `scanning`, `processing`, `captured` or `error`; `app.ts` maps each state to the page.
@@ -34,7 +34,7 @@ Start Scan first opens a dialog to pick the game and set (`gameChoice.ts`). Leav
 
 Each game is a folder in `src/data/games/<game>/`, bundled at build time and validated at startup (`gameConfig.ts`):
 
-- `regions.json` — card orientations, foil support, and per orientation the regions to read, as mm boxes on the card. Every orientation needs the text regions `collector_number` and `set_code`.
+- `regions.json` — card orientations, foil support, and per orientation the regions to read, as mm boxes on the card. Every orientation needs the text regions `collector_number` and `set_code`. A text region lists the characters OCR may read (`allowed_chars_regex`) and can pick its value out of the reading (`extract_regex`).
 - `sets.json` — each set's code, name, printed code and collector numbers.
 
 ## Browser storage

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS } from "../core";
+import { DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS, DEFAULT_TEXT_EXTRACT_REGEX } from "../core";
 import { listGames, parseGame, parseRegion } from "./gameConfig";
 
 const BOX = { label: "collector_number", x_mm: 1, y_mm: 2, width_mm: 3, height_mm: 4 };
@@ -9,7 +9,14 @@ const REQUIRED_REGIONS = [textRegion("collector_number"), textRegion("set_code")
 
 describe("parseRegion", () => {
   it("translates a text region to camelCase", () => {
-    const raw = { ...BOX, type: "text", allowed_chars_regex: "[0-9]", rotation_deg: -45, max_gap_text_heights: 0.5 };
+    const raw = {
+      ...BOX,
+      type: "text",
+      allowed_chars_regex: "[0-9/]",
+      extract_regex: "^[^/]+",
+      rotation_deg: -45,
+      max_gap_text_heights: 0.5,
+    };
     expect(parseRegion("game", "portrait", raw)).toEqual({
       label: "collector_number",
       type: "text",
@@ -18,14 +25,16 @@ describe("parseRegion", () => {
       widthMm: 3,
       heightMm: 4,
       rotationDeg: -45,
-      allowedCharsRegex: "[0-9]",
+      allowedCharsRegex: "[0-9/]",
+      extractRegex: "^[^/]+",
       maxGapTextHeights: 0.5,
     });
   });
 
-  it("fills in no rotation and the default maximum gap when omitted", () => {
+  it("fills in no rotation, the default maximum gap and the whole text when omitted", () => {
     expect(parseRegion("game", "portrait", textRegion("collector_number"))).toMatchObject({
       rotationDeg: 0,
+      extractRegex: DEFAULT_TEXT_EXTRACT_REGEX,
       maxGapTextHeights: DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
     });
   });
@@ -40,6 +49,15 @@ describe("parseRegion", () => {
     expect(() => parseRegion("game", "portrait", { ...BOX, type: "text" })).toThrow(/allowed_chars_regex/);
     expect(() => parseRegion("game", "portrait", { ...BOX, type: "text", allowed_chars_regex: "[0-9" })).toThrow(
       /isn't a valid regular expression/,
+    );
+  });
+
+  it("throws for an invalid extract_regex", () => {
+    expect(() => parseRegion("game", "portrait", { ...textRegion("collector_number"), extract_regex: "^[^/+" })).toThrow(
+      /"extract_regex" isn't a valid regular expression/,
+    );
+    expect(() => parseRegion("game", "portrait", { ...textRegion("collector_number"), extract_regex: "" })).toThrow(
+      /extract_regex/,
     );
   });
 

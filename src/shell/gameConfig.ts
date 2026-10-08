@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import {
   DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
+  DEFAULT_TEXT_EXTRACT_REGEX,
   optionalNumber,
   requireArray,
   requireBoolean,
@@ -149,8 +150,8 @@ function requireTextRegion(regions: readonly RegionConfig[], label: string, orie
   }
 }
 
-/** One raw region as a `RegionConfig`, with no rotation and the default
- * maximum text gap when omitted. */
+/** One raw region as a `RegionConfig`, with no rotation, the default maximum
+ * text gap and the whole OCR text as its value when omitted. */
 export function parseRegion(gameId: string, orientation: CardOrientation, raw: unknown): RegionConfig {
   const regionsContext = `Game "${gameId}" regions.json ${orientation} region`;
   const record = requireRecord(raw, regionsContext);
@@ -173,6 +174,8 @@ export function parseRegion(gameId: string, orientation: CardOrientation, raw: u
         ...box,
         type: "text",
         allowedCharsRegex: requireRegex(record, "allowed_chars_regex", context),
+        extractRegex:
+          record.extract_regex === undefined ? DEFAULT_TEXT_EXTRACT_REGEX : requireRegex(record, "extract_regex", context),
         maxGapTextHeights: optionalNumber(record, "max_gap_text_heights", context) ?? DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
       };
     default:

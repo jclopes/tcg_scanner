@@ -20,6 +20,9 @@ export interface TextRegionConfig extends RegionBox {
   /** A regex character class (e.g. `"[0-9]"`) constraining OCR output — see
    * `filterAllowedChars`. */
   allowedCharsRegex: string;
+  /** The part of the filtered OCR text that is the region's value: its first
+   * match (see `extractMatch`), e.g. `"^[^/]+"` keeps "001" of "001/298". */
+  extractRegex: string;
   /** The largest gap between runs of characters, in text heights, still
    * counted as the same line (see analyzeTextColumns). Tight for a single
    * word, wider for text with spaces. */
@@ -80,4 +83,9 @@ export function padRegion<T extends RegionConfig>(region: T, padding: { xMm: num
 export function filterAllowedChars(raw: string, allowedCharsRegex: string): string {
   const matches = raw.match(new RegExp(allowedCharsRegex, "g"));
   return matches ? matches.join("") : "";
+}
+
+/** The first match of `extractRegex` in `text`, or "" when there is none. */
+export function extractMatch(text: string, extractRegex: string): string {
+  return text.match(new RegExp(extractRegex))?.[0] ?? "";
 }
