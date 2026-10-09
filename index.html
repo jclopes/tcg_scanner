@@ -459,7 +459,8 @@
       .match-buttons {
         grid-column: 1 / -1;
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(0, 1fr);
         gap: var(--gap-sm);
       }
 
