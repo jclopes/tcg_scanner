@@ -6,7 +6,6 @@ import {
   rankCardIds,
   regionsFor,
   TEXT_SEARCH_PADDING_X_MM,
-  TEXT_SEARCH_PADDING_Y_MM,
 } from "../core";
 import type { CardIdMatch, CardOrientation, RegionConfig, TextRegionConfig } from "../core";
 import type { Worker as TesseractWorker } from "tesseract.js";
@@ -108,7 +107,7 @@ export async function identifyCard(
 /** Warps a text region's padded search area (its configured box is only
  * where to look) and narrows the crop to its text line. */
 function extractTextRegion(frame: AcceptedFrame, cardOrientation: CardOrientation, region: TextRegionConfig): RegionCrop {
-  const searchRegion = padRegion(region, { xMm: TEXT_SEARCH_PADDING_X_MM, yMm: TEXT_SEARCH_PADDING_Y_MM });
+  const searchRegion = padRegion(region, { xMm: TEXT_SEARCH_PADDING_X_MM, yMm: region.searchPaddingYMm });
   const searchCanvas = warpRegion(frame, cardOrientation, searchRegion);
   const { canvas, analysis } = fitCropToText(searchCanvas, region.maxGapTextHeights);
   return { region: searchRegion, searchCanvas, analysis, canvas };

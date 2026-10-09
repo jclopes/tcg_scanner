@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS, DEFAULT_TEXT_EXTRACT_REGEX } from "../core";
+import { DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS, DEFAULT_TEXT_EXTRACT_REGEX, DEFAULT_TEXT_SEARCH_PADDING_Y_MM } from "../core";
 import { listGames, parseGame, parseRegion } from "./gameConfig";
 
 const BOX = { label: "collector_number", x_mm: 1, y_mm: 2, width_mm: 3, height_mm: 4 };
@@ -16,6 +16,7 @@ describe("parseRegion", () => {
       extract_regex: "^[^/]+",
       rotation_deg: -45,
       max_gap_text_heights: 0.5,
+      search_padding_y_mm: 0.2,
     };
     expect(parseRegion("game", "portrait", raw)).toEqual({
       label: "collector_number",
@@ -28,14 +29,16 @@ describe("parseRegion", () => {
       allowedCharsRegex: "[0-9/]",
       extractRegex: "^[^/]+",
       maxGapTextHeights: 0.5,
+      searchPaddingYMm: 0.2,
     });
   });
 
-  it("fills in no rotation, the default maximum gap and the whole text when omitted", () => {
+  it("fills in no rotation, the default maximum gap and search padding, and the whole text when omitted", () => {
     expect(parseRegion("game", "portrait", textRegion("collector_number"))).toMatchObject({
       rotationDeg: 0,
       extractRegex: DEFAULT_TEXT_EXTRACT_REGEX,
       maxGapTextHeights: DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
+      searchPaddingYMm: DEFAULT_TEXT_SEARCH_PADDING_Y_MM,
     });
   });
 

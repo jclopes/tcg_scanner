@@ -64,10 +64,13 @@ export const OCR_DENOISE_SIGMA_SPACE = 50;
  * larger and smaller read worse). */
 export const REGION_PX_PER_MM = 26;
 
-/** Padding added around each text region's configured box to form its search
- * area: above/below (Y) and left/right (X). Starting guesses. */
-export const TEXT_SEARCH_PADDING_Y_MM = 1.0;
+/** Padding added left and right of each text region's configured box to form
+ * its search area. Starting guess. */
 export const TEXT_SEARCH_PADDING_X_MM = 1.5;
+
+/** A text region's default `searchPaddingYMm`: padding added above and below
+ * its box. Starting guess. */
+export const DEFAULT_TEXT_SEARCH_PADDING_Y_MM = 1.0;
 
 /** How many times the median (background) row's glyph-stroke energy the
  * strongest row must reach for a search area to count as containing text.

@@ -2,6 +2,7 @@
 import {
   DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
   DEFAULT_TEXT_EXTRACT_REGEX,
+  DEFAULT_TEXT_SEARCH_PADDING_Y_MM,
   optionalNumber,
   requireArray,
   requireBoolean,
@@ -155,7 +156,8 @@ function requireTextRegion(regions: readonly RegionConfig[], label: string, orie
 }
 
 /** One raw region as a `RegionConfig`, with no rotation, the default maximum
- * text gap and the whole OCR text as its value when omitted. */
+ * text gap and search padding, and the whole OCR text as its value when
+ * omitted. */
 export function parseRegion(gameId: string, orientation: CardOrientation, raw: unknown): RegionConfig {
   const regionsContext = `Game "${gameId}" regions.json ${orientation} region`;
   const record = requireRecord(raw, regionsContext);
@@ -181,6 +183,7 @@ export function parseRegion(gameId: string, orientation: CardOrientation, raw: u
         extractRegex:
           record.extract_regex === undefined ? DEFAULT_TEXT_EXTRACT_REGEX : requireRegex(record, "extract_regex", context),
         maxGapTextHeights: optionalNumber(record, "max_gap_text_heights", context) ?? DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
+        searchPaddingYMm: optionalNumber(record, "search_padding_y_mm", context) ?? DEFAULT_TEXT_SEARCH_PADDING_Y_MM,
       };
     default:
       throw new Error(`${context} has unknown type "${type}".`);

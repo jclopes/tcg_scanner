@@ -27,6 +27,10 @@ export interface TextRegionConfig extends RegionBox {
    * counted as the same line (see analyzeTextColumns). Tight for a single
    * word, wider for text with spaces. */
   maxGapTextHeights: number;
+  /** Padding above and below the box that forms its search area (see
+   * padRegion). Tight when another text line sits just above or below, which
+   * the text-row search would otherwise pick instead. */
+  searchPaddingYMm: number;
 }
 
 /** A region that's extracted (shown in the debug trail) but not OCR'd. */
