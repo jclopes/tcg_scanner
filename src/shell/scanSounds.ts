@@ -1,5 +1,6 @@
 import { loadPreferences, savePreferences } from "./preferences";
 
+/** 60 beats per minute. */
 const HEARTBEAT_INTERVAL_MS = 60_000 / 60;
 
 interface Tone {
