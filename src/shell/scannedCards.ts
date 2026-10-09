@@ -35,7 +35,15 @@ export class ScannedCardList {
     private readonly games: readonly GameOption[],
     private readonly elements: ScannedCardListElements,
   ) {
-    this.cards = this.loadCards();
+    // Empty, with the storage error shown, when the browser's storage is
+    // unavailable. Corrupt saved data throws.
+    let json: string | null = null;
+    try {
+      json = readStoredScannedCards();
+    } catch {
+      this.showStorageError(STORAGE_ERROR);
+    }
+    this.cards = json === null ? [] : parseScannedCards(json);
     elements.downloadButton.addEventListener("click", () => this.download());
     elements.mergeButton.addEventListener("click", () => this.update(mergeDuplicates(this.cards)));
     elements.clearButton.addEventListener("click", () => this.confirmClear());
@@ -45,19 +53,6 @@ export class ScannedCardList {
   /** Adds a new entry of one copy, timestamped now. */
   add(card: Omit<ScannedCard, "scannedAt" | "quantity">): void {
     this.update([{ ...card, tags: [...card.tags], quantity: 1, scannedAt: new Date().toISOString() }, ...this.cards]);
-  }
-
-  /** The saved list; empty, with the storage error shown, when the
-   * browser's storage is unavailable. Corrupt saved data throws. */
-  private loadCards(): ScannedCard[] {
-    let json: string | null;
-    try {
-      json = readStoredScannedCards();
-    } catch {
-      this.showStorageError(STORAGE_ERROR);
-      return [];
-    }
-    return json === null ? [] : parseScannedCards(json);
   }
 
   /** Replaces the list, saves it and re-renders, keeping the row at
