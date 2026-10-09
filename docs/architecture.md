@@ -37,6 +37,8 @@ Each game is a folder in `src/data/games/<game>/`, bundled at build time and val
 - `regions.json` — card orientations, foil support, and per orientation the regions to read, as mm boxes on the card. Every orientation needs the text regions `collector_number` and `set_code`. A text region lists the characters OCR may read (`allowed_chars_regex`) and can pick its value out of the reading (`extract_regex`).
 - `sets.json` — each set's code, name, printed code and collector numbers.
 
+Flesh and Blood is two games, `flesh_and_blood` (the 2024+ card frame) and `flesh_and_blood_classic` (2019–2023), because the frames print the card ID in different places; both folders hold the same `sets.json`.
+
 ## Browser storage
 
 - `tcg-scanner:preferences` — camera, resolution, game, set, session tags and sound. Best-effort: missing or stale values fall back to defaults.

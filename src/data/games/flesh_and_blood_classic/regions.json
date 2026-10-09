@@ -1,0 +1,28 @@
+{
+  "card_orientation": ["portrait"],
+  "foil": true,
+  "regions": {
+    "portrait": [
+      {
+        "label": "collector_number",
+        "type": "text",
+        "allowed_chars_regex": "[A-Z0-9]",
+        "extract_regex": "(?<=[A-Z0-9]{3})[0-9]{3}",
+        "x_mm": 15.90,
+        "y_mm": 83.25,
+        "width_mm": 8.20,
+        "height_mm": 1.55
+      },
+      {
+        "label": "set_code",
+        "type": "text",
+        "allowed_chars_regex": "[A-Z0-9]",
+        "extract_regex": "[A-Z0-9]{3}(?=[0-9]{3})",
+        "x_mm": 15.90,
+        "y_mm": 83.25,
+        "width_mm": 8.20,
+        "height_mm": 1.55
+      }
+    ]
+  }
+}
