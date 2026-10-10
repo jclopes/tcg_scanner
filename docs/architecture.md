@@ -25,8 +25,9 @@ The session's state is one of `stopped`, `starting`, `scanning`, `processing`, `
 
 A bottom tab bar (`screens.ts`) switches between:
 
-- **Scan** — camera with the guide, card orientation and foil toggles, Start/Stop, the result and match buttons, session tags, the debug trail and the scanned-card list.
+- **Scan** — camera with the guide and a "Hold still" label while a detected card is processed, card orientation and foil toggles, Start/Stop, the result and match buttons, session tags, the debug trail and the scanned-card list.
 - **Settings** — camera, resolution, sound, debug mode.
+- **Help** — scanning tips and about the app; shown first on the first launch.
 
 Start Scan first opens a dialog to pick the game and set, Autodetect by default (`gameChoice.ts`). Leaving Scan stops a running scan.
 
@@ -43,7 +44,7 @@ Flesh and Blood is two games, `flesh_and_blood` (the 2024+ card frame) and `fles
 
 ## Browser storage
 
-- `tcg-scanner:preferences` — camera, resolution, game, set, session tags and sound. Best-effort: missing or stale values fall back to defaults.
+- `tcg-scanner:preferences` — camera, resolution, game, set, session tags, sound and whether Help was shown at launch. Best-effort: missing or stale values fall back to defaults.
 - `tcg-scanner:scanned-cards` — the scanned list. Corrupt data stops the app at startup with an error naming the entry and field; unavailable storage is shown in the list.
 
 ## Shell modules

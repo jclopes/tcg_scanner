@@ -11,6 +11,8 @@ export interface StoredPreferences {
   /** The session-tags input's raw text. */
   sessionTags?: string;
   sound?: boolean;
+  /** Whether the Help screen has been shown at launch (it is, once). */
+  helpShown?: boolean;
 }
 
 const STORAGE_KEY = "tcg-scanner:preferences";
@@ -25,7 +27,7 @@ export function loadPreferences(): StoredPreferences {
     if (typeof parsed !== "object" || parsed === null) {
       return {};
     }
-    const { cameraDeviceId, resolution, gameId, setCode, sessionTags, sound } = parsed as StoredPreferences;
+    const { cameraDeviceId, resolution, gameId, setCode, sessionTags, sound, helpShown } = parsed as StoredPreferences;
     return {
       cameraDeviceId: typeof cameraDeviceId === "string" ? cameraDeviceId : undefined,
       resolution: isValidSize(resolution) ? resolution : undefined,
@@ -33,6 +35,7 @@ export function loadPreferences(): StoredPreferences {
       setCode: typeof setCode === "string" ? setCode : undefined,
       sessionTags: typeof sessionTags === "string" ? sessionTags : undefined,
       sound: typeof sound === "boolean" ? sound : undefined,
+      helpShown: typeof helpShown === "boolean" ? helpShown : undefined,
     };
   } catch {
     return {};

@@ -9,6 +9,7 @@ import { IdentificationView } from "./identificationView";
 import { ManualCardEntry } from "./manualEntry";
 import { LazyOcrWorker } from "./ocr";
 import { watchVideoFrameSize } from "./orientationWatcher";
+import { loadPreferences, savePreferences } from "./preferences";
 import { ResultView } from "./resultView";
 import { ScannedCardList } from "./scannedCards";
 import { isCameraOn, ScanSession } from "./scanSession";
@@ -30,6 +31,7 @@ export function initApp(): void {
   const resolutionStatus = requireElement<HTMLElement>("resolution-status");
   const debugForceButton = requireElement<HTMLButtonElement>("debug-force-button");
   const captureFlash = requireElement<HTMLDivElement>("capture-flash");
+  const holdStill = requireElement<HTMLElement>("hold-still");
 
   const gameChoice = new GameChoice(
     {
@@ -123,11 +125,21 @@ export function initApp(): void {
       onDebugTrail: (entries) => debugPanel.render(entries),
     },
   );
+  // The first launch opens on Help; later ones on Scan.
+  const helpShown = loadPreferences().helpShown === true;
+  if (!helpShown) {
+    savePreferences({ helpShown: true });
+  }
   const screens = new ScreenNavigator(
     {
-      screens: { scan: requireElement("screen-scan"), settings: requireElement("screen-settings") },
-      tabs: { scan: requireElement("tab-scan"), settings: requireElement("tab-settings") },
+      screens: {
+        scan: requireElement("screen-scan"),
+        settings: requireElement("screen-settings"),
+        help: requireElement("screen-help"),
+      },
+      tabs: { scan: requireElement("tab-scan"), settings: requireElement("tab-settings"), help: requireElement("tab-help") },
     },
+    helpShown ? "scan" : "help",
     handleNavigate,
   );
 
@@ -150,6 +162,7 @@ export function initApp(): void {
     // No leaving the scan screen mid-start: the camera would come up hidden.
     screens.setEnabled(!starting);
     debugForceButton.disabled = state.phase !== "scanning";
+    holdStill.hidden = state.phase !== "processing";
     sounds.setHeartbeat(state.phase === "scanning");
     if (state.phase !== "scanning" && state.phase !== "processing") {
       guide.clear();

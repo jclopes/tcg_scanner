@@ -148,7 +148,7 @@
         inset: auto 0 0 0;
         z-index: 5;
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         height: calc(var(--tab-bar-height) + env(safe-area-inset-bottom));
         padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
         background: var(--bar-bg);
@@ -337,6 +337,20 @@
       #capture-flash {
         background: var(--accent);
         opacity: 0;
+        pointer-events: none;
+      }
+
+      #hold-still {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        padding: var(--gap-sm) var(--gap);
+        border-radius: var(--radius-pill);
+        background: var(--scrim);
+        color: var(--on-scrim);
+        font-size: var(--font-lg);
+        font-weight: 600;
         pointer-events: none;
       }
 
@@ -620,6 +634,26 @@
         font-weight: 600;
       }
 
+      /* ---- Help ---- */
+
+      .help-text ul,
+      .help-text p {
+        font-size: var(--font-sm);
+        color: var(--text-secondary);
+      }
+
+      .help-text ul {
+        display: flex;
+        flex-direction: column;
+        gap: var(--gap-xs);
+        margin: 0;
+        padding-left: 1.25rem;
+      }
+
+      .help-text a {
+        color: var(--accent);
+      }
+
       /* ---- Debug panel ---- */
 
       #debug-panel {
@@ -691,6 +725,7 @@
           <video id="camera-video" autoplay playsinline muted></video>
           <canvas id="guide-overlay"></canvas>
           <div id="capture-flash"></div>
+          <p id="hold-still" aria-hidden="true" hidden>Hold still…</p>
         </div>
 
         <div class="card-options">
@@ -802,6 +837,22 @@
           </label>
         </div>
       </section>
+
+      <section id="screen-help" class="screen" aria-label="Help" hidden>
+        <div class="panel help-text">
+          <h2>Tips for a good scan</h2>
+          <ul>
+            <li>Lay the card on a plain, matte background that contrasts with its border: a light surface for dark borders, a dark one for light borders.</li>
+            <li>Use good natural, indirect light. Avoid direct sun, lamps and glare.</li>
+            <li>Take the card out of its sleeve: sleeves reflect light and blur the card's edges.</li>
+          </ul>
+        </div>
+        <div class="panel help-text">
+          <h2>About</h2>
+          <p>TCG Scanner, by jclopes, 2026.</p>
+          <p>Source code: <a href="https://github.com/jclopes/tcg_scanner" target="_blank" rel="noopener">github.com/jclopes/tcg_scanner</a></p>
+        </div>
+      </section>
     </main>
 
     <nav class="tab-bar" aria-label="Screens">
@@ -820,6 +871,13 @@
           <circle cx="17" cy="18" r="2" />
         </svg>
         Settings
+      </button>
+      <button type="button" id="tab-help" class="tab-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M9.5 9.5a2.5 2.5 0 0 1 4.9.7c0 1.6-2.4 2.2-2.4 3.8M12 17h.01" />
+        </svg>
+        Help
       </button>
     </nav>
 
