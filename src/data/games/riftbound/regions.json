@@ -6,7 +6,7 @@
       {
         "label": "collector_number",
         "type": "text",
-        "allowed_chars_regex": "[0-9aPRST*/]",
+        "allowed_chars": "0123456789aPRST*/",
         "extract_regex": "^[^/]+",
         "x_mm": 8.00,
         "y_mm": 84.40,
@@ -17,7 +17,7 @@
       {
         "label": "set_code",
         "type": "text",
-        "allowed_chars_regex": "[A-Z]",
+        "allowed_chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
         "x_mm": 3.20,
         "y_mm": 84.40,
         "width_mm": 3.10,
@@ -29,7 +29,7 @@
       {
         "label": "collector_number",
         "type": "text",
-        "allowed_chars_regex": "[0-9aPRST*/]",
+        "allowed_chars": "0123456789aPRST*/",
         "extract_regex": "^[^/]+",
         "x_mm": 7.65,
         "y_mm": 58.45,
@@ -40,7 +40,7 @@
       {
         "label": "set_code",
         "type": "text",
-        "allowed_chars_regex": "[A-Z]",
+        "allowed_chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
         "x_mm": 2.90,
         "y_mm": 58.45,
         "width_mm": 3.10,

@@ -48,39 +48,36 @@ export class LazyOcrWorker {
 
 /** Printable ASCII: the `eng` model can't output anything else (not even
  * the "β" some collector numbers have). */
-const WHITELIST_CANDIDATE_RANGE = { first: 0x20, last: 0x7e };
+const PRINTABLE_ASCII = { first: 0x20, last: 0x7e };
 
-/** The characters `allowedCharsRegex` (a character class like "[B0-9]")
- * matches, as the explicit list `tessedit_char_whitelist` wants. */
-function tesseractWhitelistFor(allowedCharsRegex: string): string {
-  const regex = new RegExp(allowedCharsRegex);
-  let whitelist = "";
-  for (let code = WHITELIST_CANDIDATE_RANGE.first; code <= WHITELIST_CANDIDATE_RANGE.last; code++) {
-    const char = String.fromCharCode(code);
-    if (regex.test(char)) {
-      whitelist += char;
-    }
-  }
-  return whitelist;
+/** The characters of `allowedChars` the `eng` model can output, as
+ * `tessedit_char_whitelist`. */
+function tesseractWhitelistFor(allowedChars: string): string {
+  return [...allowedChars]
+    .filter((char) => {
+      const code = char.codePointAt(0)!;
+      return code >= PRINTABLE_ASCII.first && code <= PRINTABLE_ASCII.last;
+    })
+    .join("");
 }
 
 /**
- * OCRs one upright text region, filtered to `allowedCharsRegex`. The regex is
- * also Tesseract's whitelist (worker-wide, so set per region), which keeps
- * misreads within it. SINGLE_LINE because SINGLE_WORD and RAW_LINE misread
+ * OCRs one upright text region, filtered to `allowedChars`. They're also
+ * Tesseract's whitelist (worker-wide, so set per region), which keeps
+ * misreads within them. SINGLE_LINE because SINGLE_WORD and RAW_LINE misread
  * the first character on real captures.
  */
 export async function recognizeRegion(
   worker: TesseractWorker,
   regionCanvas: HTMLCanvasElement,
-  allowedCharsRegex: string,
+  allowedChars: string,
 ): Promise<string> {
   await worker.setParameters({
     tessedit_pageseg_mode: PSM.SINGLE_LINE,
-    tessedit_char_whitelist: tesseractWhitelistFor(allowedCharsRegex),
+    tessedit_char_whitelist: tesseractWhitelistFor(allowedChars),
   });
   const {
     data: { text },
   } = await worker.recognize(regionCanvas);
-  return filterAllowedChars(text.trim(), allowedCharsRegex);
+  return filterAllowedChars(text.trim(), allowedChars);
 }

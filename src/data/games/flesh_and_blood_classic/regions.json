@@ -6,7 +6,7 @@
       {
         "label": "collector_number",
         "type": "text",
-        "allowed_chars_regex": "[A-Z0-9]",
+        "allowed_chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
         "extract_regex": "(?<=[A-Z0-9]{3})[0-9]{3}",
         "x_mm": 15.90,
         "y_mm": 83.25,
@@ -16,7 +16,7 @@
       {
         "label": "set_code",
         "type": "text",
-        "allowed_chars_regex": "[A-Z0-9]",
+        "allowed_chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
         "extract_regex": "[A-Z0-9]{3}(?=[0-9]{3})",
         "x_mm": 15.90,
         "y_mm": 83.25,

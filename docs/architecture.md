@@ -34,7 +34,7 @@ Start Scan first opens a dialog to pick the game and set, Autodetect by default 
 
 Each game is a folder in `src/data/games/<game>/`, bundled at build time and validated at startup (`gameConfig.ts`):
 
-- `regions.json` — card orientations, foil support, and per orientation the regions to read, as mm boxes on the card. Every orientation needs the text regions `collector_number` and `set_code`. A text region lists the characters OCR may read (`allowed_chars_regex`), can pick its value out of the reading (`extract_regex`), and can narrow the search area above and below its box (`search_padding_y_mm`, 1 mm by default) when another text line sits that close.
+- `regions.json` — card orientations, foil support, and per orientation the regions to read, as mm boxes on the card. Every orientation needs the text regions `collector_number` and `set_code`. A text region lists the characters OCR may read (`allowed_chars`), can pick its value out of the reading (`extract_regex`), and can narrow the search area above and below its box (`search_padding_y_mm`, 1 mm by default) when another text line sits that close.
 - `sets.json` — each set's code, name, printed code and collector numbers.
 
 Flesh and Blood is two games, `flesh_and_blood` (the 2024+ card frame) and `flesh_and_blood_classic` (2019–2023), because the frames print the card ID in different places; both folders hold the same `sets.json`.

@@ -27,8 +27,8 @@ describe("canonicalCardSizeFor", () => {
 
 describe("filterAllowedChars", () => {
   it("keeps only the allowed characters, in order", () => {
-    expect(filterAllowedChars("MSO1 - WNC [A.", "[A-Za-z0-9\\-\\[\\] ]")).toBe("MSO1 - WNC [A");
-    expect(filterAllowedChars(";;;'", "[0-9]")).toBe("");
+    expect(filterAllowedChars("MSO1 - WNC [A.", "ACMNOSW01 -[]")).toBe("MSO1 - WNC [A");
+    expect(filterAllowedChars(";;;'", "0123456789")).toBe("");
   });
 });
 

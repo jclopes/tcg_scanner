@@ -179,7 +179,7 @@ export function parseRegion(gameId: string, orientation: CardOrientation, raw: u
       return {
         ...box,
         type: "text",
-        allowedCharsRegex: requireRegex(record, "allowed_chars_regex", context),
+        allowedChars: requireString(record, "allowed_chars", context),
         extractRegex:
           record.extract_regex === undefined ? DEFAULT_TEXT_EXTRACT_REGEX : requireRegex(record, "extract_regex", context),
         maxGapTextHeights: optionalNumber(record, "max_gap_text_heights", context) ?? DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,

@@ -4,7 +4,7 @@ import { listGames, parseGame, parseRegion } from "./gameConfig";
 
 const BOX = { label: "collector_number", x_mm: 1, y_mm: 2, width_mm: 3, height_mm: 4 };
 
-const textRegion = (label: string): Record<string, unknown> => ({ ...BOX, label, type: "text", allowed_chars_regex: "[0-9]" });
+const textRegion = (label: string): Record<string, unknown> => ({ ...BOX, label, type: "text", allowed_chars: "0123456789" });
 const REQUIRED_REGIONS = [textRegion("collector_number"), textRegion("set_code")];
 
 describe("parseRegion", () => {
@@ -12,7 +12,7 @@ describe("parseRegion", () => {
     const raw = {
       ...BOX,
       type: "text",
-      allowed_chars_regex: "[0-9/]",
+      allowed_chars: "0123456789/",
       extract_regex: "^[^/]+",
       rotation_deg: -45,
       max_gap_text_heights: 0.5,
@@ -26,7 +26,7 @@ describe("parseRegion", () => {
       widthMm: 3,
       heightMm: 4,
       rotationDeg: -45,
-      allowedCharsRegex: "[0-9/]",
+      allowedChars: "0123456789/",
       extractRegex: "^[^/]+",
       maxGapTextHeights: 0.5,
       searchPaddingYMm: 0.2,
@@ -43,16 +43,15 @@ describe("parseRegion", () => {
   });
 
   it("drops text-only fields from an image region", () => {
-    expect(parseRegion("game", "portrait", { ...BOX, type: "image", allowed_chars_regex: "[0-9]" })).not.toHaveProperty(
-      "allowedCharsRegex",
+    expect(parseRegion("game", "portrait", { ...BOX, type: "image", allowed_chars: "0123456789" })).not.toHaveProperty(
+      "allowedChars",
     );
   });
 
-  it("throws for a text region without a valid allowed_chars_regex", () => {
-    expect(() => parseRegion("game", "portrait", { ...BOX, type: "text" })).toThrow(/allowed_chars_regex/);
-    expect(() => parseRegion("game", "portrait", { ...BOX, type: "text", allowed_chars_regex: "[0-9" })).toThrow(
-      /isn't a valid regular expression/,
-    );
+  it("throws for a text region with missing or empty allowed_chars", () => {
+    for (const allowed_chars of [undefined, ""]) {
+      expect(() => parseRegion("game", "portrait", { ...BOX, type: "text", allowed_chars })).toThrow(/allowed_chars/);
+    }
   });
 
   it("throws for an invalid extract_regex", () => {

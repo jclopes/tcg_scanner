@@ -122,7 +122,7 @@ async function recognizeCrop(
 ): Promise<RegionOcr> {
   const { gray, inverted } = prepareTextForOcr(canvasPixels(canvas));
   const prepared = grayscaleToCanvas(gray);
-  const read = await recognizeRegion(worker, prepared, region.allowedCharsRegex);
+  const read = await recognizeRegion(worker, prepared, region.allowedChars);
   return { canvas: prepared, inverted, read, text: extractMatch(read, region.extractRegex) };
 }
 

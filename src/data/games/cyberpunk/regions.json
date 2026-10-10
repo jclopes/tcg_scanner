@@ -6,7 +6,7 @@
       {
         "label": "collector_number",
         "type": "text",
-        "allowed_chars_regex": "[β0-9ab]",
+        "allowed_chars": "β0123456789ab",
         "x_mm": 59.60,
         "y_mm": 97.75,
         "width_mm": 5.80,
@@ -17,12 +17,13 @@
       {
         "label": "set_code",
         "type": "text",
-        "allowed_chars_regex": "[A-Z0-9\\-\\[\\] ]",
+        "allowed_chars": "ABCDEHIMNOPRSW012 -[]",
         "x_mm": 73.00,
         "y_mm": 59.50,
         "width_mm": 13.60,
         "height_mm": 2.80,
-        "rotation_deg": -90
+        "rotation_deg": -90,
+        "search_padding_y_mm": 0.5
       }
     ]
   }

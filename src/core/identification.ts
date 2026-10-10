@@ -17,9 +17,9 @@ interface RegionBox {
 
 export interface TextRegionConfig extends RegionBox {
   type: "text";
-  /** A regex character class (e.g. `"[0-9]"`) constraining OCR output — see
+  /** The characters OCR may read (e.g. `"0123456789"`) — see
    * `filterAllowedChars`. */
-  allowedCharsRegex: string;
+  allowedChars: string;
   /** The part of the filtered OCR text that is the region's value: its first
    * match (see `extractMatch`), e.g. `"^[^/]+"` keeps "001" of "001/298". */
   extractRegex: string;
@@ -82,11 +82,9 @@ export function padRegion<T extends RegionConfig>(region: T, padding: { xMm: num
   };
 }
 
-/** Keeps only the characters of `raw` matching `allowedCharsRegex` (a
- * single-character class, e.g. `"[0-9]"`), in order. */
-export function filterAllowedChars(raw: string, allowedCharsRegex: string): string {
-  const matches = raw.match(new RegExp(allowedCharsRegex, "g"));
-  return matches ? matches.join("") : "";
+/** Keeps only the characters of `raw` that are in `allowedChars`, in order. */
+export function filterAllowedChars(raw: string, allowedChars: string): string {
+  return [...raw].filter((char) => allowedChars.includes(char)).join("");
 }
 
 /** The first match of `extractRegex` in `text`, or "" when there is none. */
