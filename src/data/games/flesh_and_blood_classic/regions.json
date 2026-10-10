@@ -8,20 +8,22 @@
         "type": "text",
         "allowed_chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
         "extract_regex": "(?<=[A-Z0-9]{3})[0-9]{3}",
-        "x_mm": 15.90,
+        "x_mm": 18.75,
         "y_mm": 83.25,
-        "width_mm": 8.20,
-        "height_mm": 1.55
+        "width_mm": 4.60,
+        "height_mm": 1.55,
+        "max_gap_text_heights": 0.4
       },
       {
         "label": "set_code",
         "type": "text",
         "allowed_chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
         "extract_regex": "[A-Z0-9]{3}(?=[0-9]{3})",
-        "x_mm": 15.90,
+        "x_mm": 18.75,
         "y_mm": 83.25,
-        "width_mm": 8.20,
-        "height_mm": 1.55
+        "width_mm": 4.60,
+        "height_mm": 1.55,
+        "max_gap_text_heights": 0.4
       }
     ]
   }
