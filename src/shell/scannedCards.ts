@@ -1,4 +1,5 @@
-import type { GameOption } from "./gameConfig";
+import { loadGame } from "./gameConfig";
+import type { Game, GameOption } from "./gameConfig";
 import {
   cardAttributes,
   mergeDuplicates,
@@ -28,31 +29,56 @@ export interface ScannedCardListElements {
 /** The "Scanned cards" section: accepted cards, most recent first, with CSV
  * download, duplicate merging and quantity controls (− at 1 deletes). */
 export class ScannedCardList {
-  /** Most recent first. */
-  private cards: ScannedCard[];
-
-  constructor(
-    private readonly games: readonly GameOption[],
+  /** `games` holds every card's game, loaded: rows show their set's print. */
+  private constructor(
+    /** Most recent first. */
+    private cards: ScannedCard[],
+    private readonly games: Map<string, Game>,
     private readonly elements: ScannedCardListElements,
+    storageUnavailable: boolean,
   ) {
-    // Empty, with the storage error shown, when the browser's storage is
-    // unavailable. Corrupt saved data throws.
-    let json: string | null = null;
-    try {
-      json = readStoredScannedCards();
-    } catch {
+    if (storageUnavailable) {
       this.showStorageError(STORAGE_ERROR);
     }
-    this.cards = json === null ? [] : parseScannedCards(json);
     elements.downloadButton.addEventListener("click", () => this.download());
     elements.mergeButton.addEventListener("click", () => this.update(mergeDuplicates(this.cards)));
     elements.clearButton.addEventListener("click", () => this.confirmClear());
     this.render();
   }
 
-  /** Adds a new entry of one copy, timestamped now. */
-  add(card: Omit<ScannedCard, "scannedAt" | "quantity">): void {
-    this.update([{ ...card, tags: [...card.tags], quantity: 1, scannedAt: new Date().toISOString() }, ...this.cards]);
+  /** The saved list, with its cards' games loaded. Empty, with the storage
+   * error shown, when the browser's storage is unavailable. Corrupt saved data
+   * and cards of a game that isn't bundled throw. */
+  static async create(allGames: readonly GameOption[], elements: ScannedCardListElements): Promise<ScannedCardList> {
+    let json: string | null = null;
+    let storageUnavailable = false;
+    try {
+      json = readStoredScannedCards();
+    } catch {
+      storageUnavailable = true;
+    }
+    const cards = json === null ? [] : parseScannedCards(json);
+    const games = new Map<string, Game>();
+    for (const card of cards) {
+      if (games.has(card.gameId)) {
+        continue;
+      }
+      const game = allGames.find((g) => g.id === card.gameId);
+      if (!game) {
+        throw new Error(`Scanned card ${card.cardId} belongs to game "${card.gameId}", which isn't bundled.`);
+      }
+      games.set(card.gameId, await loadGame(game));
+    }
+    return new ScannedCardList(cards, games, elements, storageUnavailable);
+  }
+
+  /** Adds a new entry of one copy of `game`'s card, timestamped now. */
+  add(game: Game, card: Omit<ScannedCard, "gameId" | "scannedAt" | "quantity">): void {
+    this.games.set(game.id, game);
+    this.update([
+      { ...card, gameId: game.id, tags: [...card.tags], quantity: 1, scannedAt: new Date().toISOString() },
+      ...this.cards,
+    ]);
   }
 
   /** Replaces the list, saves it and re-renders, keeping the row at
@@ -112,8 +138,8 @@ export class ScannedCardList {
   /** A row: the card and set (plus "foil" if it applies, and "×N" for more
    * than one copy); expanding shows its details and the quantity controls. */
   private row(card: ScannedCard, index: number, open: boolean): HTMLLIElement {
-    const { hasFoil, hasOrientation } = cardAttributes(card, this.games);
-    const set = this.games.find((g) => g.id === card.gameId)!.sets.find((s) => s.code === card.setCode)!;
+    const { hasFoil, hasOrientation } = cardAttributes(card, [...this.games.values()]);
+    const set = this.games.get(card.gameId)!.sets.find((s) => s.code === card.setCode)!;
 
     const summary = document.createElement("summary");
     summary.textContent = [
@@ -158,7 +184,7 @@ export class ScannedCardList {
   }
 
   private download(): void {
-    const csv = scannedCardsCsv(this.cards, this.games);
+    const csv = scannedCardsCsv(this.cards, [...this.games.values()]);
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a");
     link.href = url;

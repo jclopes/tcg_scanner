@@ -10,7 +10,7 @@ import { collectBurstFrames, selectFrameToFlatten } from "./frameBurst";
 import { evaluateFrameForQuad } from "./frameDetection";
 import type { AcceptedEvaluation } from "./frameDetection";
 import { FrameSampler } from "./frameSampler";
-import type { GameOption, GameSet, SetChoice } from "./gameConfig";
+import type { Game, GameSet, SetChoice } from "./gameConfig";
 import { captureHiResStill } from "./hiResStill";
 import { identifyCard } from "./identify";
 import type { Identification } from "./identify";
@@ -33,7 +33,7 @@ export function isCameraOn(state: ScanState): boolean {
 export interface ScanInputs {
   camera: CameraOption | null;
   resolution: Size;
-  game: GameOption;
+  game: Game;
   set: SetChoice;
   cardOrientation: CardOrientation;
   debug: boolean;
@@ -43,7 +43,7 @@ export interface ScanInputs {
  * identified in; `cycle` is the scan cycle it belongs to (see
  * ScanSession.fail). */
 export interface Capture {
-  game: GameOption;
+  game: Game;
   set: GameSet;
   cardCanvas: HTMLCanvasElement;
   identification: Identification;

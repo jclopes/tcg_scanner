@@ -11,7 +11,7 @@ import type { CardIdMatch, CardOrientation, RegionConfig, TextRegionConfig } fro
 import type { Worker as TesseractWorker } from "tesseract.js";
 import type { AcceptedFrame } from "./frameDetection";
 import { COLLECTOR_NUMBER_REGION, SET_CODE_REGION } from "./gameConfig";
-import type { GameOption, GameSet, SetChoice } from "./gameConfig";
+import type { Game, GameSet, SetChoice } from "./gameConfig";
 import { canvasPixels, grayscaleToCanvas } from "./canvasUtils";
 import { recognizeRegion } from "./ocr";
 import { fitCropToText, warpRegion } from "./regionExtraction";
@@ -74,7 +74,7 @@ export async function identifyCard(
   worker: TesseractWorker,
   frame: AcceptedFrame,
   cardOrientation: CardOrientation,
-  game: GameOption,
+  game: Game,
   setChoice: SetChoice,
   isCancelled: () => boolean,
 ): Promise<Identification | null> {
@@ -126,7 +126,7 @@ async function recognizeCrop(
   return { canvas: prepared, inverted, read, text: extractMatch(read, region.extractRegex) };
 }
 
-/** The result of the text region `label`, which parseGame guarantees. */
+/** The result of the text region `label`, which parseGameOption guarantees. */
 function textRegionResult(
   regions: readonly RegionResult[],
   label: string,

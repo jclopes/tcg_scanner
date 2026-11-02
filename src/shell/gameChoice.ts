@@ -1,6 +1,6 @@
 import { optionElement } from "./dom";
-import { listGames } from "./gameConfig";
-import type { GameOption, SetChoice } from "./gameConfig";
+import { listGames, loadGame } from "./gameConfig";
+import type { Game, GameOption, SetChoice } from "./gameConfig";
 import { loadPreferences, savePreferences } from "./preferences";
 
 /** The set dropdown's value for Autodetect: empty, which no set code is. */
@@ -12,30 +12,32 @@ export interface GameChoiceElements {
   dialog: HTMLDialogElement;
   startButton: HTMLButtonElement;
   cancelButton: HTMLButtonElement;
+  /** Shown when the picked game's sets couldn't be loaded. */
+  error: HTMLElement;
 }
 
 /** The Start Scan dialog's game and set dropdowns; the set can be
  * Autodetect, the default. The choice is saved as a preference and restored
  * when that game and set still exist. */
 export class GameChoice {
-  private readonly games = listGames();
-  private selectedGame: GameOption;
+  private selectedGame: Game;
   private selectedSet: SetChoice;
 
   /** `onGameChange` runs after the user picks another game; `onSetChange`
    * after the set choice changes, also when a game change resets it; `onStart`
    * after the user confirms the dialog. */
-  constructor(
+  private constructor(
+    private readonly games: readonly GameOption[],
+    initial: { game: Game; setCode: string | undefined },
     private readonly elements: GameChoiceElements,
-    private readonly onGameChange: (game: GameOption) => void,
+    private readonly onGameChange: (game: Game) => void,
     private readonly onSetChange: (set: SetChoice) => void,
     onStart: () => void,
   ) {
-    const preferences = loadPreferences();
-    elements.gameSelect.replaceChildren(...this.games.map((game) => optionElement(game.id, game.id)));
-    this.selectedGame = this.games.find((game) => game.id === preferences.gameId) ?? this.games[0]!;
+    elements.gameSelect.replaceChildren(...games.map((game) => optionElement(game.id, game.id)));
+    this.selectedGame = initial.game;
     elements.gameSelect.value = this.selectedGame.id;
-    this.selectedSet = this.populateSets(preferences.setCode);
+    this.selectedSet = this.populateSets(initial.setCode);
 
     elements.gameSelect.addEventListener("change", () => this.handleGameChange());
     elements.setSelect.addEventListener("change", () => this.handleSetChange());
@@ -44,6 +46,21 @@ export class GameChoice {
       onStart();
     });
     elements.cancelButton.addEventListener("click", () => elements.dialog.close());
+  }
+
+  /** The dialog with the saved game (else the first) loaded. See the
+   * constructor for the callbacks. */
+  static async create(
+    elements: GameChoiceElements,
+    onGameChange: (game: Game) => void,
+    onSetChange: (set: SetChoice) => void,
+    onStart: () => void,
+  ): Promise<GameChoice> {
+    const games = listGames();
+    const preferences = loadPreferences();
+    const game = games.find((g) => g.id === preferences.gameId) ?? games[0]!;
+    const initial = { game: await loadGame(game), setCode: preferences.setCode };
+    return new GameChoice(games, initial, elements, onGameChange, onSetChange, onStart);
   }
 
   /** Shows the dialog with the current choice selected. */
@@ -58,7 +75,7 @@ export class GameChoice {
     return this.games;
   }
 
-  get game(): GameOption {
+  get game(): Game {
     return this.selectedGame;
   }
 
@@ -85,16 +102,31 @@ export class GameChoice {
     return set;
   }
 
+  /** Loads the picked game's sets with the dialog's inputs disabled, so the
+   * choice can't change meanwhile. If loading fails, the previous game stays. */
   private handleGameChange(): void {
-    const game = this.games.find((g) => g.id === this.elements.gameSelect.value);
-    if (!game) {
+    const option = this.games.find((g) => g.id === this.elements.gameSelect.value);
+    if (!option) {
       throw new Error(`Unknown game option: ${this.elements.gameSelect.value}`);
     }
-    this.selectedGame = game;
-    this.selectedSet = this.populateSets(undefined);
-    this.save();
-    this.onGameChange(game);
-    this.onSetChange(this.selectedSet);
+    this.setInputsEnabled(false);
+    loadGame(option).then(
+      (game) => {
+        this.setInputsEnabled(true);
+        this.showError(null);
+        this.selectedGame = game;
+        this.selectedSet = this.populateSets(undefined);
+        this.save();
+        this.onGameChange(game);
+        this.onSetChange(this.selectedSet);
+      },
+      (error: unknown) => {
+        console.error(`Could not load game "${option.id}".`, error);
+        this.setInputsEnabled(true);
+        this.elements.gameSelect.value = this.selectedGame.id;
+        this.showError(`Couldn't load ${option.id}. Check your connection and try again.`);
+      },
+    );
   }
 
   private handleSetChange(): void {
@@ -106,5 +138,17 @@ export class GameChoice {
     this.selectedSet = set;
     this.save();
     this.onSetChange(set);
+  }
+
+  private setInputsEnabled(enabled: boolean): void {
+    const { gameSelect, setSelect, startButton } = this.elements;
+    for (const input of [gameSelect, setSelect, startButton]) {
+      input.disabled = !enabled;
+    }
+  }
+
+  private showError(message: string | null): void {
+    this.elements.error.hidden = message === null;
+    this.elements.error.textContent = message ?? "";
   }
 }

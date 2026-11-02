@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS, DEFAULT_TEXT_EXTRACT_REGEX, DEFAULT_TEXT_SEARCH_PADDING_Y_MM } from "../core";
-import { listGames, parseGame, parseRegion } from "./gameConfig";
+import { listGames, loadGame, parseGameOption, parseRegion, parseSets } from "./gameConfig";
 
 const BOX = { label: "collector_number", x_mm: 1, y_mm: 2, width_mm: 3, height_mm: 4 };
 
@@ -81,20 +81,24 @@ describe("parseRegion", () => {
 });
 
 describe("listGames", () => {
-  it("parses every bundled game, sorted by id, with sets sorted by name", () => {
+  it("parses every bundled game, sorted by id", () => {
     const games = listGames();
     expect(games.length).toBeGreaterThan(0);
     expect(games.map((game) => game.id)).toEqual(games.map((game) => game.id).sort((a, b) => a.localeCompare(b)));
-    for (const game of games) {
-      const names = game.sets.map((set) => set.name);
+  });
+});
+
+describe("loadGame", () => {
+  it("loads every bundled game's sets, sorted by name", async () => {
+    for (const game of listGames()) {
+      const names = (await loadGame(game)).sets.map((set) => set.name);
+      expect(names.length).toBeGreaterThan(0);
       expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
     }
   });
 });
 
-describe("parseGame", () => {
-  const SET = { code: "S1", name: "Set 1", print: "S1 - X", collector_numbers: ["001"] };
-  const SETS = [SET];
+describe("parseGameOption", () => {
   const config = (overrides: Record<string, unknown>): Record<string, unknown> => ({
     card_orientation: ["portrait", "landscape"],
     foil: true,
@@ -103,72 +107,86 @@ describe("parseGame", () => {
   });
 
   it("reads card orientations and foil support", () => {
-    const game = parseGame("g", config({ card_orientation: ["landscape"], foil: false, regions: { landscape: REQUIRED_REGIONS } }), SETS);
+    const game = parseGameOption("g", config({ card_orientation: ["landscape"], foil: false, regions: { landscape: REQUIRED_REGIONS } }));
     expect(game.cardOrientations).toEqual(["landscape"]);
     expect(game.hasFoil).toBe(false);
   });
 
   it("throws for missing, empty, unknown or repeated card orientations", () => {
     for (const card_orientation of [undefined, [], ["square"], ["portrait", "portrait"]]) {
-      expect(() => parseGame("g", config({ card_orientation }), SETS)).toThrow(/card_orientation/);
+      expect(() => parseGameOption("g", config({ card_orientation }))).toThrow(/card_orientation/);
     }
   });
 
   it("throws for a missing or non-boolean foil", () => {
     for (const foil of [undefined, "yes"]) {
-      expect(() => parseGame("g", config({ foil }), SETS)).toThrow(/foil/);
+      expect(() => parseGameOption("g", config({ foil }))).toThrow(/foil/);
     }
   });
 
-  it("throws for a set without a print", () => {
-    for (const print of [undefined, ""]) {
-      expect(() => parseGame("g", config({}), [{ ...SET, print }])).toThrow(/print/);
-    }
-  });
-
-  it("throws for a set with missing, non-string or repeated collector numbers", () => {
-    for (const collector_numbers of [undefined, [], ["001", 2], ["001", "001"]]) {
-      expect(() => parseGame("g", config({}), [{ ...SET, collector_numbers }])).toThrow(/collector_numbers/);
-    }
-  });
-
-  it("throws for repeated set codes or region labels", () => {
-    expect(() => parseGame("g", config({}), [SET, { ...SET, name: "Other" }])).toThrow(/set codes has "S1"/);
+  it("throws for repeated region labels", () => {
     const region = { ...BOX, type: "image" };
-    expect(() => parseGame("g", config({ regions: { portrait: [region, region], landscape: REQUIRED_REGIONS } }), SETS)).toThrow(
+    expect(() => parseGameOption("g", config({ regions: { portrait: [region, region], landscape: REQUIRED_REGIONS } }))).toThrow(
       /portrait region labels has "collector_number"/,
     );
   });
 
-  it("throws when regions.json or sets.json is missing or malformed, or there are no sets", () => {
-    expect(() => parseGame("g", undefined, SETS)).toThrow(/regions.json and sets.json/);
-    expect(() => parseGame("g", config({}), undefined)).toThrow(/regions.json and sets.json/);
-    expect(() => parseGame("g", config({}), [])).toThrow(/no sets/);
-    expect(() => parseGame("g", config({}), { sets: [] })).toThrow(/sets.json must be a list/);
-    expect(() => parseGame("g", config({ regions: undefined }), SETS)).toThrow(/"regions" must be an object/);
+  it("throws when regions.json or its regions are malformed", () => {
+    expect(() => parseGameOption("g", undefined)).toThrow(/regions.json must be an object/);
+    expect(() => parseGameOption("g", config({ regions: undefined }))).toThrow(/"regions" must be an object/);
   });
 
   it("keeps each orientation's own regions", () => {
     const portrait = REQUIRED_REGIONS;
     const landscape = REQUIRED_REGIONS.map((region) => ({ ...region, x_mm: 50 }));
-    const game = parseGame("g", config({ regions: { portrait, landscape } }), SETS);
+    const game = parseGameOption("g", config({ regions: { portrait, landscape } }));
     expect(game.config.regions.portrait![0]!.xMm).toBe(1);
     expect(game.config.regions.landscape![0]!.xMm).toBe(50);
   });
 
   it("throws when regions lack a listed orientation or have an unlisted one", () => {
-    expect(() => parseGame("g", config({ regions: { portrait: REQUIRED_REGIONS } }), SETS)).toThrow(/"landscape" must be a list/);
-    expect(() =>
-      parseGame("g", config({ card_orientation: ["portrait"], regions: { portrait: [], landscape: [] } }), SETS),
-    ).toThrow(/"regions" has "landscape", which isn't in "card_orientation"/);
+    expect(() => parseGameOption("g", config({ regions: { portrait: REQUIRED_REGIONS } }))).toThrow(/"landscape" must be a list/);
+    expect(() => parseGameOption("g", config({ card_orientation: ["portrait"], regions: { portrait: [], landscape: [] } }))).toThrow(
+      /"regions" has "landscape", which isn't in "card_orientation"/,
+    );
   });
 
   it("throws when an orientation lacks the collector-number or set-code text region", () => {
     const imageSetCode = { ...BOX, label: "set_code", type: "image" };
     for (const portrait of [[textRegion("set_code")], [textRegion("collector_number")], [textRegion("collector_number"), imageSetCode]]) {
-      expect(() => parseGame("g", config({ card_orientation: ["portrait"], regions: { portrait } }), SETS)).toThrow(
+      expect(() => parseGameOption("g", config({ card_orientation: ["portrait"], regions: { portrait } }))).toThrow(
         /portrait regions need a text region labeled/,
       );
     }
+  });
+});
+
+describe("parseSets", () => {
+  const SET = { code: "S1", name: "Set 1", print: "S1 - X", collector_numbers: ["001"] };
+
+  it("sorts the sets by name", () => {
+    const sets = parseSets("g", [{ ...SET, code: "S2", name: "Zeta" }, SET]);
+    expect(sets.map((set) => set.name)).toEqual(["Set 1", "Zeta"]);
+  });
+
+  it("throws for a set without a print", () => {
+    for (const print of [undefined, ""]) {
+      expect(() => parseSets("g", [{ ...SET, print }])).toThrow(/print/);
+    }
+  });
+
+  it("throws for a set with missing, non-string or repeated collector numbers", () => {
+    for (const collector_numbers of [undefined, [], ["001", 2], ["001", "001"]]) {
+      expect(() => parseSets("g", [{ ...SET, collector_numbers }])).toThrow(/collector_numbers/);
+    }
+  });
+
+  it("throws for repeated set codes", () => {
+    expect(() => parseSets("g", [SET, { ...SET, name: "Other" }])).toThrow(/set codes has "S1"/);
+  });
+
+  it("throws when sets.json isn't a list or has no sets", () => {
+    expect(() => parseSets("g", [])).toThrow(/no sets/);
+    expect(() => parseSets("g", { sets: [] })).toThrow(/sets.json must be a list/);
   });
 });

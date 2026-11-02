@@ -21,9 +21,9 @@ import { SessionTagsInput } from "./sessionTags";
 
 const TAGS_ERROR = "Fix the session tags before adding the card.";
 
-/** Wires the page to the scan session and the other shell modules. Called
- * once from src/main.ts. */
-export function initApp(): void {
+/** Wires the page to the scan session and the other shell modules, once the
+ * games it starts with are loaded. Called once from src/main.ts. */
+export async function initApp(): Promise<void> {
   const video = requireElement<HTMLVideoElement>("camera-video");
   const cameraStage = requireElement<HTMLDivElement>("camera-stage");
   const statusEl = requireElement<HTMLParagraphElement>("status");
@@ -33,13 +33,14 @@ export function initApp(): void {
   const captureFlash = requireElement<HTMLDivElement>("capture-flash");
   const holdStill = requireElement<HTMLElement>("hold-still");
 
-  const gameChoice = new GameChoice(
+  const gameChoice = await GameChoice.create(
     {
       gameSelect: requireElement("game-select"),
       setSelect: requireElement("set-select"),
       dialog: requireElement("game-dialog"),
       startButton: requireElement("game-dialog-start"),
       cancelButton: requireElement("game-dialog-cancel"),
+      error: requireElement("game-dialog-error"),
     },
     (game) => cardOptions.applyGame(game),
     (set) => manualEntry.applySet(set),
@@ -69,7 +70,7 @@ export function initApp(): void {
     overlay: requireElement("card-overlay"),
     overlayImage: requireElement("card-overlay-image"),
   });
-  const scannedCards = new ScannedCardList(gameChoice.allGames, {
+  const scannedCards = await ScannedCardList.create(gameChoice.allGames, {
     list: requireElement("scanned-cards-list"),
     count: requireElement("scanned-cards-count"),
     emptyNote: requireElement("scanned-cards-empty"),
@@ -214,8 +215,7 @@ export function initApp(): void {
     if (invalid.length > 0) {
       return TAGS_ERROR;
     }
-    scannedCards.add({
-      gameId: gameChoice.game.id,
+    scannedCards.add(gameChoice.game, {
       setCode: set.code,
       cardId,
       foil: cardOptions.foil,

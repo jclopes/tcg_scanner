@@ -4,7 +4,7 @@ import { mergeDuplicates, parseScannedCards, scannedCardsCsv } from "./scannedCa
 import type { ScannedCard } from "./scannedCardStore";
 
 function game(id: string, hasFoil: boolean, cardOrientations: GameOption["cardOrientations"]): GameOption {
-  return { id, config: { game: id, regions: {} }, sets: [], cardOrientations, hasFoil };
+  return { id, config: { game: id, regions: {} }, cardOrientations, hasFoil };
 }
 
 const FULL = game("full", true, ["portrait", "landscape"]);

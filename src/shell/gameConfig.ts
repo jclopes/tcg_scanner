@@ -30,70 +30,88 @@ export interface GameSet {
   collectorNumbers: string[];
 }
 
-/** A bundled game: its folder name under src/data/games/, its parsed region
- * config, its sets, the orientations its cards are printed in (the first is the
- * default) and whether it has foil cards. */
+/** A bundled game's layout, from its regions.json: its folder name under
+ * src/data/games/, its parsed region config, the orientations its cards are
+ * printed in (the first is the default) and whether it has foil cards. */
 export interface GameOption {
   id: string;
   config: GameConfig;
-  sets: GameSet[];
   cardOrientations: CardOrientation[];
   hasFoil: boolean;
 }
+
+/** A game with its sets loaded (see loadGame). */
+export type Game = GameOption & { sets: GameSet[] };
 
 /** The set dropdown's choice: one set, or "autodetect" — the set whose printed
  * code the card's set code reads closest to (see closestSetPrint). */
 export type SetChoice = GameSet | "autodetect";
 
-/** Every game folder's regions.json and sets.json, keyed by folder name —
- * gathered at build time by Vite's `import.meta.glob`, still unchecked JSON
- * (see parseGame). */
+/** Every game folder's regions.json, keyed by folder name — bundled by Vite's
+ * `import.meta.glob`, still unchecked JSON (see parseGameOption). */
 const RAW_GAME_CONFIGS = byGameFolder(
   import.meta.glob<unknown>("../data/games/*/regions.json", { eager: true, import: "default" }),
 );
-const RAW_SET_CONFIGS = byGameFolder(
-  import.meta.glob<unknown>("../data/games/*/sets.json", { eager: true, import: "default" }),
-);
+/** Every game folder's sets.json loader, keyed by folder name. Not eager, so
+ * Vite emits each game's sets as its own chunk, downloaded on first use. */
+const SET_LOADERS = byGameFolder(import.meta.glob<unknown>("../data/games/*/sets.json", { import: "default" }));
 
-/** Every bundled game by id, its sets by name. Throws if there are none or a
- * game's data is invalid (see parseGame). */
+/** Every bundled game by id. Throws if there are none, a folder lacks
+ * regions.json or sets.json, or a regions.json is invalid (see
+ * parseGameOption). */
 export function listGames(): GameOption[] {
-  const ids = [...new Set([...Object.keys(RAW_GAME_CONFIGS), ...Object.keys(RAW_SET_CONFIGS)])];
+  const ids = [...new Set([...Object.keys(RAW_GAME_CONFIGS), ...Object.keys(SET_LOADERS)])];
   if (ids.length === 0) {
     throw new Error("No games found under src/data/games/.");
   }
-  return ids.sort((a, b) => a.localeCompare(b)).map((id) => parseGame(id, RAW_GAME_CONFIGS[id], RAW_SET_CONFIGS[id]));
+  return ids
+    .sort((a, b) => a.localeCompare(b))
+    .map((id) => {
+      if (RAW_GAME_CONFIGS[id] === undefined || SET_LOADERS[id] === undefined) {
+        throw new Error(`Game folder "${id}" must contain both regions.json and sets.json.`);
+      }
+      return parseGameOption(id, RAW_GAME_CONFIGS[id]);
+    });
 }
 
-/** Parses one game folder's regions.json and sets.json. Throws, naming the
- * file, entry and field, on anything missing, mistyped or repeated. */
-export function parseGame(id: string, rawConfig: unknown, rawSets: unknown): GameOption {
-  if (rawConfig === undefined || rawSets === undefined) {
-    throw new Error(`Game folder "${id}" must contain both regions.json and sets.json.`);
+/** `game` with its sets.json downloaded and parsed (see parseSets). */
+export async function loadGame(game: GameOption): Promise<Game> {
+  const loadSets = SET_LOADERS[game.id];
+  if (loadSets === undefined) {
+    throw new Error(`Game "${game.id}" has no sets.json.`);
   }
-  const configContext = `Game "${id}" regions.json`;
-  const config = requireRecord(rawConfig, configContext);
-  const cardOrientations = parseCardOrientations(config, configContext);
-  const regions = parseRegionsByOrientation(id, config, cardOrientations, configContext);
+  return { ...game, sets: parseSets(game.id, await loadSets()) };
+}
 
-  const setsContext = `Game "${id}" sets.json`;
-  const sets = requireList(rawSets, setsContext).map((set) => parseSet(setsContext, set));
+/** Parses one game folder's regions.json. Throws, naming the entry and field,
+ * on anything missing, mistyped or repeated. */
+export function parseGameOption(id: string, rawConfig: unknown): GameOption {
+  const context = `Game "${id}" regions.json`;
+  const config = requireRecord(rawConfig, context);
+  const cardOrientations = parseCardOrientations(config, context);
+  return {
+    id,
+    config: { game: id, regions: parseRegionsByOrientation(id, config, cardOrientations, context) },
+    cardOrientations,
+    hasFoil: requireBoolean(config, "foil", context),
+  };
+}
+
+/** Parses one game folder's sets.json, sorted by name. Throws, naming the set
+ * and field, on anything missing, mistyped or repeated, or when there are no
+ * sets. */
+export function parseSets(id: string, rawSets: unknown): GameSet[] {
+  const context = `Game "${id}" sets.json`;
+  const sets = requireList(rawSets, context).map((set) => parseSet(context, set));
   if (sets.length === 0) {
-    throw new Error(`${setsContext} has no sets.`);
+    throw new Error(`${context} has no sets.`);
   }
   requireUnique(
     sets.map((set) => set.code),
     "set codes",
-    setsContext,
+    context,
   );
-
-  return {
-    id,
-    config: { game: id, regions },
-    sets: sets.sort((a, b) => a.name.localeCompare(b.name)),
-    cardOrientations,
-    hasFoil: requireBoolean(config, "foil", configContext),
-  };
+  return sets.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function parseSet(setsContext: string, raw: unknown): GameSet {
