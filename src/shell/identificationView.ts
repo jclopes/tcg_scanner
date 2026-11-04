@@ -1,4 +1,5 @@
 import { closerSetPrints } from "../core";
+import type { CardIdMatch } from "../core";
 import { optionElement } from "./dom";
 import type { GameSet } from "./gameConfig";
 import { suggestCardIds } from "./identify";
@@ -15,10 +16,15 @@ export interface IdentificationViewElements {
 /** The capture area's identification: a set dropdown, preselected with the set
  * the card was identified in, a warning when the OCR'd set code fits another
  * set better, a button per suggested card ID (`onAccept`) and Rescan
- * (`onRescan`). Picking another set suggests that set's card IDs instead. */
+ * (`onRescan`). Picking another set suggests that set's card IDs instead.
+ * While shown, number keys 1-3 accept the matching button and Escape rescans
+ * — unless a form field has focus. */
 export class IdentificationView {
   /** The shown identification and its game's sets; null while cleared. */
   private shown: { sets: readonly GameSet[]; identification: Identification } | null = null;
+  /** The set and matches last rendered, for the number-key shortcuts; null
+   * while cleared. */
+  private rendered: { set: GameSet; matches: readonly CardIdMatch[] } | null = null;
 
   constructor(
     private readonly elements: IdentificationViewElements,
@@ -26,6 +32,7 @@ export class IdentificationView {
     private readonly onRescan: () => void,
   ) {
     elements.setSelect.addEventListener("change", () => this.handleSetChange());
+    document.addEventListener("keydown", (event) => this.handleKeydown(event));
     this.clear();
   }
 
@@ -40,6 +47,7 @@ export class IdentificationView {
 
   clear(): void {
     this.shown = null;
+    this.rendered = null;
     this.elements.setRow.hidden = true;
     this.elements.setSelect.replaceChildren();
     this.showWarning(null);
@@ -61,17 +69,37 @@ export class IdentificationView {
   /** The warning and the match buttons for `set`. */
   private render(sets: readonly GameSet[], identification: Identification, set: GameSet): void {
     this.showWarning(setWarning(closerSetPrints(identification.setCodeText, set, sets)));
+    const matches = suggestCardIds(identification.collectorNumberText, set);
+    this.rendered = { set, matches };
     this.elements.matches.replaceChildren(
-      ...suggestCardIds(identification.collectorNumberText, set).map((match) => {
+      ...matches.map((match, index) => {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "button button-outline mono";
         button.textContent = match.id;
+        button.title = `${match.id} (${index + 1})`;
         button.addEventListener("click", () => this.onAccept(set, match.id));
         return button;
       }),
       this.rescanButton(),
     );
+  }
+
+  /** Number keys 1-3 accept the matching button, Escape rescans — ignored
+   * while nothing is shown or a form field has focus. */
+  private handleKeydown(event: KeyboardEvent): void {
+    if (this.rendered === null || isEditableTarget(event.target)) {
+      return;
+    }
+    if (event.key === "Escape") {
+      this.onRescan();
+      return;
+    }
+    const index = Number(event.key) - 1;
+    const match = this.rendered.matches[index];
+    if (match) {
+      this.onAccept(this.rendered.set, match.id);
+    }
   }
 
   private rescanButton(): HTMLButtonElement {
@@ -91,6 +119,12 @@ export class IdentificationView {
     this.elements.warning.textContent = message ?? "";
     this.elements.warning.title = message ?? "";
   }
+}
+
+/** Whether `target` is a form field that should keep typed digits (e.g. the
+ * manual card number field) from being read as match shortcuts. */
+function isEditableTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable);
 }
 
 /** E.g. "Set may be The Heist — Retail Starter Deck (SD01 - HEI [A])", or
