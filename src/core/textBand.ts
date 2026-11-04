@@ -6,6 +6,7 @@ import {
   TEXT_COLUMN_ENERGY_THRESHOLD_FRACTION,
   TEXT_COLUMN_MARGIN_TEXT_HEIGHTS,
   TEXT_COLUMN_REFERENCE_PERCENTILE,
+  TEXT_RUN_SIGNIFICANCE_FRACTION,
 } from "./constants";
 import type { GrayscalePixels } from "./types";
 
@@ -37,13 +38,24 @@ export interface TextRowAnalysis {
 
 /** The rows to crop a search area to: the run around the strongest
  * glyph-stroke row (if it stands out from the median by
- * TEXT_BAND_MIN_PEAK_TO_BACKGROUND), plus a margin that stops at strong
- * horizontal lines (e.g. a badge border). */
-export function analyzeTextRows(pixels: GrayscalePixels): TextRowAnalysis {
-  const textProfile = rowGradientProfile(pixels);
-  const lineProfile = rowEdgeProfile(pixels);
+ * `minPeakToBackground`, TEXT_BAND_MIN_PEAK_TO_BACKGROUND by default — pass
+ * TEXT_BAND_FALLBACK_MIN_PEAK_TO_BACKGROUND to retry leniently once that
+ * fails, or call `retryTextRows` to do so without rescanning `pixels`), plus
+ * a margin that stops at strong horizontal lines (e.g. a badge border). */
+export function analyzeTextRows(pixels: GrayscalePixels, minPeakToBackground = TEXT_BAND_MIN_PEAK_TO_BACKGROUND): TextRowAnalysis {
+  return findRowBand(rowGradientProfile(pixels), rowEdgeProfile(pixels), pixels.height, minPeakToBackground);
+}
+
+/** `analyzeTextRows` against `previous`'s already-computed profiles instead
+ * of rescanning the pixels — for a lenient retry once the strict pass finds
+ * no band, which only needs the threshold re-applied to the same gradients. */
+export function retryTextRows(previous: TextRowAnalysis, height: number, minPeakToBackground: number): TextRowAnalysis {
+  return findRowBand(previous.textProfile, previous.lineProfile, height, minPeakToBackground);
+}
+
+function findRowBand(textProfile: number[], lineProfile: number[], height: number, minPeakToBackground: number): TextRowAnalysis {
   const backgroundLineThreshold = HORIZONTAL_LINE_MIN_ENERGY_TO_BACKGROUND * median(lineProfile);
-  const found = findBand(textProfile);
+  const found = findBand(textProfile, minPeakToBackground);
 
   if (!found) {
     return {
@@ -58,8 +70,8 @@ export function analyzeTextRows(pixels: GrayscalePixels): TextRowAnalysis {
 
   const lettersEdgeMax = Math.max(0, ...lineProfile.slice(found.band.top, found.band.bottom));
   const lineThreshold = Math.max(backgroundLineThreshold, lettersEdgeMax);
-  const bounds = lineBounds(lineProfile, lineThreshold, found.band, pixels.height);
-  const margined = withMargin(found.band, pixels.height);
+  const bounds = lineBounds(lineProfile, lineThreshold, found.band, height);
+  const margined = withMargin(found.band, height);
   return {
     textProfile,
     textThreshold: found.threshold,
@@ -86,12 +98,19 @@ export interface TextColumnAnalysis {
   /** The text line's columns plus margin, or `null` when the rows hold no
    * stroke energy at all. */
   crop: ColumnBand | null;
+  /** The chosen run cluster's significant-spike count (see `spikeCount`), 0
+   * when `crop` is null — how confidently it looks like several character
+   * strokes rather than one solid feature; used to gate a lenient fallback
+   * band (see `analyzeFallbackBand`). */
+  spikeCount: number;
 }
 
-/** The text line's columns within rows `band`: runs of strong columns grouped
- * across gaps up to `maxGapTextHeights`; the group with the most stroke
- * energy wins, so a narrow strong feature (e.g. the card's edge) can't. Plus a
- * margin. */
+/** The text line's columns within rows `band`: the run closest to the search
+ * area's horizontal center, with neighbors absorbed outward while the gap to
+ * each stays within `maxGapTextHeights` — the region's box is centered on its
+ * text, with equal padding both sides (see `extractTextRegion`), so growing
+ * from the middle finds the ID's characters without being pulled toward a
+ * stronger but off-center feature (e.g. a watermark). Plus a margin. */
 export function analyzeTextColumns(
   pixels: GrayscalePixels,
   band: RowBand,
@@ -101,12 +120,11 @@ export function analyzeTextColumns(
   const threshold = TEXT_COLUMN_ENERGY_THRESHOLD_FRACTION * percentile(profile, TEXT_COLUMN_REFERENCE_PERCENTILE);
   const runs = aboveThresholdRuns(profile, threshold);
   if (runs.length === 0) {
-    return { profile, threshold, crop: null };
+    return { profile, threshold, crop: null, spikeCount: 0 };
   }
 
   const textHeight = band.bottom - band.top;
-  const groups = groupRuns(runs, maxGapTextHeights * textHeight);
-  const text = maxBy(groups, (group) => group.reduce((sum, run) => sum + energyOf(profile, run), 0));
+  const text = runsAroundCenter(runs, pixels.width / 2, maxGapTextHeights * textHeight);
   const left = text[0]!.left;
   const right = text[text.length - 1]!.right;
 
@@ -116,7 +134,31 @@ export function analyzeTextColumns(
     profile,
     threshold,
     crop: { left: Math.max(0, left - margin), right: Math.min(pixels.width, right + 1 + margin) },
+    spikeCount: spikeCount(profile, text),
   };
+}
+
+/** The run of `runs` (left to right) closest to `center`, with its left and
+ * right neighbors absorbed in turn while the gap to the next one is at most
+ * `maxGap`. */
+function runsAroundCenter(runs: readonly ColumnBand[], center: number, maxGap: number): ColumnBand[] {
+  const distanceToCenter = (run: ColumnBand): number => (run.left > center ? run.left - center : center > run.right ? center - run.right : 0);
+  let seed = 0;
+  for (let i = 1; i < runs.length; i++) {
+    if (distanceToCenter(runs[i]!) < distanceToCenter(runs[seed]!)) {
+      seed = i;
+    }
+  }
+
+  let left = seed;
+  while (left > 0 && runs[left]!.left - runs[left - 1]!.right <= maxGap) {
+    left--;
+  }
+  let right = seed;
+  while (right < runs.length - 1 && runs[right + 1]!.left - runs[right]!.right <= maxGap) {
+    right++;
+  }
+  return runs.slice(left, right + 1);
 }
 
 /** `band` grown by TEXT_BAND_MARGIN_FRACTION of its height on each side,
@@ -130,13 +172,14 @@ function withMargin(band: RowBand, areaHeight: number): RowBand {
 }
 
 /** The run of rows above the threshold around the profile's peak, or `null`
- * when the peak doesn't stand out from the median (background) row. */
-function findBand(profile: readonly number[]): { band: RowBand; threshold: number } | null {
+ * when the peak doesn't stand out from the median (background) row by at
+ * least `minPeakToBackground`. */
+function findBand(profile: readonly number[], minPeakToBackground: number): { band: RowBand; threshold: number } | null {
   if (profile.length === 0) {
     return null;
   }
   const max = Math.max(...profile);
-  if (max <= 0 || max < TEXT_BAND_MIN_PEAK_TO_BACKGROUND * median(profile)) {
+  if (max <= 0 || max < minPeakToBackground * median(profile)) {
     return null;
   }
 
@@ -238,28 +281,18 @@ function aboveThresholdRuns(profile: readonly number[], threshold: number): Colu
   return runs;
 }
 
-/** Consecutive runs (left to right) split wherever the gap between two runs
- * exceeds `maxGap`. `runs` must be non-empty. */
-function groupRuns(runs: readonly ColumnBand[], maxGap: number): ColumnBand[][] {
-  const groups: ColumnBand[][] = [[runs[0]!]];
-  for (const run of runs.slice(1)) {
-    const current = groups[groups.length - 1]!;
-    if (run.left - current[current.length - 1]!.right > maxGap) {
-      groups.push([run]);
-    } else {
-      current.push(run);
-    }
-  }
-  return groups;
-}
-
 function energyOf(profile: readonly number[], run: ColumnBand): number {
   return profile.slice(run.left, run.right).reduce((sum, value) => sum + value, 0);
 }
 
-/** The first item with the highest `score`. `items` must be non-empty. */
-function maxBy<T>(items: readonly T[], score: (item: T) => number): T {
-  return items.reduce((best, item) => (score(item) > score(best) ? item : best));
+/** How many of `group`'s runs have energy within TEXT_RUN_SIGNIFICANCE_FRACTION
+ * of its strongest: character strokes read close to each other, while a solid
+ * feature's incidental edge noise reads far weaker than its own bulk, so it
+ * doesn't inflate the count. */
+function spikeCount(profile: readonly number[], group: readonly ColumnBand[]): number {
+  const energies = group.map((run) => energyOf(profile, run));
+  const strongest = Math.max(...energies);
+  return energies.filter((energy) => energy >= TEXT_RUN_SIGNIFICANCE_FRACTION * strongest).length;
 }
 
 /** The value at fraction `p` (0-1) of the sorted values; 0 when empty. */

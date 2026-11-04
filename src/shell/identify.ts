@@ -7,7 +7,7 @@ import {
   regionsFor,
   TEXT_SEARCH_PADDING_X_MM,
 } from "../core";
-import type { CardIdMatch, CardOrientation, RegionConfig, TextRegionConfig } from "../core";
+import type { CardIdMatch, CardOrientation, ImageRegionConfig, TextRegionConfig } from "../core";
 import type { Worker as TesseractWorker } from "tesseract.js";
 import type { AcceptedFrame } from "./frameDetection";
 import { COLLECTOR_NUMBER_REGION, SET_CODE_REGION } from "./gameConfig";
@@ -20,31 +20,45 @@ import type { TextCropAnalysis } from "./regionExtraction";
 /** How many best-matching collector numbers to suggest. */
 const CARD_MATCH_SUGGESTION_COUNT = 3;
 
-/** One region warped out of the frame. For a text region `canvas` is the crop
- * fitted to its text within `searchCanvas`; for an image region both are the
- * configured box and `analysis` is null. */
-export interface RegionCrop {
-  region: RegionConfig;
+/** A text region's crop: `canvas` is fitted to its text within `searchCanvas`,
+ * or `null` when no confident text line was found (OCR is skipped rather than
+ * guessed on the raw search area). */
+export interface TextRegionCrop {
+  region: TextRegionConfig;
   searchCanvas: HTMLCanvasElement;
-  analysis: TextCropAnalysis | null;
+  analysis: TextCropAnalysis;
+  canvas: HTMLCanvasElement | null;
+}
+
+/** An image region's crop: not OCR'd, so `canvas` is just the configured box,
+ * same as `searchCanvas`. */
+export interface ImageRegionCrop {
+  region: ImageRegionConfig;
+  searchCanvas: HTMLCanvasElement;
+  analysis: null;
   canvas: HTMLCanvasElement;
 }
 
+export type RegionCrop = TextRegionCrop | ImageRegionCrop;
+
 /** A text region's OCR: the preprocessed image Tesseract saw, what it read
  * (filtered to the allowed characters) and the part of that the region's
- * `extractRegex` keeps — the text identification uses. */
+ * `extractRegex` keeps — the text identification uses. `skipped` when no
+ * confident text crop was found — `read`/`text` are empty rather than a
+ * misread of the raw search area. */
 export interface RegionOcr {
   canvas: HTMLCanvasElement;
   inverted: boolean;
   read: string;
   text: string;
+  skipped: boolean;
 }
 
-/** A region's crop plus its OCR (null for image regions). */
-export interface RegionResult {
-  crop: RegionCrop;
-  ocr: RegionOcr | null;
-}
+/** A region's crop plus its OCR — always together, since only text regions
+ * are OCR'd: checking `ocr` narrows `crop` to a TextRegionCrop (with its
+ * non-null `analysis`) or an ImageRegionCrop (with its always non-null
+ * `canvas`). */
+export type RegionResult = { crop: TextRegionCrop; ocr: RegionOcr } | { crop: ImageRegionCrop; ocr: null };
 
 export interface Identification {
   regions: RegionResult[];
@@ -85,7 +99,8 @@ export async function identifyCard(
     }
     if (region.type === "text") {
       const crop = extractTextRegion(frame, cardOrientation, region);
-      regions.push({ crop, ocr: await recognizeCrop(worker, crop.canvas, region) });
+      const ocr = crop.canvas ? await recognizeCrop(worker, crop.canvas, region) : skippedOcr(crop.searchCanvas);
+      regions.push({ crop, ocr });
     } else {
       const canvas = warpRegion(frame, cardOrientation, region);
       regions.push({ crop: { region, searchCanvas: canvas, analysis: null, canvas }, ocr: null });
@@ -100,13 +115,13 @@ export async function identifyCard(
     setCodeText,
     set,
     matches: set === null ? [] : suggestCardIds(collectorNumber.ocr.text, set),
-    collectorNumberCrop: collectorNumber.crop.canvas,
+    collectorNumberCrop: collectorNumber.crop.canvas ?? collectorNumber.crop.searchCanvas,
   };
 }
 
 /** Warps a text region's padded search area (its configured box is only
  * where to look) and narrows the crop to its text line. */
-function extractTextRegion(frame: AcceptedFrame, cardOrientation: CardOrientation, region: TextRegionConfig): RegionCrop {
+function extractTextRegion(frame: AcceptedFrame, cardOrientation: CardOrientation, region: TextRegionConfig): TextRegionCrop {
   const searchRegion = padRegion(region, { xMm: TEXT_SEARCH_PADDING_X_MM, yMm: region.searchPaddingYMm });
   const searchCanvas = warpRegion(frame, cardOrientation, searchRegion);
   const { canvas, analysis } = fitCropToText(searchCanvas, region.maxGapTextHeights);
@@ -123,7 +138,14 @@ async function recognizeCrop(
   const { gray, inverted } = prepareTextForOcr(canvasPixels(canvas));
   const prepared = grayscaleToCanvas(gray);
   const read = await recognizeRegion(worker, prepared, region.allowedChars);
-  return { canvas: prepared, inverted, read, text: extractMatch(read, region.extractRegex) };
+  return { canvas: prepared, inverted, read, text: extractMatch(read, region.extractRegex), skipped: false };
+}
+
+/** No confident text crop was found: skip Tesseract rather than guess on the
+ * raw search area, so downstream matching sees "" (no match) instead of a
+ * misread. `canvas` is the raw search area, for the debug trail. */
+function skippedOcr(searchCanvas: HTMLCanvasElement): RegionOcr {
+  return { canvas: searchCanvas, inverted: false, read: "", text: "", skipped: true };
 }
 
 /** The result of the text region `label`, which parseGameOption guarantees. */

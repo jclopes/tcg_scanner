@@ -77,6 +77,17 @@ export const DEFAULT_TEXT_SEARCH_PADDING_Y_MM = 1.0;
  * Relative, since real crops' absolute gradients are low. Starting guess. */
 export const TEXT_BAND_MIN_PEAK_TO_BACKGROUND = 2.5;
 
+/** A second, looser TEXT_BAND_MIN_PEAK_TO_BACKGROUND tried when the first
+ * finds no band: a provisional band, only trusted once the column stage finds
+ * TEXT_FALLBACK_MIN_SPIKES comparable spikes within it (see
+ * analyzeFallbackBand). */
+export const TEXT_BAND_FALLBACK_MIN_PEAK_TO_BACKGROUND = 2.0;
+
+/** The provisional band from TEXT_BAND_FALLBACK_MIN_PEAK_TO_BACKGROUND is
+ * trusted only once its columns resolve to at least this many comparable
+ * spikes (see spikeCount) — a single decorative feature still won't pass. */
+export const TEXT_FALLBACK_MIN_SPIKES = 2;
+
 /** A row edge counts as a horizontal line (e.g. a badge border) when its
  * vertical-gradient energy is at least this many times the median row's.
  * Starting guess (3 missed a real badge border). */
@@ -99,6 +110,13 @@ export const TEXT_COLUMN_ENERGY_THRESHOLD_FRACTION = 0.5;
  * its max, so a narrow strong feature (e.g. the card's edge) can't raise the
  * threshold above the text. Starting guess. */
 export const TEXT_COLUMN_REFERENCE_PERCENTILE = 0.9;
+
+/** A run counts toward its group's spike count (see analyzeTextColumns) only
+ * if its energy is at least this fraction of the group's strongest run's —
+ * character strokes read within a narrow band of each other, while a solid
+ * decorative feature's incidental edge noise reads far weaker than its own
+ * bulk. Starting guess. */
+export const TEXT_RUN_SIGNIFICANCE_FRACTION = 0.5;
 
 /** A text region's default `maxGapTextHeights`: generous enough for word gaps
  * (the "·" in a set code measured up to ~1.2 text heights); single-word

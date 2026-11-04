@@ -179,17 +179,25 @@ export function buildCaptureDebugTrail(
     ...buildBurstFrameSteps(burst.debugFrames),
     buildQuadOverlayStep(selected, "Selected frame"),
     { label: "Flattened output", canvas: cardCanvas },
-    ...regionResults.flatMap(({ crop: { region, searchCanvas, analysis, canvas }, ocr }) =>
-      analysis && ocr
-        ? [
-            buildTextBandStep(region.label, searchCanvas, analysis),
-            {
-              label: `Region: ${region.label} — OCR input${ocr.inverted ? " (inverted)" : ""} → "${ocr.read}" → "${ocr.text}"`,
-              canvas: ocr.canvas,
-            },
-          ]
-        : [{ label: `Region: ${region.label}`, canvas }],
-    ),
+    ...regionResults.flatMap(buildRegionSteps),
+  ];
+}
+
+/** A text region's band/column analysis plus its OCR input (or, if OCR was
+ * skipped, why); an image region's plain crop. */
+function buildRegionSteps({ crop, ocr }: RegionResult): DebugEntry[] {
+  if (!ocr) {
+    return [{ label: `Region: ${crop.region.label}`, canvas: crop.canvas }];
+  }
+  const { region, searchCanvas, analysis } = crop;
+  return [
+    buildTextBandStep(region.label, searchCanvas, analysis),
+    {
+      label: ocr.skipped
+        ? `Region: ${region.label} — no confident text found, OCR skipped`
+        : `Region: ${region.label} — OCR input${ocr.inverted ? " (inverted)" : ""} → "${ocr.read}" → "${ocr.text}"`,
+      canvas: ocr.canvas,
+    },
   ];
 }
 
