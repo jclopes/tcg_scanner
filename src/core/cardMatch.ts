@@ -10,15 +10,25 @@ export interface CardIdMatch {
 }
 
 /** `candidates` ranked by edit distance to `ocrText`, the best `limit`; ties
- * keep `candidates`' (print) order. Empty when OCR read nothing. */
+ * prefer a candidate that's a prefix or suffix of the OCR'd text (or the OCR'd
+ * text of it) — the likelier mistake is a stray or missing character at one
+ * end, not a change in the middle — then keep `candidates`' (print) order.
+ * Empty when OCR read nothing. */
 export function rankCardIds(ocrText: string, candidates: readonly string[], limit: number): CardIdMatch[] {
   if (ocrText === "") {
     return [];
   }
   return candidates
     .map((id) => ({ id, distance: levenshteinDistance(ocrText, id) }))
-    .sort((a, b) => a.distance - b.distance)
+    .sort((a, b) => a.distance - b.distance || boundaryRank(ocrText, a.id) - boundaryRank(ocrText, b.id))
     .slice(0, limit);
+}
+
+/** 0 when `id` and `ocrText` share a prefix or suffix spanning the shorter of
+ * the two in full, 1 otherwise. */
+function boundaryRank(ocrText: string, id: string): number {
+  const isBoundaryMatch = ocrText.startsWith(id) || id.startsWith(ocrText) || ocrText.endsWith(id) || id.endsWith(ocrText);
+  return isBoundaryMatch ? 0 : 1;
 }
 
 /** Whether the best of `matches` (ranked by rankCardIds) is within

@@ -23,6 +23,17 @@ describe("rankCardIds", () => {
   it("suggests nothing when OCR read nothing", () => {
     expect(rankCardIds("", ["001", "002"], 3)).toEqual([]);
   });
+
+  it("on a tied distance, prefers a candidate that's a prefix or suffix of the OCR'd text", () => {
+    // "0754" is one edit from each of these (delete the 7, the 5 or the 4), but
+    // only "075" is an actual prefix of it (a trailing misread), not a change
+    // in the middle.
+    expect(rankCardIds("0754", ["054", "074", "075"], 3)).toEqual([
+      { id: "075", distance: 1 },
+      { id: "054", distance: 1 },
+      { id: "074", distance: 1 },
+    ]);
+  });
 });
 
 describe("isConfidentMatch", () => {
