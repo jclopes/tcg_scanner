@@ -9,6 +9,8 @@ const OUTWARD_RIGHT: Point = { x: 1, y: 0 };
 const OUTWARD_TOP: Point = { x: 0, y: -1 };
 /** Loose enough for the rotated-edge test plus Hough's 1° angular steps. */
 const TOLERANCE_DEGREES = 15;
+/** The reference resolution's scale: no adjustment to EDGE_INLIER_DISTANCE_PX. */
+const SCALE = 1;
 
 /** A band with a hard step edge along the line through `point` with
  * `direction`: 255 on one side, 0 on the other. */
@@ -52,12 +54,12 @@ function expectFitsLine(result: ReturnType<typeof fitEdgeLine>, point: Point, di
 describe("fitEdgeLine", () => {
   it("fits a vertical edge in a left/right band and a horizontal edge in a top/bottom band", () => {
     const vertical = { point: { x: 25, y: 80 }, direction: { x: 0, y: 1 } };
-    const verticalResult = fitEdgeLine(edgeBand(TALL, vertical.point, vertical.direction), OUTWARD_RIGHT, TOLERANCE_DEGREES);
+    const verticalResult = fitEdgeLine(edgeBand(TALL, vertical.point, vertical.direction), OUTWARD_RIGHT, TOLERANCE_DEGREES, SCALE);
     expectFitsLine(verticalResult, vertical.point, vertical.direction);
     expect(verticalResult!.confidence).toBeGreaterThanOrEqual(EDGE_MIN_CONFIDENCE);
 
     const horizontal = { point: { x: 80, y: 25 }, direction: { x: 1, y: 0 } };
-    const horizontalResult = fitEdgeLine(edgeBand(WIDE, horizontal.point, horizontal.direction), OUTWARD_TOP, TOLERANCE_DEGREES);
+    const horizontalResult = fitEdgeLine(edgeBand(WIDE, horizontal.point, horizontal.direction), OUTWARD_TOP, TOLERANCE_DEGREES, SCALE);
     expectFitsLine(horizontalResult, horizontal.point, horizontal.direction);
   });
 
@@ -65,30 +67,30 @@ describe("fitEdgeLine", () => {
     const angle = (8 * Math.PI) / 180;
     const point = { x: 25, y: 80 };
     const direction = { x: Math.sin(angle), y: Math.cos(angle) };
-    expectFitsLine(fitEdgeLine(edgeBand(TALL, point, direction), OUTWARD_RIGHT, TOLERANCE_DEGREES), point, direction, 3);
+    expectFitsLine(fitEdgeLine(edgeBand(TALL, point, direction), OUTWARD_RIGHT, TOLERANCE_DEGREES, SCALE), point, direction, 3);
   });
 
   it("rejects an edge rotated beyond the tolerance, and finds it once the tolerance covers it", () => {
     const angle = (45 * Math.PI) / 180;
     const point = { x: 25, y: 80 };
     const direction = { x: Math.sin(angle), y: Math.cos(angle) };
-    expect(fitEdgeLine(edgeBand(TALL, point, direction), OUTWARD_RIGHT, 8)).toBeNull();
-    expectFitsLine(fitEdgeLine(edgeBand(TALL, point, direction), OUTWARD_RIGHT, 50), point, direction);
+    expect(fitEdgeLine(edgeBand(TALL, point, direction), OUTWARD_RIGHT, 8, SCALE)).toBeNull();
+    expectFitsLine(fitEdgeLine(edgeBand(TALL, point, direction), OUTWARD_RIGHT, 50, SCALE), point, direction);
   });
 
   it("still finds an edge partly hidden (e.g. by a finger)", () => {
     const point = { x: 25, y: 80 };
     const direction = { x: 0, y: 1 };
     const band = occludeRows(edgeBand(TALL, point, direction), 64, 96);
-    expectFitsLine(fitEdgeLine(band, OUTWARD_RIGHT, TOLERANCE_DEGREES), point, direction, 3);
+    expectFitsLine(fitEdgeLine(band, OUTWARD_RIGHT, TOLERANCE_DEGREES, SCALE), point, direction, 3);
   });
 
   it("scales confidence with how much of the edge is visible, and finds nothing below EDGE_MIN_CONFIDENCE", () => {
     const point = { x: 25, y: 80 };
     const direction = { x: 0, y: 1 };
-    const full = fitEdgeLine(edgeBand(TALL, point, direction), OUTWARD_RIGHT, TOLERANCE_DEGREES);
-    const half = fitEdgeLine(occludeRows(edgeBand(TALL, point, direction), 80, 160), OUTWARD_RIGHT, TOLERANCE_DEGREES);
-    const sliver = fitEdgeLine(occludeRows(edgeBand(TALL, point, direction), 24, 160), OUTWARD_RIGHT, TOLERANCE_DEGREES);
+    const full = fitEdgeLine(edgeBand(TALL, point, direction), OUTWARD_RIGHT, TOLERANCE_DEGREES, SCALE);
+    const half = fitEdgeLine(occludeRows(edgeBand(TALL, point, direction), 80, 160), OUTWARD_RIGHT, TOLERANCE_DEGREES, SCALE);
+    const sliver = fitEdgeLine(occludeRows(edgeBand(TALL, point, direction), 24, 160), OUTWARD_RIGHT, TOLERANCE_DEGREES, SCALE);
 
     expect(half!.confidence).toBeLessThan(full!.confidence);
     expect(half!.confidence).toBeGreaterThanOrEqual(EDGE_MIN_CONFIDENCE);
@@ -103,7 +105,7 @@ describe("fitEdgeLine", () => {
         data[y * TALL.width + x] = x < 10 ? 0 : x < 35 ? 128 : 255;
       }
     }
-    const result = fitEdgeLine({ data, ...TALL, origin: { x: 0, y: 0 } }, { x: -1, y: 0 }, TOLERANCE_DEGREES);
+    const result = fitEdgeLine({ data, ...TALL, origin: { x: 0, y: 0 } }, { x: -1, y: 0 }, TOLERANCE_DEGREES, SCALE);
 
     expect(result).not.toBeNull();
     expect(Math.abs(result!.point.x - 10)).toBeLessThan(3);
@@ -118,7 +120,7 @@ describe("fitEdgeLine", () => {
       noise[i] = 120 + (seed % 5);
     }
     for (const data of [flat, noise]) {
-      expect(fitEdgeLine({ data, ...TALL, origin: { x: 0, y: 0 } }, OUTWARD_RIGHT, TOLERANCE_DEGREES)).toBeNull();
+      expect(fitEdgeLine({ data, ...TALL, origin: { x: 0, y: 0 } }, OUTWARD_RIGHT, TOLERANCE_DEGREES, SCALE)).toBeNull();
     }
   });
 });

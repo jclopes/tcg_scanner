@@ -1,6 +1,7 @@
 import {
   STANDARD_CARD_ASPECT_RATIO,
   computeGuideGeometry,
+  edgeBandScaleFactor,
   expectedEdgeBands,
   fitEdgeLine,
   isQuadAspectRatioValid,
@@ -41,8 +42,9 @@ export function evaluateFrameForQuad(sampler: FrameSampler, source: CanvasImageS
   const guide = computeGuideGeometry(orientationFromSize(frameSize), frameSize);
   const expected = expectedEdgeBands(guide, frameSize);
   const bands = sampler.sampleBands(source, frameSize, expected);
+  const scale = edgeBandScaleFactor(frameSize);
   const lines = mapEdges(bands, (band, i) =>
-    fitEdgeLine(band, outwardDirectionForSide(expected[i]!.side), DEFAULT_TOLERANCE_CONFIG.rotationToleranceDegrees),
+    fitEdgeLine(band, outwardDirectionForSide(expected[i]!.side), DEFAULT_TOLERANCE_CONFIG.rotationToleranceDegrees, scale),
   );
   const edgesFound = mapEdges(lines, (line) => line !== null);
   const base = { bands, lines, edgesFound };

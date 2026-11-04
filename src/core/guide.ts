@@ -53,8 +53,10 @@ export function computeGuideGeometry(camera: Orientation, frameSize: Size): Guid
 }
 
 /** Linear scale of `frameSize` relative to EDGE_BAND_REFERENCE_FRAME_SIZE,
- * from the area ratio so it holds for any aspect ratio. */
-function edgeBandScaleFactor(frameSize: Size): number {
+ * from the area ratio so it holds for any aspect ratio. Also scales
+ * fitEdgeLine's inlier distance, so its real-world tolerance matches the
+ * band it searches. */
+export function edgeBandScaleFactor(frameSize: Size): number {
   const referenceArea = EDGE_BAND_REFERENCE_FRAME_SIZE.width * EDGE_BAND_REFERENCE_FRAME_SIZE.height;
   const frameArea = frameSize.width * frameSize.height;
   return Math.sqrt(frameArea / referenceArea);

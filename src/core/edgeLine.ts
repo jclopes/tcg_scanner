@@ -32,9 +32,11 @@ interface ScanLine {
  * peaks on each scanline (edgePoints) vote for lines within
  * `rotationToleranceDegrees`; the outward-most well-supported line wins, so an
  * inner parallel feature (e.g. the printed border) can't pull it inward; then
- * a weighted fit through its inliers. A band under 3px has no edge.
+ * a weighted fit through its inliers, within EDGE_INLIER_DISTANCE_PX scaled by
+ * `scale` (the band's own scale, e.g. edgeBandScaleFactor) so the real-world
+ * tolerance holds at any camera resolution. A band under 3px has no edge.
  */
-export function fitEdgeLine(samples: EdgeBandPixels, outwardDirection: Point, rotationToleranceDegrees: number): FittedLine | null {
+export function fitEdgeLine(samples: EdgeBandPixels, outwardDirection: Point, rotationToleranceDegrees: number, scale: number): FittedLine | null {
   const { data, width, height } = samples;
   if (data.length !== width * height) {
     throw new Error(`fitEdgeLine: expected ${width * height} bytes of band data, got ${data.length}.`);
@@ -54,7 +56,7 @@ export function fitEdgeLine(samples: EdgeBandPixels, outwardDirection: Point, ro
   if (!line) {
     return null;
   }
-  const inliers = inliersOf(points, line, scan.length);
+  const inliers = inliersOf(points, line, scan.length, EDGE_INLIER_DISTANCE_PX * scale);
   const fitted = fitWeightedLine(
     inliers.map((p) => (edgeRunsVertically ? { x: p.across, y: p.along, weight: p.weight } : { x: p.along, y: p.across, weight: p.weight })),
     inliers.length / scan.length,
@@ -182,15 +184,15 @@ function scanlinesInsideBand({ offset, slope }: ScanLine, scan: ScanGeometry): n
   return to >= from ? Math.floor(to) - Math.ceil(from) + 1 : 0;
 }
 
-/** The points within EDGE_INLIER_DISTANCE_PX of `line`, at most one per
- * scanline (the closest). */
-function inliersOf(points: readonly EdgePoint[], line: ScanLine, length: number): EdgePoint[] {
+/** The points within `maxDistance` of `line`, at most one per scanline (the
+ * closest). */
+function inliersOf(points: readonly EdgePoint[], line: ScanLine, length: number, maxDistance: number): EdgePoint[] {
   const center = (length - 1) / 2;
   const closest = new Array<EdgePoint | undefined>(length);
   const closestDistance = new Float64Array(length).fill(Infinity);
   for (const point of points) {
     const distance = Math.abs(point.across - (line.offset + line.slope * (point.along - center)));
-    if (distance <= EDGE_INLIER_DISTANCE_PX && distance < closestDistance[point.along]!) {
+    if (distance <= maxDistance && distance < closestDistance[point.along]!) {
       closest[point.along] = point;
       closestDistance[point.along] = distance;
     }
