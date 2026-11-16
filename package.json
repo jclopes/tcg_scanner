@@ -1,6 +1,6 @@
 {
   "name": "tcg-scanner",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "Browser-only trading card scanner: detects a card with the camera, reads its collector number and set code with OCR, and keeps an exportable list of scanned cards.",
   "private": true,
   "type": "module",

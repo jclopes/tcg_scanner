@@ -7,6 +7,7 @@ import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 
 const rootDir = dirname(fileURLToPath(import.meta.url));
+const appVersion: string = createRequire(import.meta.url)("./package.json").version;
 
 /** The folder of package `name`, found the way Node would load it from the
  * file `from` — so a dependency of a dependency is found wherever npm put it. */
@@ -57,4 +58,7 @@ export default defineConfig({
   // Pinned to IPv4 loopback: left to resolve "localhost", Vite may bind only
   // ::1, which browsers that resolve localhost to 127.0.0.1 can't reach.
   server: { host: "127.0.0.1" },
+  // Shown in the app's About panel (see src/shell/app.ts) — package.json's
+  // version is the single source of truth, substituted at build time.
+  define: { __APP_VERSION__: JSON.stringify(appVersion) },
 });

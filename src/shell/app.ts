@@ -40,6 +40,7 @@ export async function initApp(): Promise<void> {
   const debugForceButton = requireElement<HTMLButtonElement>("debug-force-button");
   const captureFlash = requireElement<HTMLDivElement>("capture-flash");
   const holdStill = requireElement<HTMLElement>("hold-still");
+  requireElement("app-version").textContent = `Version ${__APP_VERSION__}`;
   /** The identification behind the card currently shown, for the
    * OCR-vs-accepted telemetry (see acceptCard). */
   let shownIdentification: Identification | null = null;
