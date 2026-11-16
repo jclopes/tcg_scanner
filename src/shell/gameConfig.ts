@@ -1,9 +1,9 @@
 /// <reference types="vite/client" />
 import {
-  DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
   DEFAULT_TEXT_EXTRACT_REGEX,
   DEFAULT_TEXT_SEARCH_PADDING_Y_MM,
   optionalNumber,
+  optionalString,
   requireArray,
   requireBoolean,
   requireList,
@@ -28,6 +28,12 @@ export interface GameSet {
   print: string;
   /** Every card ID in the set, in print order. */
   collectorNumbers: string[];
+  /** A literal prefix every one of `collectorNumbers` is printed with that
+   * OCR's `eng` model can't output at all (e.g. Cyberpunk beta prints' "β"),
+   * so that part of a reading is always a low-confidence guess standing in
+   * for a character that was never going to be read (see
+   * identify.ts's trimToCollectorNumberLength). "" when the set has none. */
+  collectorNumberPrefix: string;
 }
 
 /** A bundled game's layout, from its regions.json: its folder name under
@@ -118,11 +124,17 @@ function parseSet(setsContext: string, raw: unknown): GameSet {
   const set = requireRecord(raw, `${setsContext} set`);
   const code = requireString(set, "code", `${setsContext} set`);
   const context = `${setsContext} set "${code}"`;
+  const collectorNumbers = requireStringArray(set, "collector_numbers", context);
+  const collectorNumberPrefix = optionalString(set, "collector_number_prefix", context) ?? "";
+  if (collectorNumberPrefix !== "" && !collectorNumbers.every((id) => id.startsWith(collectorNumberPrefix))) {
+    throw new Error(`${context}: "collector_number_prefix" "${collectorNumberPrefix}" isn't a prefix of every "collector_numbers" entry.`);
+  }
   return {
     code,
     name: requireString(set, "name", context),
     print: requireString(set, "print", context),
-    collectorNumbers: requireStringArray(set, "collector_numbers", context),
+    collectorNumbers,
+    collectorNumberPrefix,
   };
 }
 
@@ -200,7 +212,6 @@ export function parseRegion(gameId: string, orientation: CardOrientation, raw: u
         allowedChars: requireString(record, "allowed_chars", context),
         extractRegex:
           record.extract_regex === undefined ? DEFAULT_TEXT_EXTRACT_REGEX : requireRegex(record, "extract_regex", context),
-        maxGapTextHeights: optionalNumber(record, "max_gap_text_heights", context) ?? DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
         searchPaddingYMm: optionalNumber(record, "search_padding_y_mm", context) ?? DEFAULT_TEXT_SEARCH_PADDING_Y_MM,
       };
     default:

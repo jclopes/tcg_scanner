@@ -1,3 +1,4 @@
+import { levenshteinDistance } from "../core";
 import { CameraSettings } from "./cameraSettings";
 import { CardOptions } from "./cardOptions";
 import { DebugPanel } from "./debugSteps";
@@ -5,6 +6,7 @@ import { requireElement } from "./dom";
 import { GameChoice } from "./gameChoice";
 import type { GameSet } from "./gameConfig";
 import { GuideFeedback } from "./guideFeedback";
+import type { Identification } from "./identify";
 import { IdentificationView } from "./identificationView";
 import { ManualCardEntry } from "./manualEntry";
 import { LazyOcrWorker } from "./ocr";
@@ -18,8 +20,14 @@ import { ScanSounds } from "./scanSounds";
 import { ScreenNavigator } from "./screens";
 import type { ScreenName } from "./screens";
 import { SessionTagsInput } from "./sessionTags";
+import { TelemetryPanel } from "./telemetryPanel";
 
 const TAGS_ERROR = "Fix the session tags before adding the card.";
+
+/** How long an auto-accepted capture's confirmation stays up before the next
+ * scan starts — long enough for the user to see it and move the card out of
+ * frame, so the same card isn't immediately auto-accepted again. */
+const AUTO_ACCEPT_PAUSE_MS = 1500;
 
 /** Wires the page to the scan session and the other shell modules, once the
  * games it starts with are loaded. Called once from src/main.ts. */
@@ -32,6 +40,9 @@ export async function initApp(): Promise<void> {
   const debugForceButton = requireElement<HTMLButtonElement>("debug-force-button");
   const captureFlash = requireElement<HTMLDivElement>("capture-flash");
   const holdStill = requireElement<HTMLElement>("hold-still");
+  /** The identification behind the card currently shown, for the
+   * OCR-vs-accepted telemetry (see acceptCard). */
+  let shownIdentification: Identification | null = null;
 
   const gameChoice = await GameChoice.create(
     {
@@ -84,6 +95,7 @@ export async function initApp(): Promise<void> {
       warning: requireElement("identification-warning"),
       setRow: requireElement("capture-set"),
       setSelect: requireElement("capture-set-select"),
+      confidence: requireElement("identification-confidence"),
       matches: requireElement("identification-matches"),
     },
     acceptCard,
@@ -106,6 +118,12 @@ export async function initApp(): Promise<void> {
     checkbox: requireElement("debug-checkbox"),
     controls: requireElement("debug-controls"),
   });
+  const telemetryPanel = new TelemetryPanel({
+    checkbox: requireElement("debug-checkbox"),
+    panel: requireElement("telemetry-panel"),
+    stats: requireElement("telemetry-stats"),
+    resetButton: requireElement("telemetry-reset"),
+  });
   const ocrWorker = new LazyOcrWorker();
   const sounds = new ScanSounds(requireElement("sound-checkbox"));
   const session = new ScanSession(
@@ -124,6 +142,7 @@ export async function initApp(): Promise<void> {
       onEdgesEvaluated: (edgesFound) => guide.update(edgesFound),
       onCapture: showCapture,
       onDebugTrail: (entries) => debugPanel.render(entries),
+      onDetectionStat: (events) => telemetryPanel.record(events),
     },
   );
   // The first launch opens on Help; later ones on Scan.
@@ -177,13 +196,22 @@ export async function initApp(): Promise<void> {
     }
   }
 
-  function showCapture({ game, set, cardCanvas, identification, cycle }: Capture): void {
+  /** Shows the capture's thumbnail/flash/ping either way; when the best
+   * match is confident enough (`autoAcceptCardId`), accepts it immediately
+   * instead of waiting for the user to tap it. */
+  function showCapture({ game, set, cardCanvas, identification, cycle, autoAcceptCardId }: Capture): void {
     resultView
       .show(cardCanvas, identification.collectorNumberCrop)
       .catch((error: unknown) => session.fail(error, "Could not encode the captured image.", cycle));
-    identificationView.show(game.sets, set, identification);
     captureFlash.animate([{ opacity: 0 }, { opacity: 0.45 }, { opacity: 0 }], { duration: 300, iterations: 2 });
+    shownIdentification = identification;
+    if (autoAcceptCardId !== null) {
+      sounds.bell();
+      autoAccept(set, autoAcceptCardId, identification.collectorNumberConfidence);
+      return;
+    }
     sounds.ping();
+    identificationView.show(game.sets, set, identification);
   }
 
   // ---- Cards --------------------------------------------------------------
@@ -191,13 +219,47 @@ export async function initApp(): Promise<void> {
   /** Records the card the user picked from the best matches and scans for
    * the next one. */
   function acceptCard(set: GameSet, cardId: string): void {
-    const error = addScannedCard(set, cardId);
+    const error = recordAcceptedCard(set, cardId);
     if (error !== null) {
       session.setCapturedMessage(error);
       return;
     }
-    debugPanel.clear();
     session.scanNext(`Added ${cardId} — scanning for the next card.`);
+  }
+
+  /** Records an auto-accepted card right away, but — unlike acceptCard —
+   * waits AUTO_ACCEPT_PAUSE_MS before scanning again: with no one tapping a
+   * match, the same still-in-frame card would otherwise get auto-accepted
+   * over and over. */
+  function autoAccept(set: GameSet, cardId: string, confidence: number): void {
+    const error = recordAcceptedCard(set, cardId);
+    if (error !== null) {
+      session.setCapturedMessage(error);
+      return;
+    }
+    session.setCapturedMessage(`Auto-accepted ${cardId} (${Math.round(confidence)}% confidence) — move the card away…`);
+    setTimeout(() => {
+      // The session may have been stopped or navigated away from during the pause.
+      if (session.state.phase === "captured") {
+        session.scanNext("Scanning for the next card.");
+      }
+    }, AUTO_ACCEPT_PAUSE_MS);
+  }
+
+  /** Adds the card and records its OCR-vs-accepted telemetry; returns an
+   * error message, adding nothing, while the tags input holds invalid tags. */
+  function recordAcceptedCard(set: GameSet, cardId: string): string | null {
+    const error = addScannedCard(set, cardId);
+    if (error !== null) {
+      return error;
+    }
+    if (debugPanel.enabled && shownIdentification) {
+      telemetryPanel.record([
+        { metric: "ocrVsAcceptedDistance", value: levenshteinDistance(shownIdentification.collectorNumberText, cardId) },
+      ]);
+    }
+    debugPanel.clear();
+    return null;
   }
 
   /** Discards the capture without adding a card (none of the matches was

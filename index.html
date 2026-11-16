@@ -37,6 +37,12 @@
         --guide-flash: rgba(255, 255, 255, 0.95);
         --debug-text-profile: rgba(80, 200, 255, 0.8);
         --debug-line-profile: rgba(255, 150, 40, 0.8);
+        /* Telemetry chart series (one per scan outcome): validated CVD-safe
+           and >=3:1 against --panel-bg as a 3-color categorical set — the
+           app's own --danger/--warning/--guide-found don't clear that bar. */
+        --stat-good: #0ca30c;
+        --stat-warning: #fab219;
+        --stat-critical: #d03b3b;
 
         --font-xs: 0.75rem;
         --font-sm: 0.85rem;
@@ -696,6 +702,104 @@
         align-self: flex-start;
       }
 
+      /* ---- Telemetry panel ---- */
+      /* A bar's length is the bucket's total count relative to its metric's
+         largest bucket, so a thin bar also tells you "not many samples yet" —
+         not just composition. Stacked segments are colored by scan outcome
+         (--stat-good/-warning/-critical, see :root) with a 2px surface gap
+         between them per the data-viz mark spec. */
+
+      /* Just a title and a button — unlike .scanned-cards-header's 3-column
+         grid (sized around a thumbnail spacer), which stretches a 2-child
+         header's button to fill its 1fr track. */
+      .telemetry-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--gap);
+      }
+
+      #telemetry-stats {
+        display: flex;
+        flex-direction: column;
+        gap: var(--gap);
+      }
+
+      .telemetry-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--gap-sm) var(--gap);
+        font-size: var(--font-xs);
+        color: var(--text-secondary);
+      }
+
+      .telemetry-legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--gap-xs);
+      }
+
+      .telemetry-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        flex: none;
+      }
+
+      .telemetry-metric-title {
+        margin: 0 0 var(--gap-xs);
+        font-size: var(--font-xs);
+        font-weight: normal;
+        color: var(--text-muted);
+      }
+
+      .telemetry-bar-row {
+        display: flex;
+        align-items: center;
+        gap: var(--gap-sm);
+      }
+
+      .telemetry-bar-row + .telemetry-bar-row {
+        margin-top: 2px;
+      }
+
+      .telemetry-bar-label {
+        flex: none;
+        width: 3rem;
+        font-family: var(--font-mono);
+        font-size: var(--font-xs);
+        color: var(--text-secondary);
+        text-align: right;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .telemetry-bar-track {
+        display: flex;
+        height: 14px;
+        min-width: 3%;
+        border-radius: var(--radius-sm);
+        overflow: hidden;
+        background: var(--control-bg);
+      }
+
+      .telemetry-bar-segment {
+        height: 100%;
+      }
+
+      .telemetry-bar-segment + .telemetry-bar-segment {
+        border-left: 2px solid var(--panel-bg);
+      }
+
+      .telemetry-bar-total {
+        flex: none;
+        width: 2rem;
+        font-family: var(--font-mono);
+        font-size: var(--font-xs);
+        color: var(--text-muted);
+      }
+
       .debug-rejection-reason {
         padding: var(--gap-sm);
         border-radius: var(--radius-sm);
@@ -757,6 +861,7 @@
             <label for="capture-set-select">Set</label>
             <select id="capture-set-select" class="input"></select>
           </div>
+          <p id="identification-confidence" class="hint" hidden></p>
           <div id="identification-matches" class="match-buttons"></div>
         </section>
 
@@ -835,6 +940,13 @@
             <input type="checkbox" id="debug-checkbox" />
             Debug mode
           </label>
+        </div>
+        <div id="telemetry-panel" class="panel" hidden>
+          <div class="telemetry-header">
+            <h2>Detection telemetry</h2>
+            <button type="button" id="telemetry-reset" class="button">Reset</button>
+          </div>
+          <div id="telemetry-stats"></div>
         </div>
       </section>
 

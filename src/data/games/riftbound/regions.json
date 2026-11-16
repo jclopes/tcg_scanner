@@ -11,8 +11,7 @@
         "x_mm": 8.00,
         "y_mm": 84.40,
         "width_mm": 6.30,
-        "height_mm": 1.70,
-        "max_gap_text_heights": 0.5
+        "height_mm": 1.70
       },
       {
         "label": "set_code",
@@ -21,8 +20,7 @@
         "x_mm": 3.20,
         "y_mm": 84.40,
         "width_mm": 3.10,
-        "height_mm": 1.70,
-        "max_gap_text_heights": 0.4
+        "height_mm": 1.70
       }
     ],
     "landscape": [
@@ -34,8 +32,7 @@
         "x_mm": 7.65,
         "y_mm": 58.45,
         "width_mm": 6.30,
-        "height_mm": 1.70,
-        "max_gap_text_heights": 0.5
+        "height_mm": 1.70
       },
       {
         "label": "set_code",
@@ -44,8 +41,7 @@
         "x_mm": 2.90,
         "y_mm": 58.45,
         "width_mm": 3.10,
-        "height_mm": 1.70,
-        "max_gap_text_heights": 0.4
+        "height_mm": 1.70
       }
     ]
   }

@@ -1,4 +1,4 @@
-import type { EdgeBandPixels, FittedLine, PerEdge, Quad } from "../core";
+import type { EdgeBandPixels, FittedLine, PerEdge, Quad, RowBand } from "../core";
 import { canvasToObjectURL, createCanvas, grayscaleToCanvas, pixelsToCanvas, require2dContext, rotateCanvas } from "./canvasUtils";
 import { paletteColor } from "./dom";
 import type { BurstFrameDebugEntry, FrameBurstResult } from "./frameBurst";
@@ -97,6 +97,17 @@ function buildTextBandStep(regionLabel: string, searchCanvas: HTMLCanvasElement,
   return { label: `Region: ${regionLabel} — ${outcome}`, canvas };
 }
 
+/** `searchCanvas` cropped to just `band`'s rows, full width — exactly what
+ * column detection receives, with nothing above or below it. */
+function buildRowBandCropStep(regionLabel: string, searchCanvas: HTMLCanvasElement, band: RowBand | null): DebugStep {
+  if (!band) {
+    return { label: `Region: ${regionLabel} — no horizontal band found, column detection skipped`, canvas: searchCanvas };
+  }
+  const canvas = createCanvas({ width: searchCanvas.width, height: band.bottom - band.top });
+  require2dContext(canvas).drawImage(searchCanvas, 0, band.top, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+  return { label: `Region: ${regionLabel} — horizontal band crop (what column detection sees)`, canvas };
+}
+
 /** One 1px-tall bar per row, length proportional to `profile[y] / max`, plus
  * a vertical marker at `threshold`. */
 function drawRowProfile(
@@ -192,6 +203,7 @@ function buildRegionSteps({ crop, ocr }: RegionResult): DebugEntry[] {
   const { region, searchCanvas, analysis } = crop;
   return [
     buildTextBandStep(region.label, searchCanvas, analysis),
+    buildRowBandCropStep(region.label, searchCanvas, analysis.rows.band),
     {
       label: ocr.skipped
         ? `Region: ${region.label} — no confident text found, OCR skipped`

@@ -11,8 +11,7 @@
         "x_mm": 18.75,
         "y_mm": 83.25,
         "width_mm": 4.60,
-        "height_mm": 1.55,
-        "max_gap_text_heights": 0.4
+        "height_mm": 1.55
       },
       {
         "label": "set_code",
@@ -22,8 +21,7 @@
         "x_mm": 18.75,
         "y_mm": 83.25,
         "width_mm": 4.60,
-        "height_mm": 1.55,
-        "max_gap_text_heights": 0.4
+        "height_mm": 1.55
       }
     ]
   }

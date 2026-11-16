@@ -1,10 +1,11 @@
-import { isConfidentMatch } from "../core";
+import { autoAcceptCardId, isConfidentMatch } from "../core";
 import type { CardOrientation, PerEdge, Size } from "../core";
 import type { CameraOption } from "./cameraDevices";
 import { startCameraStream, stopCameraStream } from "./cameraStream";
 import { captureFlattenedCard } from "./capture";
 import { buildCaptureDebugTrail, buildForcedDebugTrail } from "./debugSteps";
 import type { DebugEntry } from "./debugSteps";
+import type { DetectionStatEvent, ScanOutcome } from "./detectionStats";
 import { DetectionLoop } from "./detectionLoop";
 import { collectBurstFrames, selectFrameToFlatten } from "./frameBurst";
 import { evaluateFrameForQuad } from "./frameDetection";
@@ -41,13 +42,16 @@ export interface ScanInputs {
 
 /** An identified card awaiting the user's pick, with the game and set it was
  * identified in; `cycle` is the scan cycle it belongs to (see
- * ScanSession.fail). */
+ * ScanSession.fail). `autoAcceptCardId` (see core's `autoAcceptCardId`) is
+ * the best match's id when it's confident enough to accept without the user
+ * tapping it, otherwise null. */
 export interface Capture {
   game: Game;
   set: GameSet;
   cardCanvas: HTMLCanvasElement;
   identification: Identification;
   cycle: number;
+  autoAcceptCardId: string | null;
 }
 
 export interface ScanSessionEvents {
@@ -56,6 +60,9 @@ export interface ScanSessionEvents {
   /** Card candidates were found; the state becomes "captured" right after. */
   onCapture: (capture: Capture) => void;
   onDebugTrail: (entries: DebugEntry[]) => void;
+  /** One scan attempt's telemetry, batched into one call (only emitted
+   * while `debug` is on). */
+  onDetectionStat: (events: readonly DetectionStatEvent[]) => void;
 }
 
 /** The scan lifecycle: camera → detect → burst → flatten → identify, then the
@@ -203,7 +210,7 @@ export class ScanSession {
       return;
     }
     const { cardOrientation, game, set } = this.inputs();
-    const selected = selectFrameToFlatten(burst.accepted, preview.frame);
+    const { frame: selected, chosenIndex } = selectFrameToFlatten(burst.accepted, preview.frame);
     const cardCanvas = captureFlattenedCard(selected, cardOrientation);
 
     this.setState({ phase: "processing", message: "Identifying…" });
@@ -217,15 +224,48 @@ export class ScanSession {
       this.events.onDebugTrail(buildCaptureDebugTrail(preview, burst, selected, cardCanvas, identification.regions));
     }
     if (identification.set === null) {
+      if (debug) {
+        this.recordDetectionStats(identification, chosenIndex, "rescan-set-unreadable");
+      }
       this.beginScan(++this.scanCycle, "Couldn't read the set code — scanning again.");
       return;
     }
     if (!isConfidentMatch(identification.matches)) {
+      if (debug) {
+        this.recordDetectionStats(identification, chosenIndex, "rescan-number-not-confident");
+      }
       this.beginScan(++this.scanCycle, "Couldn't read the card number — scanning again.");
       return;
     }
-    this.events.onCapture({ game, set: identification.set, cardCanvas, identification, cycle });
+    if (debug) {
+      this.recordDetectionStats(identification, chosenIndex, "captured");
+    }
+    const autoAcceptCardIdResult = autoAcceptCardId(identification.matches, identification.collectorNumberConfidence);
+    // Set before emitting: an auto-accept calls back into scanNext()
+    // synchronously, which requires phase "captured".
     this.setState({ phase: "captured" });
+    this.events.onCapture({ game, set: identification.set, cardCanvas, identification, cycle, autoAcceptCardId: autoAcceptCardIdResult });
+  }
+
+  /** The scan outcome, the burst frame chosen, the collector number's row
+   * confidence, spike count, center-growth usage and Tesseract's own OCR
+   * confidence — all tagged with `outcome`, batched into one onDetectionStat
+   * call. */
+  private recordDetectionStats(identification: Identification, chosenIndex: number, outcome: ScanOutcome): void {
+    const { rows, columns } = identification.collectorNumberAnalysis;
+    const events: DetectionStatEvent[] = [
+      { metric: "outcomes", value: outcome },
+      { metric: "burstFrameChosen", outcome, value: chosenIndex },
+      { metric: "rowConfidenceRatio", outcome, value: rows.peakToBackgroundRatio },
+      { metric: "ocrConfidence", outcome, value: Math.floor(identification.collectorNumberConfidence / 10) * 10 },
+    ];
+    if (columns) {
+      events.push(
+        { metric: "spikeCount", outcome, value: columns.spikeCount },
+        { metric: "centerGrowthMerges", outcome, value: columns.mergedRunCount },
+      );
+    }
+    this.events.onDetectionStat(events);
   }
 
   private async captureDebugFrame(loop: DetectionLoop, cycle: number): Promise<void> {

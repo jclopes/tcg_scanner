@@ -1,13 +1,15 @@
 import {
   closestSetPrint,
   extractMatch,
+  joinScoredChars,
+  minConfidence,
   padRegion,
   prepareTextForOcr,
   rankCardIds,
   regionsFor,
   TEXT_SEARCH_PADDING_X_MM,
 } from "../core";
-import type { CardIdMatch, CardOrientation, ImageRegionConfig, TextRegionConfig } from "../core";
+import type { CardIdMatch, CardOrientation, ImageRegionConfig, ScoredChar, TextRegionConfig } from "../core";
 import type { Worker as TesseractWorker } from "tesseract.js";
 import type { AcceptedFrame } from "./frameDetection";
 import { COLLECTOR_NUMBER_REGION, SET_CODE_REGION } from "./gameConfig";
@@ -43,15 +45,22 @@ export type RegionCrop = TextRegionCrop | ImageRegionCrop;
 
 /** A text region's OCR: the preprocessed image Tesseract saw, what it read
  * (filtered to the allowed characters) and the part of that the region's
- * `extractRegex` keeps — the text identification uses. `skipped` when no
- * confident text crop was found — `read`/`text` are empty rather than a
- * misread of the raw search area. */
+ * `extractRegex` keeps — the text identification uses. `chars` is that kept
+ * part with each character's own confidence; `text`/`confidence` summarize
+ * it (`confidence` is `chars`' weakest, see `minConfidence`), but a caller
+ * that needs to adjust the reading once more context is known (e.g.
+ * identifyCard, for a set's unrecognizable collector-number prefix) needs the
+ * characters themselves. `skipped` when no confident text crop was found —
+ * `read`/`text`/`chars` are empty rather than a misread of the raw search
+ * area, and `confidence` is 0. */
 export interface RegionOcr {
   canvas: HTMLCanvasElement;
   inverted: boolean;
   read: string;
   text: string;
+  chars: ScoredChar[];
   skipped: boolean;
+  confidence: number;
 }
 
 /** A region's crop plus its OCR — always together, since only text regions
@@ -74,6 +83,11 @@ export interface Identification {
   /** The collector number's fitted crop, in color (the image OCR read, before
    * its grayscale preprocessing). */
   collectorNumberCrop: HTMLCanvasElement;
+  /** The collector number region's row/column analysis, for telemetry. */
+  collectorNumberAnalysis: TextCropAnalysis;
+  /** Tesseract's own confidence in its collector-number reading (see
+   * RegionOcr's `confidence`) — 0 when no confident crop was found to OCR. */
+  collectorNumberConfidence: number;
 }
 
 /** `set`'s collector numbers closest to the OCR'd one, best first. */
@@ -109,13 +123,17 @@ export async function identifyCard(
   const collectorNumber = textRegionResult(regions, COLLECTOR_NUMBER_REGION, game.id);
   const setCodeText = textRegionResult(regions, SET_CODE_REGION, game.id).ocr.text;
   const set = setChoice === "autodetect" ? closestSetPrint(setCodeText, game.sets) : setChoice;
+  const collectorNumberChars = trimToCollectorNumberLength(collectorNumber.ocr.chars, set);
+  const collectorNumberText = joinScoredChars(collectorNumberChars);
   return {
     regions,
-    collectorNumberText: collectorNumber.ocr.text,
+    collectorNumberText,
     setCodeText,
     set,
-    matches: set === null ? [] : suggestCardIds(collectorNumber.ocr.text, set),
+    matches: set === null ? [] : suggestCardIds(collectorNumberText, set),
     collectorNumberCrop: collectorNumber.crop.canvas ?? collectorNumber.crop.searchCanvas,
+    collectorNumberAnalysis: collectorNumber.crop.analysis,
+    collectorNumberConfidence: minConfidence(collectorNumberChars),
   };
 }
 
@@ -124,7 +142,7 @@ export async function identifyCard(
 function extractTextRegion(frame: AcceptedFrame, cardOrientation: CardOrientation, region: TextRegionConfig): TextRegionCrop {
   const searchRegion = padRegion(region, { xMm: TEXT_SEARCH_PADDING_X_MM, yMm: region.searchPaddingYMm });
   const searchCanvas = warpRegion(frame, cardOrientation, searchRegion);
-  const { canvas, analysis } = fitCropToText(searchCanvas, region.maxGapTextHeights);
+  const { canvas, analysis } = fitCropToText(searchCanvas);
   return { region: searchRegion, searchCanvas, analysis, canvas };
 }
 
@@ -137,15 +155,63 @@ async function recognizeCrop(
 ): Promise<RegionOcr> {
   const { gray, inverted } = prepareTextForOcr(canvasPixels(canvas));
   const prepared = grayscaleToCanvas(gray);
-  const read = await recognizeRegion(worker, prepared, region.allowedChars);
-  return { canvas: prepared, inverted, read, text: extractMatch(read, region.extractRegex), skipped: false };
+  const filtered = await recognizeRegion(worker, prepared, region.allowedChars);
+  const matched = extractMatch(filtered, region.extractRegex);
+  return {
+    canvas: prepared,
+    inverted,
+    read: joinScoredChars(filtered),
+    text: joinScoredChars(matched),
+    chars: matched,
+    skipped: false,
+    confidence: minConfidence(matched),
+  };
 }
 
 /** No confident text crop was found: skip Tesseract rather than guess on the
  * raw search area, so downstream matching sees "" (no match) instead of a
  * misread. `canvas` is the raw search area, for the debug trail. */
 function skippedOcr(searchCanvas: HTMLCanvasElement): RegionOcr {
-  return { canvas: searchCanvas, inverted: false, read: "", text: "", skipped: true };
+  return { canvas: searchCanvas, inverted: false, read: "", text: "", chars: [], skipped: true, confidence: 0 };
+}
+
+/** `chars` trimmed to at most as many trailing characters as `set`'s
+ * collector numbers *typically* have after their declared prefix (see
+ * GameSet.collectorNumberPrefix) — drops however many leading characters OCR
+ * produced for that prefix's unrecognizable glyph (could be 0, 1, or more:
+ * Tesseract's `eng` model can't output it, so it's filtered away entirely
+ * when its own guess isn't itself an allowed character, or kept as a
+ * low-confidence stand-in otherwise). Unchanged when `set` is null
+ * (Autodetect read no set code), it has no prefix, or `chars` already fits. */
+export function trimToCollectorNumberLength(chars: readonly ScoredChar[], set: GameSet | null): ScoredChar[] {
+  if (set === null || set.collectorNumberPrefix === "") {
+    return [...chars];
+  }
+  const numberLength = modalNumberLength(set.collectorNumbers, set.collectorNumberPrefix.length);
+  return chars.length > numberLength ? chars.slice(chars.length - numberLength) : [...chars];
+}
+
+/** The most common length `collectorNumbers`' entries have once `prefixLength`
+ * characters are dropped from each — most sets are uniformly zero-padded
+ * (e.g. "001".."298"), but a handful of real entries vary (e.g. Cyberpunk's
+ * "005a"/"005b"), so this picks the length that actually represents the set
+ * rather than requiring every entry to match (see parseSet, which doesn't
+ * enforce uniformity for the same reason). */
+function modalNumberLength(collectorNumbers: readonly string[], prefixLength: number): number {
+  const counts = new Map<number, number>();
+  for (const id of collectorNumbers) {
+    const length = id.length - prefixLength;
+    counts.set(length, (counts.get(length) ?? 0) + 1);
+  }
+  let modalLength = 0;
+  let modalCount = -1;
+  for (const [length, count] of counts) {
+    if (count > modalCount) {
+      modalLength = length;
+      modalCount = count;
+    }
+  }
+  return modalLength;
 }
 
 /** The result of the text region `label`, which parseGameOption guarantees. */

@@ -57,10 +57,14 @@ export async function collectBurstFrames(
   return { accepted, debugFrames };
 }
 
-/** The best accepted burst frame, or `fallback` if the burst accepted none. */
-export function selectFrameToFlatten(accepted: readonly AcceptedFrame[], fallback: AcceptedFrame): AcceptedFrame {
-  const candidates = accepted.length > 0 ? accepted : [fallback];
-  return selectBestFrame(candidates.map(toFrameCandidate), STANDARD_CARD_ASPECT_RATIO);
+/** The best accepted burst frame, or `fallback` if the burst accepted none;
+ * `chosenIndex` is its 1-based position among those candidates, for
+ * telemetry on whether collecting more than one frame ever matters. */
+export function selectFrameToFlatten(accepted: readonly AcceptedFrame[], fallback: AcceptedFrame): { frame: AcceptedFrame; chosenIndex: number } {
+  const source = accepted.length > 0 ? accepted : [fallback];
+  const candidates = source.map(toFrameCandidate);
+  const frame = selectBestFrame(candidates, STANDARD_CARD_ASPECT_RATIO);
+  return { frame, chosenIndex: candidates.indexOf(frame) + 1 };
 }
 
 function toFrameCandidate(frame: AcceptedFrame): AcceptedFrame & FrameCandidate {

@@ -3,9 +3,12 @@ import {
   TEXT_BAND_ENERGY_THRESHOLD_FRACTION,
   TEXT_BAND_MARGIN_FRACTION,
   TEXT_BAND_MIN_PEAK_TO_BACKGROUND,
-  TEXT_COLUMN_ENERGY_THRESHOLD_FRACTION,
-  TEXT_COLUMN_MARGIN_TEXT_HEIGHTS,
+  TEXT_COLUMN_BACKGROUND_THRESHOLD_FRACTION,
+  TEXT_COLUMN_BRIGHTNESS_WEIGHT,
+  TEXT_COLUMN_EDGE_MARGIN_TEXT_HEIGHTS,
   TEXT_COLUMN_REFERENCE_PERCENTILE,
+  TEXT_COLUMN_SPIKE_FRACTION,
+  TEXT_COLUMN_SPIKE_RISE_FRACTION,
   TEXT_RUN_SIGNIFICANCE_FRACTION,
 } from "./constants";
 import type { GrayscalePixels } from "./types";
@@ -34,30 +37,26 @@ export interface TextRowAnalysis {
   /** `band` plus margin, kept between the nearest horizontal lines around it;
    * `null` exactly when `band` is. */
   crop: RowBand | null;
+  /** The strongest row's energy over the median (background) row's — how far
+   * above TEXT_BAND_MIN_PEAK_TO_BACKGROUND the peak reached. 0 when the
+   * profile is empty or flat. For telemetry: how much headroom a band (or a
+   * near-miss) has over the pass/fail line. */
+  peakToBackgroundRatio: number;
 }
 
 /** The rows to crop a search area to: the run around the strongest
  * glyph-stroke row (if it stands out from the median by
- * `minPeakToBackground`, TEXT_BAND_MIN_PEAK_TO_BACKGROUND by default — pass
- * TEXT_BAND_FALLBACK_MIN_PEAK_TO_BACKGROUND to retry leniently once that
- * fails, or call `retryTextRows` to do so without rescanning `pixels`), plus
- * a margin that stops at strong horizontal lines (e.g. a badge border). */
-export function analyzeTextRows(pixels: GrayscalePixels, minPeakToBackground = TEXT_BAND_MIN_PEAK_TO_BACKGROUND): TextRowAnalysis {
-  return findRowBand(rowGradientProfile(pixels), rowEdgeProfile(pixels), pixels.height, minPeakToBackground);
-}
-
-/** `analyzeTextRows` against `previous`'s already-computed profiles instead
- * of rescanning the pixels — for a lenient retry once the strict pass finds
- * no band, which only needs the threshold re-applied to the same gradients. */
-export function retryTextRows(previous: TextRowAnalysis, height: number, minPeakToBackground: number): TextRowAnalysis {
-  return findRowBand(previous.textProfile, previous.lineProfile, height, minPeakToBackground);
-}
-
-function findRowBand(textProfile: number[], lineProfile: number[], height: number, minPeakToBackground: number): TextRowAnalysis {
+ * TEXT_BAND_MIN_PEAK_TO_BACKGROUND), plus a margin that stops at strong
+ * horizontal lines (e.g. a badge border). A weak peak is still returned here
+ * — `analyzeTextColumns`'s `spikeCount` is the real confidence check, since a
+ * row peak alone can't tell real text from a single decorative feature. */
+export function analyzeTextRows(pixels: GrayscalePixels): TextRowAnalysis {
+  const textProfile = rowGradientProfile(pixels);
+  const lineProfile = rowEdgeProfile(pixels);
   const backgroundLineThreshold = HORIZONTAL_LINE_MIN_ENERGY_TO_BACKGROUND * median(lineProfile);
-  const found = findBand(textProfile, minPeakToBackground);
+  const found = findBand(textProfile);
 
-  if (!found) {
+  if (!found.band) {
     return {
       textProfile,
       textThreshold: 0,
@@ -65,13 +64,14 @@ function findRowBand(textProfile: number[], lineProfile: number[], height: numbe
       lineThreshold: backgroundLineThreshold,
       band: null,
       crop: null,
+      peakToBackgroundRatio: found.peakToBackgroundRatio,
     };
   }
 
   const lettersEdgeMax = Math.max(0, ...lineProfile.slice(found.band.top, found.band.bottom));
   const lineThreshold = Math.max(backgroundLineThreshold, lettersEdgeMax);
-  const bounds = lineBounds(lineProfile, lineThreshold, found.band, height);
-  const margined = withMargin(found.band, height);
+  const bounds = lineBounds(lineProfile, lineThreshold, found.band, pixels.height);
+  const margined = withMargin(found.band, pixels.height);
   return {
     textProfile,
     textThreshold: found.threshold,
@@ -79,6 +79,7 @@ function findRowBand(textProfile: number[], lineProfile: number[], height: numbe
     lineThreshold,
     band: found.band,
     crop: { top: Math.max(margined.top, bounds.top), bottom: Math.min(margined.bottom, bounds.bottom) },
+    peakToBackgroundRatio: found.peakToBackgroundRatio,
   };
 }
 
@@ -91,74 +92,114 @@ export interface ColumnBand {
 /** Everything `analyzeTextColumns` measured, including the profile for the
  * debug plot. */
 export interface TextColumnAnalysis {
-  /** Per column: mean |horizontal| + |vertical| gradient over the text rows. */
+  /** Per column: mean |horizontal| + |vertical| gradient over the text rows,
+   * plus a weighted brightness-sum term (see TEXT_COLUMN_BRIGHTNESS_WEIGHT)
+   * — a glyph is both an edge and a color departure from its surroundings. */
   profile: number[];
   /** Columns above this count as text. */
   threshold: number;
-  /** The text line's columns plus margin, or `null` when the rows hold no
-   * stroke energy at all. */
+  /** The text's columns, found by searching inward from each edge for a
+   * significant spike (see `spikeEdges`) and cropping at the bottom of the
+   * dip right before it, or `null` when the search area holds no stroke
+   * energy at all. */
   crop: ColumnBand | null;
-  /** The chosen run cluster's significant-spike count (see `spikeCount`), 0
-   * when `crop` is null — how confidently it looks like several character
-   * strokes rather than one solid feature; used to gate a lenient fallback
-   * band (see `analyzeFallbackBand`). */
+  /** How many comparable character strokes (see `spikeCount`) the crop
+   * holds, 0 when `crop` is null — how confidently it looks like several
+   * characters rather than one solid feature; `fitCropToText` requires at
+   * least TEXT_MIN_SPIKES before trusting the crop. */
   spikeCount: number;
+  /** How many runs of above-threshold columns (see `aboveThresholdRuns`) the
+   * crop holds, minus 1; 0 when `crop` is null or holds at most one. For
+   * telemetry: how many separate characters the crop actually spans. */
+  mergedRunCount: number;
 }
 
-/** The text line's columns within rows `band`: the run closest to the search
- * area's horizontal center, with neighbors absorbed outward while the gap to
- * each stays within `maxGapTextHeights` — the region's box is centered on its
- * text, with equal padding both sides (see `extractTextRegion`), so growing
- * from the middle finds the ID's characters without being pulled toward a
- * stronger but off-center feature (e.g. a watermark). Plus a margin. */
-export function analyzeTextColumns(
-  pixels: GrayscalePixels,
-  band: RowBand,
-  maxGapTextHeights: number,
-): TextColumnAnalysis {
-  const profile = columnStrokeProfile(pixels, band);
-  const threshold = TEXT_COLUMN_ENERGY_THRESHOLD_FRACTION * percentile(profile, TEXT_COLUMN_REFERENCE_PERCENTILE);
-  const runs = aboveThresholdRuns(profile, threshold);
-  if (runs.length === 0) {
-    return { profile, threshold, crop: null, spikeCount: 0 };
+/** The text's columns: searching inward from the search area's left edge,
+ * then separately from its right edge, for the first significant spike (see
+ * `spikeEdges`) — a column whose stroke+brightness energy both nears the
+ * strongest real character elsewhere in the search area and rose there from
+ * a genuine dip or decay, not from already being high at the edge. Each
+ * side's crop point is the bottom of that dip, right before the spike. */
+export function analyzeTextColumns(pixels: GrayscalePixels, band: RowBand): TextColumnAnalysis {
+  const textHeight = band.bottom - band.top;
+  const bandCrop = cropToRows(pixels, band);
+  const strokeProfile = columnStrokeProfile(bandCrop);
+  const brightnessProfile = columnBrightnessProfile(bandCrop);
+  const profile = strokeProfile.map((value, x) => value + TEXT_COLUMN_BRIGHTNESS_WEIGHT * brightnessProfile[x]!);
+  // Anchored to the profile's own deepest dip (the best estimate of true
+  // background here), not a flat fraction of the reference column — a
+  // genuinely weaker character (e.g. one OCR struggles with) still clears
+  // this without having to compete with the strongest characters' peak.
+  const backgroundLevel = Math.min(...profile);
+  const peakReference = percentile(profile, TEXT_COLUMN_REFERENCE_PERCENTILE);
+  const threshold = backgroundLevel + TEXT_COLUMN_BACKGROUND_THRESHOLD_FRACTION * (peakReference - backgroundLevel);
+
+  const marginPx = Math.round(TEXT_COLUMN_EDGE_MARGIN_TEXT_HEIGHTS * textHeight);
+  const crop = spikeEdges(profile, marginPx);
+  if (!crop) {
+    return { profile, threshold, crop: null, spikeCount: 0, mergedRunCount: 0 };
   }
 
-  const textHeight = band.bottom - band.top;
-  const text = runsAroundCenter(runs, pixels.width / 2, maxGapTextHeights * textHeight);
-  const left = text[0]!.left;
-  const right = text[text.length - 1]!.right;
-
-  // Profile column x spans pixels x and x+1, hence the +1 on the right.
-  const margin = Math.round(TEXT_COLUMN_MARGIN_TEXT_HEIGHTS * textHeight);
+  // Not what decided the crop (that's spikeEdges, above) — just a read on
+  // how many comparable character strokes ended up inside it, for
+  // `fitCropToText`'s confidence gate and telemetry.
+  const runsInCrop = aboveThresholdRuns(profile, threshold).filter((run) => run.left >= crop.left && run.right <= crop.right);
   return {
     profile,
     threshold,
-    crop: { left: Math.max(0, left - margin), right: Math.min(pixels.width, right + 1 + margin) },
-    spikeCount: spikeCount(profile, text),
+    crop,
+    spikeCount: runsInCrop.length === 0 ? 0 : spikeCount(profile, runsInCrop),
+    mergedRunCount: Math.max(0, runsInCrop.length - 1),
   };
 }
 
-/** The run of `runs` (left to right) closest to `center`, with its left and
- * right neighbors absorbed in turn while the gap to the next one is at most
- * `maxGap`. */
-function runsAroundCenter(runs: readonly ColumnBand[], center: number, maxGap: number): ColumnBand[] {
-  const distanceToCenter = (run: ColumnBand): number => (run.left > center ? run.left - center : center > run.right ? center - run.right : 0);
-  let seed = 0;
-  for (let i = 1; i < runs.length; i++) {
-    if (distanceToCenter(runs[i]!) < distanceToCenter(runs[seed]!)) {
-      seed = i;
-    }
+/** The text's left and right columns: scanning in from each edge of
+ * `profile` for the first `findSpike` match, each then cropped at the bottom
+ * of the dip right before it (see `valleyBottom`) — `null` when no spike is
+ * found from one side or the other (e.g. a uniform search area with no
+ * stroke energy at all). */
+function spikeEdges(profile: readonly number[], marginPx: number): ColumnBand | null {
+  // Columns within marginPx of either edge are excluded from the reference:
+  // a climb that hasn't turned over within view by the edge of the search
+  // area (e.g. glare or vignetting) shouldn't be able to set the scale every
+  // real character is judged against.
+  const interior = profile.slice(marginPx, Math.max(marginPx, profile.length - marginPx));
+  const candidateMax = Math.max(0, ...(interior.length > 0 ? interior : profile));
+  if (candidateMax <= 0) {
+    return null;
   }
 
-  let left = seed;
-  while (left > 0 && runs[left]!.left - runs[left - 1]!.right <= maxGap) {
-    left--;
+  const spikeThreshold = TEXT_COLUMN_SPIKE_FRACTION * candidateMax;
+  const riseThreshold = TEXT_COLUMN_SPIKE_RISE_FRACTION * candidateMax;
+  const leftSpike = findSpike(profile, spikeThreshold, riseThreshold, 1);
+  const rightSpike = findSpike(profile, spikeThreshold, riseThreshold, -1);
+  if (leftSpike === null || rightSpike === null) {
+    return null;
   }
-  let right = seed;
-  while (right < runs.length - 1 && runs[right + 1]!.left - runs[right]!.right <= maxGap) {
-    right++;
+  return {
+    left: valleyBottom(profile, 0, leftSpike, false),
+    // Profile column x spans pixels x and x+1, hence the +1 on the right.
+    right: valleyBottom(profile, rightSpike + 1, profile.length, true) + 1,
+  };
+}
+
+/** Scanning from the start (`direction` 1) or end (`direction` -1) of
+ * `profile`, the first index whose value clears `spikeThreshold` and has
+ * risen by at least `riseThreshold` from the lowest point seen so far in
+ * this scan — confirming a real dip or decay came before it, rather than
+ * this edge of the search area already starting high. `null` if the scan
+ * finds no such index. */
+function findSpike(profile: readonly number[], spikeThreshold: number, riseThreshold: number, direction: 1 | -1): number | null {
+  let runningMin = Infinity;
+  const start = direction === 1 ? 0 : profile.length - 1;
+  for (let x = start; x >= 0 && x < profile.length; x += direction) {
+    const value = profile[x]!;
+    if (value >= spikeThreshold && value - runningMin >= riseThreshold) {
+      return x;
+    }
+    runningMin = Math.min(runningMin, value);
   }
-  return runs.slice(left, right + 1);
+  return null;
 }
 
 /** `band` grown by TEXT_BAND_MARGIN_FRACTION of its height on each side,
@@ -171,16 +212,23 @@ function withMargin(band: RowBand, areaHeight: number): RowBand {
   };
 }
 
-/** The run of rows above the threshold around the profile's peak, or `null`
+/** The run of rows above the threshold around the profile's peak (`band` null
  * when the peak doesn't stand out from the median (background) row by at
- * least `minPeakToBackground`. */
-function findBand(profile: readonly number[], minPeakToBackground: number): { band: RowBand; threshold: number } | null {
+ * least TEXT_BAND_MIN_PEAK_TO_BACKGROUND), alongside that ratio itself —
+ * computed once here for both the pass/fail check and TextRowAnalysis's
+ * `peakToBackgroundRatio`. */
+function findBand(
+  profile: readonly number[],
+): { peakToBackgroundRatio: number; band: RowBand; threshold: number } | { peakToBackgroundRatio: number; band: null } {
   if (profile.length === 0) {
-    return null;
+    return { peakToBackgroundRatio: 0, band: null };
   }
   const max = Math.max(...profile);
-  if (max <= 0 || max < minPeakToBackground * median(profile)) {
-    return null;
+  const med = median(profile);
+  // A flat (all-background) profile has med 0: unbounded headroom, not none.
+  const peakToBackgroundRatio = max <= 0 ? 0 : med <= 0 ? Infinity : max / med;
+  if (peakToBackgroundRatio < TEXT_BAND_MIN_PEAK_TO_BACKGROUND) {
+    return { peakToBackgroundRatio, band: null };
   }
 
   const min = Math.min(...profile);
@@ -195,7 +243,7 @@ function findBand(profile: readonly number[], minPeakToBackground: number): { ba
   while (bottom < profile.length && profile[bottom]! > threshold) {
     bottom++;
   }
-  return { band: { top, bottom }, threshold };
+  return { peakToBackgroundRatio, band: { top, bottom }, threshold };
 }
 
 /** The rows between the nearest horizontal lines above and below `band` (line
@@ -245,22 +293,68 @@ function rowEdgeProfile({ data, width, height }: GrayscalePixels): number[] {
   });
 }
 
-/** Mean stroke energy of each column over the rows in `band`: horizontal plus
- * vertical gradient, so both upright and flat glyph strokes count. One fewer
- * entry than columns. */
-function columnStrokeProfile({ data, width, height }: GrayscalePixels, band: RowBand): number[] {
-  const rows = band.bottom - band.top;
+/** `pixels` restricted to `band`'s rows, zero-copy — the second crop every
+ * per-column measure operates on, so column detection never sees anything
+ * outside the detected text line. */
+function cropToRows({ data, width }: GrayscalePixels, band: RowBand): GrayscalePixels {
+  return { data: data.subarray(band.top * width, band.bottom * width), width, height: band.bottom - band.top };
+}
+
+/** Mean stroke energy of each column over `crop`'s rows: horizontal plus
+ * vertical gradient, so both upright and flat glyph strokes count. `crop` is
+ * already restricted to the text band (see `cropToRows`) rather than this
+ * function restricting which rows it visits itself, so the vertical gradient
+ * at the band's last row never leaks into whatever's just outside it (e.g.
+ * card art, another line) — that leak previously inflated some columns'
+ * energy for reasons unrelated to the band's own strokes. One fewer entry
+ * than columns. */
+function columnStrokeProfile({ data, width, height }: GrayscalePixels): number[] {
   return Array.from({ length: Math.max(0, width - 1) }, (_, x) => {
     let sum = 0;
-    for (let y = band.top; y < band.bottom; y++) {
+    for (let y = 0; y < height; y++) {
       const i = y * width + x;
       sum += Math.abs(data[i + 1]! - data[i]!);
       if (y + 1 < height) {
         sum += Math.abs(data[i + width]! - data[i]!);
       }
     }
-    return sum / rows;
+    return sum / height;
   });
+}
+
+/** Per column, the sum over `crop`'s rows of how far each pixel departs from
+ * the crop's own median brightness (the best single estimate of its
+ * background) — a background column sums close to 0, while a column with
+ * ink running through it (lighter or darker than the background) sums high.
+ * Same length as `columnStrokeProfile`'s result, not one shorter: every
+ * column has a brightness, unlike a between-column gradient. */
+function columnBrightnessProfile({ data, width, height }: GrayscalePixels): number[] {
+  const backgroundLevel = median(Array.from(data));
+  return Array.from({ length: width }, (_, x) => {
+    let sum = 0;
+    for (let y = 0; y < height; y++) {
+      sum += Math.abs(data[y * width + x]! - backgroundLevel);
+    }
+    return sum;
+  });
+}
+
+/** The index of `profile`'s lowest value in `[start, end)`. Ties break
+ * towards `end` when `awayFromTextIsLater` (the right-side search, where
+ * farther from the text is a larger index) and towards `start` otherwise
+ * (the left-side search) — either way, a flat (or equally low) background
+ * reaches all the way to the search window's far edge, the same reach as the
+ * old fixed margin, rather than snapping to the nearest point merely tied
+ * for lowest; a genuine single dip still wins outright since nothing past it
+ * is as low. */
+function valleyBottom(profile: readonly number[], start: number, end: number, awayFromTextIsLater: boolean): number {
+  let bottom = start;
+  for (let x = start; x < end; x++) {
+    if (awayFromTextIsLater ? profile[x]! <= profile[bottom]! : profile[x]! < profile[bottom]!) {
+      bottom = x;
+    }
+  }
+  return bottom;
 }
 
 /** Maximal runs of consecutive entries above `threshold`, left to right. */
@@ -285,14 +379,17 @@ function energyOf(profile: readonly number[], run: ColumnBand): number {
   return profile.slice(run.left, run.right).reduce((sum, value) => sum + value, 0);
 }
 
-/** How many of `group`'s runs have energy within TEXT_RUN_SIGNIFICANCE_FRACTION
- * of its strongest: character strokes read close to each other, while a solid
- * feature's incidental edge noise reads far weaker than its own bulk, so it
- * doesn't inflate the count. */
+/** How many of `group`'s runs have a per-column average energy within
+ * TEXT_RUN_SIGNIFICANCE_FRACTION of its strongest: a narrow character (e.g.
+ * "1") concentrates similar total energy into fewer columns than a wider one
+ * (e.g. "3"), so comparing per-column averages — not each run's total energy
+ * — doesn't let stroke width alone make a real character look weaker than
+ * another. A solid feature's incidental edge noise still reads far weaker per
+ * column than its own bulk, so it doesn't inflate the count. */
 function spikeCount(profile: readonly number[], group: readonly ColumnBand[]): number {
-  const energies = group.map((run) => energyOf(profile, run));
-  const strongest = Math.max(...energies);
-  return energies.filter((energy) => energy >= TEXT_RUN_SIGNIFICANCE_FRACTION * strongest).length;
+  const averages = group.map((run) => energyOf(profile, run) / (run.right - run.left));
+  const strongest = Math.max(...averages);
+  return averages.filter((average) => average >= TEXT_RUN_SIGNIFICANCE_FRACTION * strongest).length;
 }
 
 /** The value at fraction `p` (0-1) of the sorted values; 0 when empty. */

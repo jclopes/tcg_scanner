@@ -7,12 +7,10 @@ import {
   REGION_PX_PER_MM,
   regionOutputSize,
   regionWarpMatrix,
-  retryTextRows,
-  TEXT_BAND_FALLBACK_MIN_PEAK_TO_BACKGROUND,
-  TEXT_FALLBACK_MIN_SPIKES,
+  TEXT_MIN_SPIKES,
   warpPerspective,
 } from "../core";
-import type { CardOrientation, GrayscalePixels, RegionConfig, TextColumnAnalysis, TextRowAnalysis } from "../core";
+import type { CardOrientation, RegionConfig, TextColumnAnalysis, TextRowAnalysis } from "../core";
 import { canvasPixels, createCanvas, pixelsToCanvas, require2dContext } from "./canvasUtils";
 import type { AcceptedFrame } from "./frameDetection";
 import { orientationFromSize } from "./orientationWatcher";
@@ -34,23 +32,17 @@ export interface TextCropAnalysis {
 }
 
 /** Narrows a text region's search area to its text line, rows then columns
- * within them. When the strict row band isn't found, retries once with
- * `analyzeFallbackBand`. `canvas` is `null` — reject rather than guess —
- * whenever either stage doesn't resolve to a crop, columns included: a row
- * band with no confident columns is as unusable as no band at all. */
-export function fitCropToText(
-  searchCanvas: HTMLCanvasElement,
-  maxGapTextHeights: number,
-): { canvas: HTMLCanvasElement | null; analysis: TextCropAnalysis } {
+ * within them. `canvas` is `null` — reject rather than guess — unless a row
+ * band is found, its columns resolve to a crop, and that crop clears
+ * TEXT_MIN_SPIKES: a row peak or a column crop alone can't tell real text
+ * from a single decorative feature (e.g. a watermark). */
+export function fitCropToText(searchCanvas: HTMLCanvasElement): { canvas: HTMLCanvasElement | null; analysis: TextCropAnalysis } {
   const { width, height } = searchCanvas;
   const gray = extractGrayscaleRegion(canvasPixels(searchCanvas), { origin: { x: 0, y: 0 }, size: { width, height } });
-  const strictRows = analyzeTextRows(gray);
-  const { rows, columns } =
-    strictRows.band && strictRows.crop
-      ? { rows: strictRows, columns: analyzeTextColumns(gray, strictRows.band, maxGapTextHeights) }
-      : (analyzeFallbackBand(strictRows, height, gray, maxGapTextHeights) ?? { rows: strictRows, columns: null });
+  const rows = analyzeTextRows(gray);
+  const columns = rows.band ? analyzeTextColumns(gray, rows.band) : null;
 
-  if (!rows.crop || !columns?.crop) {
+  if (!rows.crop || !columns?.crop || columns.spikeCount < TEXT_MIN_SPIKES) {
     return { canvas: null, analysis: { rows, columns } };
   }
 
@@ -59,24 +51,4 @@ export function fitCropToText(
   const canvas = createCanvas({ width: right - left, height: bottom - top });
   require2dContext(canvas).drawImage(searchCanvas, left, top, right - left, bottom - top, 0, 0, right - left, bottom - top);
   return { canvas, analysis: { rows, columns } };
-}
-
-/** A provisional row band from TEXT_BAND_FALLBACK_MIN_PEAK_TO_BACKGROUND's
- * looser threshold — reapplied to `strictRows`'s already-computed profiles,
- * not rescanned from `gray` — accepted only once its columns resolve to at
- * least TEXT_FALLBACK_MIN_SPIKES comparable spikes — a single decorative
- * feature (e.g. a watermark) still won't pass. Null when neither the band nor
- * that confirmation holds. */
-function analyzeFallbackBand(
-  strictRows: TextRowAnalysis,
-  height: number,
-  gray: GrayscalePixels,
-  maxGapTextHeights: number,
-): { rows: TextRowAnalysis; columns: TextColumnAnalysis } | null {
-  const rows = retryTextRows(strictRows, height, TEXT_BAND_FALLBACK_MIN_PEAK_TO_BACKGROUND);
-  if (!rows.band || !rows.crop) {
-    return null;
-  }
-  const columns = analyzeTextColumns(gray, rows.band, maxGapTextHeights);
-  return columns.spikeCount >= TEXT_FALLBACK_MIN_SPIKES ? { rows, columns } : null;
 }

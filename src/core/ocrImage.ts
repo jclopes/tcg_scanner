@@ -7,15 +7,14 @@ import type { GrayscalePixels } from "./types";
 /** A text crop prepared for Tesseract: grayscale, inverted to dark-on-light
  * when needed, denoised. */
 export function prepareTextForOcr(rgba: RgbaPixelBuffer): { gray: GrayscalePixels; inverted: boolean } {
-  const { data, width, height } = extractGrayscaleRegion(rgba, {
+  const gray = extractGrayscaleRegion(rgba, {
     origin: { x: 0, y: 0 },
     size: { width: rgba.width, height: rgba.height },
   });
-  const gray = { data, width, height };
   const inverted = isLightTextOnDark(gray);
   if (inverted) {
-    for (let i = 0; i < data.length; i++) {
-      data[i] = 255 - data[i]!;
+    for (let i = 0; i < gray.data.length; i++) {
+      gray.data[i] = 255 - gray.data[i]!;
     }
   }
   return {

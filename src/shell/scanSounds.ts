@@ -24,9 +24,19 @@ const HEARTBEAT_TONES: readonly Tone[] = [
   { wave: "sine", delay: 0.28, duration: 0.14, attack: 0.035, frequency: 320, endFrequency: 230, gain: 0.08 },
 ];
 
-const PING_TONES: readonly Tone[] = [
-  { wave: "sine", delay: 0, duration: 0.12, attack: 0.015, frequency: 1320, endFrequency: 1320, gain: 0.18 },
-  { wave: "sine", delay: 0.1, duration: 0.25, attack: 0.015, frequency: 1760, endFrequency: 1760, gain: 0.18 },
+/** A short, sharp click standing in for a camera shutter. */
+const SHUTTER_TONES: readonly Tone[] = [
+  { wave: "square", delay: 0, duration: 0.03, attack: 0.001, frequency: 1800, endFrequency: 900, gain: 0.2 },
+];
+
+/** A struck fundamental plus two quieter, slightly inharmonic overtones (the
+ * ratios a small bell's partials roughly follow), all decaying together —
+ * what gives it a "bell" timbre instead of a flat tone. */
+const BELL_FUNDAMENTAL_HZ = 1180;
+const BELL_TONES: readonly Tone[] = [
+  { wave: "sine", delay: 0, duration: 0.9, attack: 0.004, frequency: BELL_FUNDAMENTAL_HZ, endFrequency: BELL_FUNDAMENTAL_HZ * 0.97, gain: 0.22 },
+  { wave: "sine", delay: 0, duration: 0.6, attack: 0.004, frequency: BELL_FUNDAMENTAL_HZ * 2.4, endFrequency: BELL_FUNDAMENTAL_HZ * 2.3, gain: 0.1 },
+  { wave: "sine", delay: 0, duration: 0.4, attack: 0.004, frequency: BELL_FUNDAMENTAL_HZ * 3.6, endFrequency: BELL_FUNDAMENTAL_HZ * 3.5, gain: 0.06 },
 ];
 
 /** Synthesized scan sounds, muted by the Settings "Sound" checkbox. */
@@ -56,20 +66,26 @@ export class ScanSounds {
     }
   }
 
+  /** A card was captured — a short camera-shutter click. */
   ping(): void {
-    this.play(PING_TONES);
+    this.play(SHUTTER_TONES);
+  }
+
+  /** For an auto-accepted capture — distinct from ping() so the user can
+   * tell, by ear, that no tap was needed. */
+  bell(): void {
+    this.play(BELL_TONES);
   }
 
   private play(tones: readonly Tone[]): void {
     if (!this.checkbox.checked) {
       return;
     }
-    if (!this.context) {
+    const context = this.context;
+    if (!context) {
       throw new Error("A scan sound played before ScanSounds.unlock().");
     }
-    for (const tone of tones) {
-      playTone(this.context, tone);
-    }
+    tones.forEach((tone) => playTone(context, tone));
   }
 }
 
@@ -80,12 +96,18 @@ function playTone(context: AudioContext, tone: Tone): void {
   oscillator.type = tone.wave;
   oscillator.frequency.setValueAtTime(tone.frequency, start);
   oscillator.frequency.exponentialRampToValueAtTime(tone.endFrequency, end);
-  const volume = context.createGain();
-  // Exponential ramps can't start from or reach 0, hence the near-silent ends.
-  volume.gain.setValueAtTime(0.0001, start);
-  volume.gain.exponentialRampToValueAtTime(tone.gain, start + tone.attack);
-  volume.gain.exponentialRampToValueAtTime(0.0001, end);
+  const volume = applyEnvelope(context, start, end, tone.attack, tone.gain);
   oscillator.connect(volume).connect(context.destination);
   oscillator.start(start);
   oscillator.stop(end);
+}
+
+/** A gain node ramping up from and back down to silence; exponential ramps
+ * can't start from or reach 0, hence the near-silent ends. */
+function applyEnvelope(context: AudioContext, start: number, end: number, attack: number, peak: number): GainNode {
+  const volume = context.createGain();
+  volume.gain.setValueAtTime(0.0001, start);
+  volume.gain.exponentialRampToValueAtTime(peak, start + attack);
+  volume.gain.exponentialRampToValueAtTime(0.0001, end);
+  return volume;
 }

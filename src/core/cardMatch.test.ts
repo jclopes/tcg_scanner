@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { closerSetPrints, closestSetPrint, findCardId, isConfidentMatch, levenshteinDistance, rankCardIds } from "./cardMatch";
+import { autoAcceptCardId, closerSetPrints, closestSetPrint, findCardId, isConfidentMatch, levenshteinDistance, rankCardIds } from "./cardMatch";
 
 describe("levenshteinDistance", () => {
   it("counts single-character substitutions, insertions and deletions", () => {
@@ -41,6 +41,23 @@ describe("isConfidentMatch", () => {
     expect(isConfidentMatch([{ id: "001", distance: 2 }, { id: "002", distance: 3 }])).toBe(true);
     expect(isConfidentMatch([{ id: "001", distance: 3 }])).toBe(false);
     expect(isConfidentMatch([])).toBe(false);
+  });
+});
+
+describe("autoAcceptCardId", () => {
+  it("accepts the best match's id when it's under 2 edits away and over 98% confident", () => {
+    expect(autoAcceptCardId([{ id: "001", distance: 1 }, { id: "002", distance: 3 }], 99)).toBe("001");
+    expect(autoAcceptCardId([{ id: "001", distance: 0 }], 100)).toBe("001");
+  });
+
+  it("is null when the distance or confidence falls short, even if isConfidentMatch would pass", () => {
+    expect(autoAcceptCardId([{ id: "001", distance: 2 }], 99)).toBeNull(); // distance not <= 1
+    expect(autoAcceptCardId([{ id: "001", distance: 1 }], 98)).toBeNull(); // confidence not > 98
+    expect(autoAcceptCardId([{ id: "001", distance: 1 }], 50)).toBeNull();
+  });
+
+  it("is null when there are no matches", () => {
+    expect(autoAcceptCardId([], 100)).toBeNull();
   });
 });
 

@@ -8,3 +8,6 @@ dist/
 
 # Raw card dump that riftbound/sets.json was derived from; not bundled.
 /src/data/games/riftbound/riftbound_cards_detailed.json
+
+# Ad hoc debug/validation card captures; not read by any source or test file.
+/src/data/screenshot/

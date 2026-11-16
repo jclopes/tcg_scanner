@@ -23,10 +23,6 @@ export interface TextRegionConfig extends RegionBox {
   /** The part of the filtered OCR text that is the region's value: its first
    * match (see `extractMatch`), e.g. `"^[^/]+"` keeps "001" of "001/298". */
   extractRegex: string;
-  /** The largest gap between runs of characters, in text heights, still
-   * counted as the same line (see analyzeTextColumns). Tight for a single
-   * word, wider for text with spaces. */
-  maxGapTextHeights: number;
   /** Padding above and below the box that forms its search area (see
    * padRegion). Tight when another text line sits just above or below, which
    * the text-row search would otherwise pick instead. */
@@ -82,12 +78,40 @@ export function padRegion<T extends RegionConfig>(region: T, padding: { xMm: num
   };
 }
 
-/** Keeps only the characters of `raw` that are in `allowedChars`, in order. */
-export function filterAllowedChars(raw: string, allowedChars: string): string {
-  return [...raw].filter((char) => allowedChars.includes(char)).join("");
+/** One recognized character together with the OCR engine's confidence in it
+ * (0-100) — carried through filtering and extraction so a region's final
+ * value keeps exactly the confidences of the characters still in it, not a
+ * score over the whole raw reading (which may include characters later
+ * discarded). `confidence` is `null` for a character that wasn't itself OCR'd
+ * (e.g. a space inferred from word boundaries) — `minConfidence` skips it
+ * rather than treating "not applicable" as "maximally confident". */
+export interface ScoredChar {
+  char: string;
+  confidence: number | null;
 }
 
-/** The first match of `extractRegex` in `text`, or "" when there is none. */
-export function extractMatch(text: string, extractRegex: string): string {
-  return text.match(new RegExp(extractRegex))?.[0] ?? "";
+/** `chars`' characters joined back into a plain string. */
+export function joinScoredChars(chars: readonly ScoredChar[]): string {
+  return chars.map((c) => c.char).join("");
+}
+
+/** The weakest OCR'd character's confidence in `chars` (characters with no
+ * confidence, e.g. inferred spaces, don't count) — not a mean, since one
+ * weak character should doom the whole read rather than be diluted by its
+ * stronger neighbors. 0 when empty or nothing in it was actually OCR'd. */
+export function minConfidence(chars: readonly ScoredChar[]): number {
+  const confidences = chars.map((c) => c.confidence).filter((c) => c !== null);
+  return confidences.length === 0 ? 0 : Math.min(...confidences);
+}
+
+/** Keeps only the characters of `raw` that are in `allowedChars`, in order. */
+export function filterAllowedChars(raw: readonly ScoredChar[], allowedChars: string): ScoredChar[] {
+  return raw.filter(({ char }) => allowedChars.includes(char));
+}
+
+/** The first match of `extractRegex` against `raw`'s joined text, as the
+ * corresponding slice of `raw` — empty when there is none. */
+export function extractMatch(raw: readonly ScoredChar[], extractRegex: string): ScoredChar[] {
+  const match = joinScoredChars(raw).match(new RegExp(extractRegex));
+  return match && match.index !== undefined ? raw.slice(match.index, match.index + match[0].length) : [];
 }

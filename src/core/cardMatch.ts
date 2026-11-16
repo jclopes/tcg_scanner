@@ -1,6 +1,6 @@
 // Pure fuzzy matching of OCR'd card text against a set's known card IDs.
 
-import { MAX_CONFIDENT_MATCH_DISTANCE } from "./constants";
+import { AUTO_ACCEPT_MAX_DISTANCE, AUTO_ACCEPT_MIN_CONFIDENCE, MAX_CONFIDENT_MATCH_DISTANCE } from "./constants";
 
 /** One candidate ID ranked against the OCR'd text: `distance` is the edit
  * distance between them (0 = exact match). */
@@ -37,6 +37,18 @@ function boundaryRank(ocrText: string, id: string): number {
 export function isConfidentMatch(matches: readonly CardIdMatch[]): boolean {
   const best = matches[0];
   return best !== undefined && best.distance <= MAX_CONFIDENT_MATCH_DISTANCE;
+}
+
+/** The best of `matches`' id, if it's close enough (AUTO_ACCEPT_MAX_DISTANCE)
+ * and `confidence` (see `minConfidence`) high enough (AUTO_ACCEPT_MIN_CONFIDENCE)
+ * to accept without the user tapping it — null otherwise, including when
+ * there are no matches. */
+export function autoAcceptCardId(matches: readonly CardIdMatch[], confidence: number): string | null {
+  const best = matches[0];
+  if (best === undefined || best.distance > AUTO_ACCEPT_MAX_DISTANCE || confidence <= AUTO_ACCEPT_MIN_CONFIDENCE) {
+    return null;
+  }
+  return best.id;
 }
 
 /** The sets whose printed code the OCR'd set code is closer to than the

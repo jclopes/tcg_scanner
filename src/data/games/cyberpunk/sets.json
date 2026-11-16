@@ -172,13 +172,17 @@
       "165",
       "166",
       "167",
-      "168"
+      "168",
+      "169",
+      "170",
+      "171"
     ]
   },
   {
     "code": "welcometonightcitybeta",
     "print": "MS01 - WNC [A]",
     "name": "Welcome to Night City — Beta",
+    "collector_number_prefix": "β",
     "collector_numbers": [
       "β001",
       "β002",
@@ -639,6 +643,7 @@
     "code": "embracingpowerbetastarterdeck",
     "print": "SD02 - EBP [A]",
     "name": "Embracing Power — Beta Starter Deck",
+    "collector_number_prefix": "β",
     "collector_numbers": [
       "β001",
       "β002",
@@ -700,6 +705,7 @@
     "code": "boxtoppersbeta",
     "print": "PRM - WNC [A]",
     "name": "Box Toppers — Beta",
+    "collector_number_prefix": "β",
     "collector_numbers": [
       "β001",
       "β002",
@@ -784,6 +790,7 @@
     "code": "theheistbetastarterdeck",
     "print": "SD01 - HEI [A]",
     "name": "The Heist — Beta Starter Deck",
+    "collector_number_prefix": "β",
     "collector_numbers": [
       "β001",
       "β002",

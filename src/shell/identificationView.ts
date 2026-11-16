@@ -10,6 +10,9 @@ export interface IdentificationViewElements {
   /** The set dropdown's row, which keeps its space when hidden. */
   setRow: HTMLElement;
   setSelect: HTMLSelectElement;
+  /** Tesseract's own confidence in the collector-number reading — the same
+   * value regardless of which match is picked, so shown once, not per button. */
+  confidence: HTMLElement;
   matches: HTMLElement;
 }
 
@@ -42,6 +45,8 @@ export class IdentificationView {
     this.elements.setSelect.replaceChildren(...sets.map((s) => optionElement(s.code, s.name)));
     this.elements.setSelect.value = set.code;
     this.elements.setRow.hidden = false;
+    this.elements.confidence.hidden = false;
+    this.elements.confidence.textContent = `OCR confidence: ${Math.round(identification.collectorNumberConfidence)}%`;
     this.render(sets, identification, set);
   }
 
@@ -50,6 +55,7 @@ export class IdentificationView {
     this.rendered = null;
     this.elements.setRow.hidden = true;
     this.elements.setSelect.replaceChildren();
+    this.elements.confidence.hidden = true;
     this.showWarning(null);
     this.elements.matches.replaceChildren();
   }

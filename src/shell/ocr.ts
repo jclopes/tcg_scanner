@@ -1,6 +1,7 @@
 import { createWorker, PSM } from "tesseract.js";
-import type { Worker as TesseractWorker } from "tesseract.js";
+import type { Page as TesseractPage, Worker as TesseractWorker } from "tesseract.js";
 import { filterAllowedChars } from "../core";
+import type { ScoredChar } from "../core";
 
 /**
  * A Tesseract.js worker that loads its script, WASM core and English data
@@ -65,19 +66,56 @@ function tesseractWhitelistFor(allowedChars: string): string {
  * OCRs one upright text region, filtered to `allowedChars`. They're also
  * Tesseract's whitelist (worker-wide, so set per region), which keeps
  * misreads within them. SINGLE_LINE because SINGLE_WORD and RAW_LINE misread
- * the first character on real captures.
+ * the first character on real captures. Returns each kept character with
+ * Tesseract's own confidence in it (0-100: its internal certainty, not a
+ * calibrated probability of being correct — and narrowing `allowedChars`
+ * tends to inflate it, since it removes hypotheses Tesseract would otherwise
+ * be weighing) — a caller that narrows further (e.g. `extractMatch`, to only
+ * part of the reading) keeps the confidence of exactly the characters it uses.
  */
 export async function recognizeRegion(
   worker: TesseractWorker,
   regionCanvas: HTMLCanvasElement,
   allowedChars: string,
-): Promise<string> {
+): Promise<ScoredChar[]> {
   await worker.setParameters({
     tessedit_pageseg_mode: PSM.SINGLE_LINE,
     tessedit_char_whitelist: tesseractWhitelistFor(allowedChars),
   });
-  const {
-    data: { text },
-  } = await worker.recognize(regionCanvas);
-  return filterAllowedChars(text.trim(), allowedChars);
+  // blocks defaults to false — symbol-level confidence only comes with it.
+  const { data } = await worker.recognize(regionCanvas, {}, { blocks: true });
+  return filterAllowedChars(trimScoredChars(symbolChars(data)), allowedChars);
+}
+
+/** `page`'s recognized characters in reading order, each with its own
+ * confidence — a space (`confidence: null`: it's inferred from word
+ * boundaries, not itself recognized, so it's excluded from `minConfidence`
+ * rather than counted as a maximally-confident character) is inserted
+ * between words so multi-word regions (e.g. a set code's "MS01 - WNC [A]")
+ * read back correctly. */
+function symbolChars(page: TesseractPage): ScoredChar[] {
+  const words = (page.blocks ?? []).flatMap((b) => b.paragraphs).flatMap((p) => p.lines).flatMap((l) => l.words);
+  const chars: ScoredChar[] = [];
+  for (const word of words) {
+    if (chars.length > 0) {
+      chars.push({ char: " ", confidence: null });
+    }
+    for (const symbol of word.symbols) {
+      chars.push({ char: symbol.text, confidence: symbol.confidence });
+    }
+  }
+  return chars;
+}
+
+/** `chars` with leading and trailing whitespace characters dropped. */
+function trimScoredChars(chars: readonly ScoredChar[]): ScoredChar[] {
+  let start = 0;
+  let end = chars.length;
+  while (start < end && /\s/.test(chars[start]!.char)) {
+    start++;
+  }
+  while (end > start && /\s/.test(chars[end - 1]!.char)) {
+    end--;
+  }
+  return chars.slice(start, end);
 }

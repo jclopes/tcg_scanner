@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS, TEXT_BAND_MARGIN_FRACTION, TEXT_COLUMN_MARGIN_TEXT_HEIGHTS } from "./constants";
+import { TEXT_BAND_MARGIN_FRACTION } from "./constants";
 import { analyzeTextColumns, analyzeTextRows } from "./textBand";
 import type { GrayscalePixels } from "./types";
 
@@ -85,12 +85,14 @@ describe("analyzeTextRows", () => {
   });
 });
 
-/** A 200 x 30 white image with text rows [10, 20): each glyph is a block of
- * 1px vertical bars of `ink` (default black) covering the columns
- * `[left, right)`. */
+/** A 200 x 30 white image with text rows [10, 20): each block is 1px
+ * vertical bars of `ink` (default black) covering the columns
+ * `[left, right)` — a weaker (lighter `ink`) block stands in for a glyph OCR
+ * finds harder to read, still real text but with less stroke contrast. */
 function glyphs(blocks: readonly { left: number; right: number; ink?: number }[]): GrayscalePixels {
   const width = 200;
-  const data = new Uint8ClampedArray(width * 30).fill(255);
+  const height = 30;
+  const data = new Uint8ClampedArray(width * height).fill(255);
   for (const { left, right, ink = 0 } of blocks) {
     for (let y = 10; y < 20; y++) {
       for (let x = left; x < right; x += 2) {
@@ -98,63 +100,77 @@ function glyphs(blocks: readonly { left: number; right: number; ink?: number }[]
       }
     }
   }
-  return { data, width, height: 30 };
+  return { data, width, height };
 }
 
 describe("analyzeTextColumns", () => {
   const band = { top: 10, bottom: 20 };
-  const margin = Math.round(TEXT_COLUMN_MARGIN_TEXT_HEIGHTS * 10);
 
-  it("spans all glyphs of a line, including word gaps, plus the margin", () => {
-    // Glyph gaps of 4px and a word gap of 12px (1.2 text heights).
+  it("crops at the search area's own edges when a glyph has nothing else to stop at", () => {
+    // Pure background on both sides all the way out, so there's no nearer
+    // dip than the edges themselves to crop at.
+    const analysis = analyzeTextColumns(glyphs([{ left: 40, right: 48 }]), band);
+    expect(analysis.crop).toEqual({ left: 0, right: 199 });
+  });
+
+  it("spans from the first to the last strong character, regardless of the gap between them", () => {
+    // No merge-distance limit any more: each side is found independently by
+    // scanning in from its own edge, so a wide gap between characters
+    // doesn't split them.
     const analysis = analyzeTextColumns(
       glyphs([
         { left: 40, right: 48 },
-        { left: 52, right: 60 },
-        { left: 72, right: 80 },
+        { left: 120, right: 128 },
       ]),
       band,
-      DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
     );
-    // Profile column 39 holds the transition into the first bar at pixel 40.
-    expect(analysis.crop).toEqual({ left: 39 - margin, right: 80 + margin });
+    expect(analysis.mergedRunCount).toBe(1);
+    expect(analysis.spikeCount).toBe(2);
   });
 
-  it("leaves out a feature further away than the maximum gap", () => {
-    const analysis = analyzeTextColumns(
-      glyphs([
-        { left: 4, right: 8, ink: 120 },
-        { left: 60, right: 90 },
-      ]),
-      band,
-      DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
-    );
-    expect(analysis.crop).toEqual({ left: 59 - margin, right: 90 + margin });
+  it("doesn't let a climb that never turns over within view (e.g. glare) set the reference strength", () => {
+    const image = glyphs([{ left: 90, right: 98 }]);
+    // A smooth climb toward the right edge, reaching higher than the real
+    // text but never peaking and falling within the search area.
+    for (let y = 10; y < 20; y++) {
+      for (let x = 150; x < 200; x++) {
+        image.data[y * image.width + x] = Math.max(0, 255 - Math.round((x - 150) * 6));
+      }
+    }
+    const analysis = analyzeTextColumns(image, band);
+    // Crops right before the climb starts, not at the array's own edge and
+    // not fooled into thinking the climb is the real text.
+    expect(analysis.crop).toEqual({ left: 0, right: 150 });
   });
 
-  it("leaves out a nearby feature when the region's maximum gap is tighter", () => {
-    // Gap of 8px = 0.8 text heights: within the default, beyond a single-word 0.5.
-    const blocks = [
-      { left: 42, right: 46, ink: 120 },
-      { left: 54, right: 90 },
-    ];
-    expect(analyzeTextColumns(glyphs(blocks), band, DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS).crop?.left).toBe(41 - margin);
-    expect(analyzeTextColumns(glyphs(blocks), band, 0.5).crop?.left).toBe(53 - margin);
-  });
-
-  it("picks the text over a stronger but narrow feature far away (e.g. the card's edge)", () => {
-    const analysis = analyzeTextColumns(
-      glyphs([
-        { left: 20, right: 100, ink: 150 },
-        { left: 180, right: 184 },
-      ]),
-      band,
-      DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
-    );
-    expect(analysis.crop).toEqual({ left: 19 - margin, right: 100 + margin });
+  it("still scores a solid-filled glyph's interior, where it has no gradient of its own, by its brightness", () => {
+    // A flat-filled block (unlike glyphs()'s alternating bars) has gradient
+    // only at its own left/right edges; its interior is otherwise
+    // indistinguishable from background by gradient alone.
+    const width = 200;
+    const data = new Uint8ClampedArray(width * 30).fill(255);
+    for (let y = 10; y < 20; y++) {
+      for (let x = 50; x < 90; x++) {
+        data[y * width + x] = 150;
+      }
+    }
+    const analysis = analyzeTextColumns({ data, width, height: 30 }, band);
+    expect(analysis.profile[70]).toBeGreaterThan(0);
   });
 
   it("finds no columns when the rows are blank", () => {
-    expect(analyzeTextColumns(glyphs([]), band, DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS).crop).toBeNull();
+    expect(analyzeTextColumns(glyphs([]), band).crop).toBeNull();
+  });
+
+  it("isn't affected by content just outside the band (e.g. a border just below the text line)", () => {
+    const withoutBorder = glyphs([{ left: 40, right: 48 }]);
+    const withBorder = glyphs([{ left: 40, right: 48 }]);
+    // A strong horizontal feature one row below the band: before cropping to
+    // the band first, this leaked into the last band row's vertical
+    // gradient and could inflate columns for reasons unrelated to the text.
+    for (let x = 0; x < withBorder.width; x++) {
+      withBorder.data[band.bottom * withBorder.width + x] = 0;
+    }
+    expect(analyzeTextColumns(withBorder, band).profile).toEqual(analyzeTextColumns(withoutBorder, band).profile);
   });
 });

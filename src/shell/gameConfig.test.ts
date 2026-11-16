@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS, DEFAULT_TEXT_EXTRACT_REGEX, DEFAULT_TEXT_SEARCH_PADDING_Y_MM } from "../core";
+import { DEFAULT_TEXT_EXTRACT_REGEX, DEFAULT_TEXT_SEARCH_PADDING_Y_MM } from "../core";
 import { listGames, loadGame, parseGameOption, parseRegion, parseSets } from "./gameConfig";
 
 const BOX = { label: "collector_number", x_mm: 1, y_mm: 2, width_mm: 3, height_mm: 4 };
@@ -15,7 +15,6 @@ describe("parseRegion", () => {
       allowed_chars: "0123456789/",
       extract_regex: "^[^/]+",
       rotation_deg: -45,
-      max_gap_text_heights: 0.5,
       search_padding_y_mm: 0.2,
     };
     expect(parseRegion("game", "portrait", raw)).toEqual({
@@ -28,16 +27,14 @@ describe("parseRegion", () => {
       rotationDeg: -45,
       allowedChars: "0123456789/",
       extractRegex: "^[^/]+",
-      maxGapTextHeights: 0.5,
       searchPaddingYMm: 0.2,
     });
   });
 
-  it("fills in no rotation, the default maximum gap and search padding, and the whole text when omitted", () => {
+  it("fills in no rotation, the default search padding, and the whole text when omitted", () => {
     expect(parseRegion("game", "portrait", textRegion("collector_number"))).toMatchObject({
       rotationDeg: 0,
       extractRegex: DEFAULT_TEXT_EXTRACT_REGEX,
-      maxGapTextHeights: DEFAULT_TEXT_COLUMN_MAX_GAP_TEXT_HEIGHTS,
       searchPaddingYMm: DEFAULT_TEXT_SEARCH_PADDING_Y_MM,
     });
   });
@@ -183,6 +180,26 @@ describe("parseSets", () => {
 
   it("throws for repeated set codes", () => {
     expect(() => parseSets("g", [SET, { ...SET, name: "Other" }])).toThrow(/set codes has "S1"/);
+  });
+
+  it("defaults collector_number_prefix to \"\" when absent", () => {
+    expect(parseSets("g", [SET])[0]?.collectorNumberPrefix).toBe("");
+  });
+
+  it("parses collector_number_prefix when every collector number starts with it and they're all the same length after it", () => {
+    const sets = parseSets("g", [{ ...SET, collector_numbers: ["β001", "β002"], collector_number_prefix: "β" }]);
+    expect(sets[0]?.collectorNumberPrefix).toBe("β");
+  });
+
+  it("throws when collector_number_prefix isn't a prefix of every collector number", () => {
+    expect(() => parseSets("g", [{ ...SET, collector_numbers: ["β001", "002"], collector_number_prefix: "β" }])).toThrow(
+      /collector_number_prefix/,
+    );
+  });
+
+  it("allows collector_number_prefix even when a few entries have a different length after it (e.g. \"005a\"/\"005b\" variants)", () => {
+    const sets = parseSets("g", [{ ...SET, collector_numbers: ["β001", "β005a"], collector_number_prefix: "β" }]);
+    expect(sets[0]?.collectorNumberPrefix).toBe("β");
   });
 
   it("throws when sets.json isn't a list or has no sets", () => {
