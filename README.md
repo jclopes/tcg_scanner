@@ -7,6 +7,8 @@ Each game is plain data in `src/data/games/<game>/`:
 - `regions.json` — where the collector number and set code are printed, card orientations, foil support.
 - `sets.json` — the game's sets, their printed set codes and collector numbers.
 
+Cyberpunk's `sets.json` is refreshed from the official card database with `npm run update:cyberpunk-sets` (the previous file is kept as `sets.<timestamp>.json.bak`). The site doesn't publish printed set codes, so each set's `print` is kept from the current file, and a new set gets `"TODO"` until it's filled in by hand.
+
 ## Development
 
 Requirements: Node.js 20+, and a browser with camera access (Chrome, Edge or Safari).

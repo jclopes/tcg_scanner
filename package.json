@@ -10,6 +10,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "update:cyberpunk-sets": "node scripts/update-cyberpunk-sets.mjs",
     "clean": "node -e \"for (const p of ['dist', 'public/tesseract', 'node_modules/.vite']) require('fs').rmSync(p, { recursive: true, force: true })\"",
     "clean:all": "npm run clean && node -e \"require('fs').rmSync('node_modules', { recursive: true, force: true })\""
   },
